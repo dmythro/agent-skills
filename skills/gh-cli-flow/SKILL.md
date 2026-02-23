@@ -1,11 +1,11 @@
 ---
-name: gh-pr
+name: gh-cli-flow
 description: GitHub CLI reference for pull requests, code review, issues,
-  and Actions. Covers PR creation/review/merge, line-specific comments,
-  issue management, CI status, and workflow monitoring.
+  Actions, workflows, search, and labels. Covers the full coding flow from
+  PR creation through merge, CI monitoring, and repository queries
 ---
 
-# GitHub PRs, Issues & Actions
+# GitHub CLI Coding Flow
 
 Use `gh` subcommands for all GitHub operations. Subcommands handle pagination, error formatting, and repo detection automatically.
 
@@ -14,6 +14,7 @@ Use `gh` subcommands for all GitHub operations. Subcommands handle pagination, e
 - Working with GitHub pull requests (create, review, merge, comment)
 - Managing issues (create, view, comment, close, link to PRs)
 - Checking CI/Actions status (runs, checks, workflow monitoring)
+- Discovering workflows, searching code/commits, managing labels
 
 ## Critical Rule
 
@@ -91,6 +92,21 @@ gh run list --branch main
 gh run list --json databaseId,status,conclusion,name,headBranch
 ```
 
+### Workflows
+
+```bash
+# List all workflows in the repo
+gh workflow list
+gh workflow list --all                # Include disabled workflows
+gh workflow list --json name,id,state
+gh workflow list --json name,id --jq '.[] | "\(.id) \(.name)"'
+
+# View a specific workflow definition
+gh workflow view ci.yml
+gh workflow view ci.yml --yaml        # Raw YAML source
+gh workflow view 12345                # By workflow ID
+```
+
 ### Search
 
 ```bash
@@ -101,6 +117,26 @@ gh search prs "review:approved" --merged --limit 20
 # Search issues
 gh search issues "query" --label bug --state open
 gh search issues "is:open assignee:@me"
+
+# Search code
+gh search code "pattern" --repo owner/repo
+gh search code "func main" --language go --extension go
+gh search code "TODO" --repo owner/repo --json path,textMatches
+
+# Search commits
+gh search commits "fix bug" --author user --repo owner/repo
+gh search commits "refactor" --committer-date ">2024-01-01"
+gh search commits "migration" --json sha,commit
+```
+
+### Labels
+
+```bash
+# List labels in the repo
+gh label list
+gh label list --search "bug"
+gh label list --json name,color,description
+gh label list --json name --jq '.[].name'
 ```
 
 ### JSON Output Patterns
@@ -269,6 +305,12 @@ gh pr merge 123 --squash --delete-branch
 ```bash
 gh pr list --search "review-requested:@me"
 gh pr list --search "review:required -review:approved draft:false"
+```
+
+**Check workflow runs for a specific workflow:**
+```bash
+gh workflow list --json name,id --jq '.[] | "\(.id) \(.name)"'
+gh run list --workflow ci.yml --limit 5 --json status,conclusion,headBranch
 ```
 
 ---
