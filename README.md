@@ -1,6 +1,6 @@
 # Agent Skills
 
-A collection of agent skills for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and other AI agents, installable via [skills.sh](https://skills.sh).
+A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and other AI agents, installable via [skills.sh](https://skills.sh).
 
 ## Available Skills
 
