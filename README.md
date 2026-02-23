@@ -8,7 +8,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 |---|---|---|
 | `bun-cli` | Bun CLI: package management, scripts, testing, bundling, compilation | `npx skills add dmythro/agent-skills --skill bun-cli` |
 | `bun-api` | Bun runtime API: file I/O, shell, SQLite, hashing, compression, utilities | `npx skills add dmythro/agent-skills --skill bun-api` |
-| `gh-cli-flow` | GitHub CLI: pull requests, code review, issues, Actions, workflows, search, and labels | `npx skills add dmythro/agent-skills --skill gh-cli-flow` |
+| `gh-cli-flow` | GitHub CLI workflows: PR review flows, comment handling, CI queries, tool allowlists. Pairs with `gh-cli` | `npx skills add dmythro/agent-skills --skill gh-cli-flow` |
 
 ## Install
 
@@ -38,6 +38,7 @@ Other useful skills from the community:
 
 | Skill | Description | Install |
 |---|---|---|
+| `gh-cli` | GitHub CLI: comprehensive command reference for repos, PRs, issues, Actions, releases | `npx skills add github/awesome-copilot --skill gh-cli` |
 | `next-best-practices` | Next.js: RSC, data patterns, routing, metadata, error handling, optimization | `npx skills add vercel-labs/next-skills --skill next-best-practices` |
 | `elysiajs` | Elysia: type-safe Bun web framework — routing, validation, auth, WebSocket | `npx skills add elysiajs/skills --skill elysiajs` |
 
