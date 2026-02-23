@@ -9,16 +9,6 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `bun-cli` | Bun CLI: package management, scripts, testing, bundling, compilation | `npx skills add dmythro/agent-skills --skill bun-cli` |
 | `bun-api` | Bun runtime API: file I/O, shell, SQLite, hashing, compression, utilities | `npx skills add dmythro/agent-skills --skill bun-api` |
 
-## Recommended Skills
-
-Other useful skills from the community:
-
-| Skill | Description | Install |
-|---|---|---|
-| `gh-cli` | GitHub CLI: repos, issues, PRs, Actions, releases, and all gh operations | `npx skills add github/awesome-copilot --skill gh-cli` |
-| `next-best-practices` | Next.js: RSC, data patterns, routing, metadata, error handling, optimization | `npx skills add vercel-labs/next-skills --skill next-best-practices` |
-| `elysiajs` | Elysia: type-safe Bun web framework — routing, validation, auth, WebSocket | `npx skills add elysiajs/skills --skill elysiajs` |
-
 ## Install
 
 Install individual skills:
@@ -39,6 +29,16 @@ npx skills add dmythro/agent-skills
 ```bash
 npx skills update
 ```
+
+## Recommended Skills
+
+Other useful skills from the community:
+
+| Skill | Description | Install |
+|---|---|---|
+| `gh-cli` | GitHub CLI: repos, issues, PRs, Actions, releases, and all gh operations | `npx skills add github/awesome-copilot --skill gh-cli` |
+| `next-best-practices` | Next.js: RSC, data patterns, routing, metadata, error handling, optimization | `npx skills add vercel-labs/next-skills --skill next-best-practices` |
+| `elysiajs` | Elysia: type-safe Bun web framework — routing, validation, auth, WebSocket | `npx skills add elysiajs/skills --skill elysiajs` |
 
 ## License
 
