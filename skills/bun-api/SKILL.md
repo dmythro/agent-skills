@@ -5,7 +5,7 @@ description: Bun runtime API reference for TypeScript scripts. Covers Bun.file()
 
 # Bun Runtime API
 
-Use Bun's native APIs instead of Node.js equivalents when writing TypeScript scripts for Bun projects. Bun APIs are faster, more ergonomic, and require no additional dependencies.
+Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build step. Run any `.ts` file directly with `bun file.ts`. Use Bun's native APIs instead of Node.js equivalents — they're faster, more ergonomic, and require no additional dependencies.
 
 **Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
 
@@ -16,6 +16,41 @@ Use Bun's native APIs instead of Node.js equivalents when writing TypeScript scr
 - Shell scripting and automation
 - Database operations with SQLite
 - Any scripting task in a Bun project
+
+## HTTP Server (Bun.serve)
+
+Built-in HTTP server — replaces Express, Fastify, or `http.createServer`.
+
+```typescript
+const server = Bun.serve({
+  port: 3000,
+
+  fetch(req: Request): Response | Promise<Response> {
+    const url = new URL(req.url)
+
+    if (url.pathname === '/api/health') {
+      return Response.json({ status: 'ok' })
+    }
+
+    if (url.pathname === '/api/data' && req.method === 'POST') {
+      const body = await req.json()
+      return Response.json({ received: body })
+    }
+
+    return new Response('Not Found', { status: 404 })
+  },
+
+  error(error: Error): Response {
+    return new Response(`Error: ${error.message}`, { status: 500 })
+  },
+})
+
+console.log(`Listening on ${server.url}`)
+```
+
+Key methods: `server.stop()`, `server.reload()` (hot-swap handler), `server.requestIP(req)`, `server.upgrade(req)` (WebSocket).
+
+> **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming responses, static file serving, and full server API.
 
 ## File I/O
 
@@ -302,50 +337,21 @@ db.close()
 
 ## Hashing and Passwords
 
-### Non-Cryptographic Hashing
-
 ```typescript
-Bun.hash('input')                        // number (wyhash, fast)
-Bun.hash('input', seed)                  // With seed
+// Non-cryptographic (fast, for hash tables/checksums)
+Bun.hash('input')                        // number (wyhash, fastest)
 Bun.hash.crc32('input')                  // CRC32
-Bun.hash.adler32('input')               // Adler-32
-Bun.hash.cityHash32('input')            // CityHash32
-Bun.hash.cityHash64('input')            // CityHash64 (bigint)
-Bun.hash.murmur32v3('input')            // MurmurHash3 32-bit
-Bun.hash.murmur64v2('input')            // MurmurHash3 64-bit (bigint)
-```
 
-### Cryptographic Hashing
-
-```typescript
-// One-shot
+// Cryptographic
 new Bun.CryptoHasher('sha256').update('data').digest('hex')
 
-// Streaming
-const hasher = new Bun.CryptoHasher('sha256')
-hasher.update('part1')
-hasher.update('part2')
-const hash = hasher.digest('hex')        // or 'base64', Uint8Array (no arg)
-
-// Algorithms: 'sha1', 'sha256', 'sha384', 'sha512', 'md5', 'blake2b256', etc.
-```
-
-### Password Hashing
-
-```typescript
-// Hash password (async, uses bcrypt by default)
+// Password hashing (async, bcrypt by default)
 const hash = await Bun.password.hash('password')
 const hash = await Bun.password.hash('password', { algorithm: 'argon2id' })
-
-// Verify
-const valid = await Bun.password.verify('password', hash)      // true/false
-
-// Sync versions
-const hash = Bun.password.hashSync('password')
-const valid = Bun.password.verifySync('password', hash)
+const valid = await Bun.password.verify('password', hash)
 ```
 
-> **Reference**: See `references/sqlite-and-data.md` for all hash algorithms and CryptoHasher details.
+> **Reference**: See `references/hashing.md` for all hash algorithms, CryptoHasher streaming API, and password hashing options (bcrypt vs argon2id, cost parameters).
 
 ## Compression
 
@@ -412,6 +418,26 @@ Bun.color('hsl(0, 100%, 50%)', 'number') // 0xff0000
 ```
 
 > **Reference**: See `references/utilities.md` for complete utility function signatures and examples.
+
+## Semver (Bun.semver)
+
+Built-in semver operations — replaces the `semver` npm package.
+
+```typescript
+// Check if a version satisfies a range
+Bun.semver.satisfies('1.2.3', '^1.0.0')     // true
+Bun.semver.satisfies('2.0.0', '>=1.0 <2.0') // false
+Bun.semver.satisfies('1.0.0-beta', '*')      // false (pre-release excluded by default)
+
+// Sort versions (returns -1, 0, or 1)
+Bun.semver.order('1.0.0', '2.0.0')          // -1 (a < b)
+Bun.semver.order('2.0.0', '1.0.0')          // 1  (a > b)
+Bun.semver.order('1.0.0', '1.0.0')          // 0  (equal)
+
+// Sort an array of versions
+const versions = ['3.0.0', '1.2.0', '2.1.0']
+versions.sort(Bun.semver.order)              // ['1.2.0', '2.1.0', '3.0.0']
+```
 
 ## Serialization (bun:jsc)
 

@@ -5,7 +5,7 @@ description: Bun CLI reference for package management, script running, testing, 
 
 # Bun CLI
 
-Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, and test runner. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
+Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, and test runner. Bun runs TypeScript natively — `bun file.ts` directly, no compile step, no `tsc`, no `ts-node`. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
 
 ## Detecting Bun Projects
 
@@ -25,6 +25,25 @@ A project uses Bun if any of these are present:
 - Execute binaries: `bunx tool` (not `npx tool`)
 - Install packages: `bun add pkg` (not `npm install pkg`)
 - Run tests: `bun test` (not `npx jest` or `node --test`)
+
+## Read-Only Commands (safe, no side effects)
+
+| Command | Purpose |
+|---------|---------|
+| `bun --version` | Runtime version |
+| `bun info <pkg>` | Package metadata, available versions |
+| `bun info <pkg> versions` | List all published versions |
+| `bun pm ls` | List installed packages |
+| `bun pm ls --all` | List all (including transitive) |
+| `bun pm hash` | Print lockfile hash |
+| `bun pm cache` | Show cache directory |
+| `bun outdated` | Check for outdated dependencies |
+| `bun audit` | Security vulnerability audit |
+| `bun test` | Run test suite |
+| `bun run lint` | Run linter (project-specific) |
+| `bun run check-types` | Type checking (project-specific) |
+
+> **Reference**: See `references/allowlist.md` for copy-paste `Bash(command:*)` patterns for Claude Code / OpenCode settings.
 
 ## npm/npx/node to Bun Translation
 
