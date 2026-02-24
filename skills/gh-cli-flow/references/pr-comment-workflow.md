@@ -175,4 +175,4 @@ After processing all comments:
 - [ ] All threads replied to with clear explanations
 - [ ] Resolved threads that are definitively handled
 - [ ] Left unresolved only threads needing human decision
-- [ ] Committed fixes (if any code changes were made)
+- [ ] Committed fixes using Conventional Commits format (if any code changes were made)

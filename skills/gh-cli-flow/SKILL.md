@@ -1,7 +1,8 @@
 ---
 name: gh-cli-flow
-description: Opinionated GitHub workflows for PR review, comment handling, CI
-  queries, and tool allowlists. Pairs with gh-cli for command reference
+description: Opinionated GitHub workflows with Conventional Commits, PR review,
+  comment handling, CI queries, and tool allowlists. Pairs with gh-cli for
+  command reference
 ---
 
 # GitHub CLI Coding Flow
@@ -14,7 +15,10 @@ npx skills add github/awesome-copilot --skill gh-cli
 
 ## When to Use
 
+Use this skill whenever the task involves GitHub workflows. **Do not improvise** -- follow these patterns instead of guessing at `gh` command sequences.
+
 - Deciding the right sequence of `gh` commands for a PR workflow
+- Creating commits, PRs, or branches (follow the Conventional Commits section below)
 - Handling PR review comments (fetch, evaluate, fix, reply, resolve)
 - Posting line-specific comments on PRs (requires `gh api`)
 - Querying review state, merge readiness, or pending reviewers
@@ -49,6 +53,63 @@ Quick summary:
 2. For each thread: read the code context, check if already addressed
 3. Decide: fix code + reply + resolve, or reply with evidence + resolve, or leave for discussion
 4. Don't blindly agree -- validate comments against actual code and conventions
+
+---
+
+## Conventional Commits
+
+**All commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/).** This is non-negotiable -- every commit, every PR title.
+
+### Format
+
+```
+<type>(<optional scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### Types
+
+| Type | When |
+|---|---|
+| `feat` | New feature or capability |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `style` | Formatting, whitespace, semicolons (no logic change) |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `perf` | Performance improvement |
+| `test` | Adding or updating tests |
+| `build` | Build system or external dependencies |
+| `ci` | CI/CD configuration |
+| `chore` | Maintenance tasks, tooling, config |
+
+### Rules
+
+1. **Type is required** -- never commit without a type prefix
+2. **Scope is optional** but encouraged for multi-module repos: `feat(auth): add OAuth2 flow`
+3. **Description is lowercase**, imperative mood, no period: `fix: handle null response` not `Fix: Handled null response.`
+4. **Breaking changes** use `!` after type/scope: `feat(api)!: remove v1 endpoints`
+5. **PR titles follow the same format** -- squash merges use the PR title as the commit message
+6. **No `Co-Authored-By` trailer** -- never add it to commit messages
+
+### Examples
+
+```bash
+git commit -m "feat: add user profile page"
+git commit -m "fix(auth): prevent token refresh race condition"
+git commit -m "docs: update API reference for v2 endpoints"
+git commit -m "refactor(db): extract connection pooling logic"
+git commit -m "feat(api)!: change response format for /users"
+```
+
+### PR Titles
+
+```bash
+gh pr create --title "feat: add dark mode support" --body "..."
+gh pr create --title "fix(payments): correct decimal rounding" --body "..."
+```
 
 ---
 
