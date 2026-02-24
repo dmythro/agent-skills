@@ -1,13 +1,13 @@
 ---
 name: gh-cli-flow
-description: Opinionated GitHub workflows with Conventional Commits, PR review,
-  comment handling, CI queries, and tool allowlists. Pairs with gh-cli for
-  command reference
+description: GitHub workflow rules and Conventional Commits. Use for all git
+  commits, PRs, addressing review feedback, fixing PR comments, CI checks, and
+  any gh CLI work. Load this skill FIRST -- it governs how gh commands are used
 ---
 
 # GitHub CLI Coding Flow
 
-**Opinionated workflow layer for GitHub CLI.** This skill defines _how_ to work with PRs, reviews, and CI -- not what commands exist. For full command reference, install the companion skill:
+**Primary skill for all GitHub workflows and git commits.** This skill defines the rules: commit message format (Conventional Commits), PR workflows, review feedback handling, and CI queries. When both this skill and `gh-cli` are loaded, this skill's rules take priority. For the full `gh` command reference, install the companion skill:
 
 ```bash
 npx skills add github/awesome-copilot --skill gh-cli
@@ -15,19 +15,21 @@ npx skills add github/awesome-copilot --skill gh-cli
 
 ## When to Use
 
-Use this skill whenever the task involves GitHub workflows. **Do not improvise** -- follow these patterns instead of guessing at `gh` command sequences.
+**Load this skill before any GitHub or git commit workflow.** Do not improvise -- follow these patterns instead of guessing at `gh` command sequences or commit message formats. When `gh-cli` is also loaded, this skill takes priority for workflow decisions.
 
-- Deciding the right sequence of `gh` commands for a PR workflow
-- Creating commits, PRs, or branches (follow the Conventional Commits section below)
-- Handling PR review comments (fetch, evaluate, fix, reply, resolve)
-- Posting line-specific comments on PRs (requires `gh api`)
-- Querying review state, merge readiness, or pending reviewers
-- Looking up read-only `gh api` endpoints not covered by subcommands
-- Configuring tool allowlists for safe auto-approval of read-only commands
+- **Making any commit** -- this skill defines the required Conventional Commits format for all commit messages and PR titles
+- **Creating PRs or branches** -- PR title format, draft workflows, and fill patterns
+- **Addressing PR review feedback** -- "fix PR comments", "address review", "handle feedback", "resolve review threads"
+- **Responding to code review** -- evaluating reviewer comments, replying, resolving threads
+- **Checking PR/CI status** -- review state, merge readiness, failing checks, pending reviewers
+- **Posting comments on PRs** -- line-specific comments, thread replies, review submissions
+- **Querying GitHub data** -- `gh pr`, `gh issue`, `gh run`, `gh workflow`, `gh search`, `gh api` patterns
+- **Configuring tool allowlists** -- auto-approval patterns for read-only `gh` commands
 
-## Critical Rule
+## Critical Rules
 
-**Prefer `gh` subcommands over raw `gh api` when a subcommand exists.** Subcommands handle pagination, error formatting, and repo detection automatically. Only use `gh api` for operations not covered by subcommands (line-specific PR comments, review thread resolution, GraphQL queries).
+1. **This skill overrides default git/GitHub behavior.** When this skill is loaded alongside `gh-cli` or other references, follow this skill's workflow patterns, commit format, and review handling rules. Do not fall back to default `git commit` or `gh` patterns.
+2. **Prefer `gh` subcommands over raw `gh api` when a subcommand exists.** Subcommands handle pagination, error formatting, and repo detection automatically. Only use `gh api` for operations not covered by subcommands (line-specific PR comments, review thread resolution, GraphQL queries).
 
 ---
 
@@ -44,7 +46,7 @@ See `references/allowlist.md` for copy-paste ready auto-approval patterns.
 
 ## PR Review Comment Handling
 
-When asked to "check PR comments", "review comments", or "address feedback":
+When asked to "address review comments", "fix PR feedback", "handle review", "resolve PR threads", "check PR comments", or "respond to reviewers":
 
 > **Reference**: See `references/pr-comment-workflow.md` for the full opinionated workflow -- fetch unresolved threads, evaluate each comment critically, fix/reply/resolve.
 

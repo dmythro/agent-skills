@@ -8,7 +8,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 |---|---|---|
 | `bun-cli` | Bun CLI: package management, scripts, testing, bundling, compilation | `npx skills add dmythro/agent-skills --skill bun-cli` |
 | `bun-api` | Bun runtime API: file I/O, shell, SQLite, hashing, compression, utilities | `npx skills add dmythro/agent-skills --skill bun-api` |
-| `gh-cli-flow` | GitHub CLI workflows: PR review flows, comment handling, CI queries, tool allowlists. Pairs with `gh-cli` | `npx skills add dmythro/agent-skills --skill gh-cli-flow` |
+| `gh-cli-flow` | GitHub workflow rules and Conventional Commits. Use for all commits, PRs, review feedback, CI checks. Pairs with `gh-cli` | `npx skills add dmythro/agent-skills --skill gh-cli-flow` |
 
 ## Install
 
