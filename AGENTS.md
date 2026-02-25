@@ -21,7 +21,7 @@ skills/
       allowlist.md        # Tool permission patterns (optional)
 ```
 
-Current skills: `bun-api`, `bun-cli`, `gh-cli-flow`.
+Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`.
 
 ## Build / Lint / Test Commands
 
@@ -137,7 +137,7 @@ when visual separation helps readability (used sparingly).
 
 ## Naming Conventions
 
-- **Skill directories**: `kebab-case` (e.g., `bun-api`, `gh-cli-flow`)
+- **Skill directories**: `kebab-case` (e.g., `bun-api`, `git-commit`)
 - **Reference files**: `kebab-case.md` (e.g., `file-io.md`, `shell-and-process.md`)
 - **Frontmatter `name`**: Must match the directory name exactly
 
