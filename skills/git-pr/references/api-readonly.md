@@ -1,14 +1,15 @@
-# Read-Only gh api Endpoints
+# Read-Only API Endpoints
 
-Reference for `gh api` calls that are safe GET requests — read-only, no side effects.
+Reference for read-only API calls across GitHub (`gh api`) and GitLab (`glab api`). Use these only when CLI subcommands cannot provide the data.
 
 ## Key Guidance
 
-- **Always prefer subcommands** (`gh pr view`, `gh issue list`, etc.) over `gh api` when possible. Subcommands are auto-approvable and handle pagination/errors.
-- **Only use `gh api`** when subcommands can't do it (line comments, thread resolution, GraphQL)
-- **`gh api` defaults to GET.** Write calls always need explicit `--method POST/PUT/PATCH/DELETE`.
+- **Always prefer subcommands** (`gh pr view`, `glab mr view`, etc.) over raw API calls. Subcommands are auto-approvable and handle pagination/errors.
+- **Only use API calls** when subcommands can't do it (line comments, thread resolution, GraphQL)
+- **`gh api` defaults to GET.** Write calls need explicit `--method POST/PUT/PATCH/DELETE`.
+- **`glab api` defaults to GET.** Same convention for write operations.
 
-## Pull Request Endpoints (GET)
+## GitHub Pull Request Endpoints (GET)
 
 ```bash
 # PR details
@@ -32,19 +33,17 @@ gh api repos/{owner}/{repo}/pulls/{pr}/commits
 # Requested reviewers
 gh api repos/{owner}/{repo}/pulls/{pr}/requested_reviewers
 
-# Merge status
+# Merge status (204 if merged, 404 if not)
 gh api repos/{owner}/{repo}/pulls/{pr}/merge
-# Returns 204 if merged, 404 if not
 ```
 
-## Issue Endpoints (GET)
+## GitHub Issue Endpoints (GET)
 
 ```bash
 # Issue details
 gh api repos/{owner}/{repo}/issues/{issue}
 
 # Issue comments
-gh api repos/{owner}/{repo}/issues/{issue}/comments
 gh api repos/{owner}/{repo}/issues/{issue}/comments --paginate
 
 # Issue labels
@@ -57,7 +56,7 @@ gh api repos/{owner}/{repo}/issues/{issue}/timeline --paginate
 gh api repos/{owner}/{repo}/issues/{issue}/reactions
 ```
 
-## Actions Endpoints (GET)
+## GitHub Actions Endpoints (GET)
 
 ```bash
 # Workflow run details
@@ -76,7 +75,7 @@ gh api repos/{owner}/{repo}/actions/runs
 gh api repos/{owner}/{repo}/actions/runs/{run_id}/artifacts
 ```
 
-## GraphQL Read-Only Queries
+## GitHub GraphQL Read-Only Queries
 
 GraphQL uses POST method but these are read-only queries:
 
@@ -88,19 +87,9 @@ gh api graphql -f query='
     pullRequest(number: 123) {
       reviewThreads(first: 100) {
         nodes {
-          id
-          isResolved
-          isOutdated
-          path
-          line
+          id, isResolved, isOutdated, path, line
           comments(first: 10) {
-            nodes {
-              id
-              databaseId
-              body
-              author { login }
-              createdAt
-            }
+            nodes { id, databaseId, body, author { login }, createdAt }
           }
         }
       }
@@ -122,15 +111,56 @@ gh api graphql -f query='
 }'
 ```
 
+## GitLab Merge Request Endpoints (GET)
+
+```bash
+# MR details
+glab api projects/{project_id}/merge_requests/{iid}
+
+# MR changes (files diff)
+glab api projects/{project_id}/merge_requests/{iid}/changes
+
+# MR commits
+glab api projects/{project_id}/merge_requests/{iid}/commits
+
+# MR discussions (review threads)
+glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate
+
+# MR notes (comments)
+glab api projects/{project_id}/merge_requests/{iid}/notes --paginate
+
+# MR approvals
+glab api projects/{project_id}/merge_requests/{iid}/approvals
+
+# MR participants
+glab api projects/{project_id}/merge_requests/{iid}/participants
+
+# MR pipelines
+glab api projects/{project_id}/merge_requests/{iid}/pipelines
+```
+
+## GitLab Issue Endpoints (GET)
+
+```bash
+# Issue details
+glab api projects/{project_id}/issues/{iid}
+
+# Issue notes (comments)
+glab api projects/{project_id}/issues/{iid}/notes --paginate
+
+# Issue labels
+glab api projects/{project_id}/issues/{iid}/resource_label_events
+```
+
 ## Pagination
 
-For REST endpoints returning lists, use `--paginate` to get all results:
+### GitHub REST
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments --paginate
 ```
 
-For GraphQL, use cursor-based pagination:
+### GitHub GraphQL
 
 ```bash
 gh api graphql -f query='
@@ -144,4 +174,14 @@ gh api graphql -f query='
     }
   }
 }'
+```
+
+### GitLab REST
+
+```bash
+# API endpoint pagination
+glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate
+
+# Subcommand pagination
+glab mr list -P 100
 ```
