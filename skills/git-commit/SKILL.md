@@ -68,13 +68,12 @@ If ambiguous or both present, ask the user.
 
 ## Rules
 
-1. **Project rules override this skill** -- if the project defines commit message conventions (issue number prefixes, custom formats, etc.), follow those instead. This skill is the default when no project-specific rules exist.
-2. **Type is required** -- never commit without a type prefix
-3. **Scope is optional** but encouraged for multi-module repos: `feat(auth): add OAuth2 flow`
-4. **Description is lowercase**, imperative mood, no period: `fix: handle null response` not `Fix: Handled null response.`
-5. **Breaking changes** use `!` after type/scope: `feat(api)!: remove v1 endpoints`
-6. **PR/MR titles follow the same format** -- squash merges use the PR/MR title as the commit message
-7. **No `Co-Authored-By` trailer** -- never add it to commit messages
+1. **Type is required** -- never commit without a type prefix
+2. **Scope is optional** but encouraged for multi-module repos: `feat(auth): add OAuth2 flow`
+3. **Description is lowercase**, imperative mood, no period: `fix: handle null response` not `Fix: Handled null response.`
+4. **Breaking changes** use `!` after type/scope: `feat(api)!: remove v1 endpoints`
+5. **PR/MR titles follow the same format** -- squash merges use the PR/MR title as the commit message
+6. **No `Co-Authored-By` trailer** -- never add it to commit messages
 
 ## Commit Examples
 

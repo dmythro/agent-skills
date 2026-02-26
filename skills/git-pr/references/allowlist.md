@@ -95,7 +95,7 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 
 ## Tier 2b: GitHub API Read-Only
 
-GraphQL queries and REST GET endpoints used by the review-comment workflow. The GraphQL pattern uses `*query(*)` with balanced parentheses -- this matches `query($var: Type!)` in read queries. Mutations use `mutation(` which won't match. The `*` before `query(` handles leading whitespace in multi-line queries.
+GraphQL queries and REST GET endpoints used by the review-comment workflow. The GraphQL pattern `*query(*)` is a simple glob: `*` before `query(` matches any prefix (including whitespace in multi-line queries), and `*` after `(` matches any characters up to the next `)`. This passes read queries containing `query(` but blocks mutations since they use `mutation(` instead. Note: glob matching does not enforce balanced parentheses -- it simply requires `query(` and `)` to appear in order.
 
 ### Claude Code
 

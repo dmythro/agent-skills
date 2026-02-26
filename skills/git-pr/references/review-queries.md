@@ -9,7 +9,7 @@ Each reviewer can submit multiple reviews. Get the most recent state per reviewe
 ```bash
 gh pr view {number} --json reviews --jq '
   .reviews
-  | sort_by(.author.login, .submittedAt)
+  | sort_by([.author.login, .submittedAt])
   | group_by(.author.login)
   | map({
       user: .[0].author.login,
