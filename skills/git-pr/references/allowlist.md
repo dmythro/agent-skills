@@ -97,15 +97,17 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 
 GraphQL queries and REST GET endpoints used by the review-comment workflow. The GraphQL pattern `*query(*)` is a simple glob: `*` before `query(` matches any prefix (including whitespace in multi-line queries), and `*` after `(` matches any characters up to the next `)`. This passes read queries containing `query(` but blocks mutations since they use `mutation(` instead. Note: glob matching does not enforce balanced parentheses -- it simply requires `query(` and `)` to appear in order.
 
+REST patterns for `/files` and `/commits` include a trailing `*` (for `--paginate` or `--jq`) because these endpoints are GET-only in the GitHub API. Patterns for `/comments`, `/reviews`, and `/requested_reviewers` omit the trailing `*` because these endpoints also support POST/DELETE -- a trailing wildcard would auto-approve write operations.
+
 ### Claude Code
 
 ```json
 "Bash(gh api graphql -f query=*query(*))",
-"Bash(gh api repos/*/pulls/*/comments *)",
-"Bash(gh api repos/*/pulls/*/reviews *)",
+"Bash(gh api repos/*/pulls/*/comments)",
+"Bash(gh api repos/*/pulls/*/reviews)",
 "Bash(gh api repos/*/pulls/*/files *)",
 "Bash(gh api repos/*/pulls/*/commits *)",
-"Bash(gh api repos/*/pulls/*/requested_reviewers *)"
+"Bash(gh api repos/*/pulls/*/requested_reviewers)"
 ```
 
 ---
@@ -152,11 +154,11 @@ GraphQL queries and REST GET endpoints used by the review-comment workflow. The 
       "Bash(glab mr view * -F json | jq *)",
       "Bash(glab issue view * -F json | jq *)",
       "Bash(gh api graphql -f query=*query(*))",
-      "Bash(gh api repos/*/pulls/*/comments *)",
-      "Bash(gh api repos/*/pulls/*/reviews *)",
+      "Bash(gh api repos/*/pulls/*/comments)",
+      "Bash(gh api repos/*/pulls/*/reviews)",
       "Bash(gh api repos/*/pulls/*/files *)",
       "Bash(gh api repos/*/pulls/*/commits *)",
-      "Bash(gh api repos/*/pulls/*/requested_reviewers *)"
+      "Bash(gh api repos/*/pulls/*/requested_reviewers)"
     ]
   }
 }
@@ -195,7 +197,7 @@ GraphQL queries and REST GET endpoints used by the review-comment workflow. The 
 These require explicit user approval:
 
 - **GraphQL mutations** -- `mutation(` does not match the `*query(*)` pattern, so `resolveReviewThread`, `unresolveReviewThread`, `addPullRequestReviewComment`, and similar mutations require manual approval
-- **REST POST/PUT/DELETE** -- the `gh api repos/*/pulls/*/comments *` patterns match GET requests; creating replies via `gh api repos/.../pulls/.../comments -f body=...` uses POST which passes the glob but is a write operation -- consider using `--deny` rules or reviewing these manually
+- **REST POST/PUT/DELETE** -- patterns for `/comments`, `/reviews`, and `/requested_reviewers` have no trailing wildcard, so write calls (with `-f`, `--method POST`, etc.) require manual approval. `/files` and `/commits` are GET-only endpoints in the GitHub API
 - **Write operations**: `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
 - **Thread resolution**: `gh api graphql -f query=*mutation(*)`, `glab api --method PUT`
 - **Comment operations**: replies, line comments, review submissions
