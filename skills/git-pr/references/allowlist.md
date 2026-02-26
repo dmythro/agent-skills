@@ -4,9 +4,9 @@ Tiered auto-approval patterns for Claude Code `settings.json` and OpenCode confi
 
 ## Pattern Syntax
 
-- **Claude Code**: `Bash(exact command)` or `Bash(cmd *)` -- glob matching, shell-operator aware (`*` cannot match `&&`, `||`, `;`, `|`)
+- **Claude Code**: `Bash(exact command)` or `Bash(command:*)` -- glob matching, shell-operator aware (`*` cannot match `&&`, `||`, `;`, `|`)
 - **OpenCode**: `"exact command": "allow"` -- uses picomatch(), last-match-wins
-- **Deprecated**: `:*` syntax. Use space-star (` *`) instead.
+- **Deprecated**: legacy `Bash(cmd *)` syntax. Use `Bash(command:*)` for Claude Code and space-star (` *`) for OpenCode instead.
 
 ---
 

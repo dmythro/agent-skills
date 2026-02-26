@@ -157,4 +157,4 @@ glab variable list
 
 ## Allowlist
 
-> **Reference**: See `references/allowlist.md` for tiered `Bash(command *)` patterns covering all read-only CI operations -- safe to auto-approve in Claude Code `settings.json` or OpenCode config.
+> **Reference**: See `references/allowlist.md` for tiered `Bash(command:*)` patterns covering all read-only CI operations -- safe to auto-approve in Claude Code `settings.json` or OpenCode config.

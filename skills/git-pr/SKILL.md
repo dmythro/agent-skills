@@ -71,7 +71,7 @@ gh pr view {number} --json number,title,state,isDraft,reviewDecision,mergeable,b
 
 **GitLab:**
 ```bash
-glab mr view {number} -F json | jq '{iid:.iid,title:.title,state:.state,draft:.draft,merge_status:.merge_status,target:.target_branch,source:.source_branch}'
+glab mr view {iid} -F json | jq '{iid:.iid,title:.title,state:.state,draft:.draft,merge_status:.merge_status,target:.target_branch,source:.source_branch}'
 ```
 
 ## Review State
@@ -85,7 +85,7 @@ gh pr view --json reviews,reviewRequests,latestReviews
 
 **GitLab:**
 ```bash
-glab mr view -F json | jq '{approvals:.upvotes,reviewers:[.reviewers[]?.username]}'
+glab mr view -F json | jq '{upvotes:.upvotes,reviewers:[.reviewers[]?.username]}'
 ```
 
 For detailed approval info (GitLab):
@@ -284,4 +284,4 @@ glab api projects/{project_id}/merge_requests/{iid}/discussions --method POST \
 
 ## Allowlist
 
-> **Reference**: See `references/allowlist.md` for tiered `Bash(command *)` patterns covering all read-only operations -- safe to auto-approve in Claude Code `settings.json` or OpenCode config.
+> **Reference**: See `references/allowlist.md` for tiered `Bash(command:*)` patterns covering all read-only operations -- safe to auto-approve in Claude Code `settings.json` or OpenCode config.
