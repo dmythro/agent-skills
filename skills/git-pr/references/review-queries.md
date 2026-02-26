@@ -9,6 +9,7 @@ Each reviewer can submit multiple reviews. Get the most recent state per reviewe
 ```bash
 gh pr view {number} --json reviews --jq '
   .reviews
+  | sort_by(.author.login, .submittedAt)
   | group_by(.author.login)
   | map({
       user: .[0].author.login,
@@ -49,8 +50,8 @@ gh pr view {number} --json reviewRequests --jq '.reviewRequests[] | {login, type
 ## GitLab: Approval State
 
 ```bash
-# Basic approval info from MR view
-glab mr view {iid} -F json | jq '{approvals:.upvotes,reviewers:[.reviewers[]?.username]}'
+# Basic upvote info from MR view (emoji/thumbs, not formal approvals)
+glab mr view {iid} -F json | jq '{upvotes:.upvotes,reviewers:[.reviewers[]?.username]}'
 
 # Detailed approval rules and who approved
 glab api projects/{project_id}/merge_requests/{iid}/approvals | jq '{approved:.approved,approvals_required:.approvals_required,approvals_left:.approvals_left,approvers:[.approved_by[]?.user.username]}'

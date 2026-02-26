@@ -4,9 +4,9 @@ Tiered auto-approval patterns for Claude Code `settings.json` and OpenCode confi
 
 ## Pattern Syntax
 
-- **Claude Code**: `Bash(exact command)` or `Bash(cmd *)` -- glob matching, shell-operator aware (`*` cannot match `&&`, `||`, `;`, `|`)
+- **Claude Code**: `Bash(exact command)` or `Bash(command:*)` -- glob matching, shell-operator aware (`*` cannot match `&&`, `||`, `;`, `|`)
 - **OpenCode**: `"exact command": "allow"` -- uses picomatch(), last-match-wins
-- **Deprecated**: `:*` syntax. Use space-star (` *`) instead.
+- **Deprecated**: legacy `Bash(cmd *)` syntax. Use `Bash(command:*)` for Claude Code and space-star (` *`) for OpenCode instead.
 
 ---
 
@@ -31,7 +31,6 @@ Current-branch commands. Auto-approve with zero risk.
 "Bash(glab ci get)",
 "Bash(glab ci list)",
 "Bash(glab ci status --live)",
-"Bash(glab variable list)",
 "Bash(glab auth status)"
 ```
 
@@ -52,7 +51,6 @@ Current-branch commands. Auto-approve with zero risk.
 "glab ci get": "allow",
 "glab ci list": "allow",
 "glab ci status --live": "allow",
-"glab variable list": "allow",
 "glab auth status": "allow"
 ```
 
@@ -102,7 +100,6 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
       "Bash(glab ci get)",
       "Bash(glab ci list)",
       "Bash(glab ci status --live)",
-      "Bash(glab variable list)",
       "Bash(glab auth status)",
       "Bash(gh pr checks * --json name,state,conclusion,bucket)",
       "Bash(gh pr checks * --watch --fail-fast)",
@@ -138,7 +135,6 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
   "glab ci get": "allow",
   "glab ci list": "allow",
   "glab ci status --live": "allow",
-  "glab variable list": "allow",
   "glab auth status": "allow"
 }
 ```
@@ -149,6 +145,7 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 
 These require explicit user approval:
 
+- **`glab variable list`** -- exposes CI/CD variable values, which often contain secrets (API keys, passwords)
 - **`gh run rerun`** -- re-runs workflow, consumes CI minutes
 - **`gh run cancel`** -- cancels running workflow
 - **`gh workflow run`** -- triggers workflow dispatch
