@@ -148,7 +148,8 @@ when visual separation helps readability (used sparingly).
 3. Add reference files for each major sub-topic
 4. Optionally add `references/allowlist.md` for tool permission patterns
 5. Update `README.md` to include the new skill in the "Available Skills" table
-   with its install command: `npx skills add dmythro/agent-skills --skill <name>`
+   with its install command: `bunx skills add dmythro/agent-skills --skill <name>`
+   or `npx skills add dmythro/agent-skills --skill <name>`
 
 ## Common Mistakes to Avoid
 
