@@ -93,6 +93,23 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 
 ---
 
+## Tier 2b: GitHub API Read-Only
+
+GraphQL queries and REST GET endpoints used by the review-comment workflow. The GraphQL pattern uses `*query(*)` with balanced parentheses -- this matches `query($var: Type!)` in read queries. Mutations use `mutation(` which won't match. The `*` before `query(` handles leading whitespace in multi-line queries.
+
+### Claude Code
+
+```json
+"Bash(gh api graphql -f query=*query(*))",
+"Bash(gh api repos/*/pulls/*/comments *)",
+"Bash(gh api repos/*/pulls/*/reviews *)",
+"Bash(gh api repos/*/pulls/*/files *)",
+"Bash(gh api repos/*/pulls/*/commits *)",
+"Bash(gh api repos/*/pulls/*/requested_reviewers *)"
+```
+
+---
+
 ## All Patterns Combined
 
 ### Claude Code
@@ -133,7 +150,13 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
       "Bash(gh search issues *)",
       "Bash(gh search code *)",
       "Bash(glab mr view * -F json | jq *)",
-      "Bash(glab issue view * -F json | jq *)"
+      "Bash(glab issue view * -F json | jq *)",
+      "Bash(gh api graphql -f query=*query(*))",
+      "Bash(gh api repos/*/pulls/*/comments *)",
+      "Bash(gh api repos/*/pulls/*/reviews *)",
+      "Bash(gh api repos/*/pulls/*/files *)",
+      "Bash(gh api repos/*/pulls/*/commits *)",
+      "Bash(gh api repos/*/pulls/*/requested_reviewers *)"
     ]
   }
 }
@@ -171,8 +194,8 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 
 These require explicit user approval:
 
-- **All `gh api graphql` calls** -- GraphQL always uses POST, cannot distinguish read from write
-- **All `gh api repos/*/pulls/*/comments` calls** -- can be GET or POST depending on flags
+- **GraphQL mutations** -- `mutation(` does not match the `*query(*)` pattern, so `resolveReviewThread`, `unresolveReviewThread`, `addPullRequestReviewComment`, and similar mutations require manual approval
+- **REST POST/PUT/DELETE** -- the `gh api repos/*/pulls/*/comments *` patterns match GET requests; creating replies via `gh api repos/.../pulls/.../comments -f body=...` uses POST which passes the glob but is a write operation -- consider using `--deny` rules or reviewing these manually
 - **Write operations**: `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
-- **Thread resolution**: `gh api graphql mutation`, `glab api --method PUT`
+- **Thread resolution**: `gh api graphql -f query=*mutation(*)`, `glab api --method PUT`
 - **Comment operations**: replies, line comments, review submissions
