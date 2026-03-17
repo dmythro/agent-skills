@@ -1,6 +1,9 @@
 ---
 name: bun-api
-description: Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(), Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.hash, Bun.password, compression, and utilities for file generation, data processing, and scripting.
+description: Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
+  Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
+  via DATABASE_URL, Bun.hash, Bun.password, compression, and utilities for file generation,
+  data processing, and scripting
 ---
 
 # Bun Runtime API
@@ -14,7 +17,8 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 - Scripts for generating files, parsing data, running migrations
 - File processing and transformation pipelines
 - Shell scripting and automation
-- Database operations with SQLite
+- Database operations with SQLite (`bun:sqlite`)
+- **Database queries via connection URL** -- project has `DATABASE_URL` in `.env` or environment (PostgreSQL, MySQL, SQLite via `Bun.sql()`)
 - Any scripting task in a Bun project
 
 ## HTTP Server (Bun.serve)
@@ -288,9 +292,56 @@ import.meta.dirname              // Same as import.meta.dir (Node.js compat)
 import.meta.filename             // Same as import.meta.path (Node.js compat)
 ```
 
+## SQL Client (Bun.sql) -- PostgreSQL, MySQL, SQLite
+
+Built-in SQL client for querying databases via connection URL. Zero dependencies, tagged template literals, automatic prepared statements, connection pooling. **Use when the project has `DATABASE_URL` in `.env` or environment.**
+
+```typescript
+import { sql, SQL } from "bun"
+
+// Default instance -- auto-connects using DATABASE_URL from environment
+const users = await sql`SELECT * FROM users WHERE active = ${true} LIMIT ${10}`
+
+// Explicit connection
+const db = new SQL("postgres://user:pass@localhost:5432/mydb")
+const results = await db`SELECT * FROM users`
+
+// MySQL
+const mysql = new SQL("mysql://user:pass@localhost:3306/mydb")
+```
+
+### Insert / Update with Object Helpers
+
+```typescript
+const user = { name: "Alice", email: "alice@example.com" }
+
+// Insert -- expands object to (column1, column2) VALUES (val1, val2)
+const [newUser] = await sql`INSERT INTO users ${sql(user)} RETURNING *`
+
+// Bulk insert
+await sql`INSERT INTO users ${sql([user1, user2, user3])}`
+
+// Update -- expands to SET column1 = val1, column2 = val2
+await sql`UPDATE users SET ${sql(updates)} WHERE id = ${userId}`
+```
+
+### Transactions
+
+```typescript
+await sql.begin(async (tx) => {
+  const [user] = await tx`INSERT INTO users (name) VALUES (${"Alice"}) RETURNING *`
+  await tx`INSERT INTO audit_log (action, user_id) VALUES ('created', ${user.id})`
+})
+// Auto-committed on success, rolled back on error
+```
+
+> **Reference**: See `references/sql-client.md` for connection options, pool management, savepoints, MySQL specifics, and prepared statement configuration.
+
+---
+
 ## SQLite (bun:sqlite)
 
-Built-in SQLite3 with zero dependencies.
+Built-in SQLite3 with zero dependencies. For **embedded/local databases** -- file-based or in-memory.
 
 ```typescript
 import { Database } from 'bun:sqlite'
@@ -517,11 +568,12 @@ db.close()
 
 1. **Prefer `Bun.file()` + `Bun.write()`** over `fs.readFile`/`fs.writeFile`
 2. **Use `Bun.$`** for shell commands instead of `child_process`
-3. **Use `bun:sqlite`** instead of external SQLite packages
-4. **Use `Bun.Glob`** instead of `glob` npm package
-5. **Use `Bun.CryptoHasher`** instead of `crypto.createHash`
-6. **Use `Bun.password`** instead of `bcrypt`/`argon2` npm packages
-7. **Use `Bun.gzipSync`/`Bun.zstdCompressSync`** instead of `zlib`
-8. **Use `Bun.env`** for environment variables (same as `process.env` but typed)
-9. **Use `import.meta.dir`** instead of `__dirname` (or `import.meta.dirname` for Node compat)
-10. **Use `Bun.which()`** instead of `which` npm package
+3. **Use `Bun.sql()`** for PostgreSQL/MySQL when `DATABASE_URL` is available -- zero-dependency, connection pooling, tagged templates
+4. **Use `bun:sqlite`** for embedded/local SQLite databases instead of external packages
+5. **Use `Bun.Glob`** instead of `glob` npm package
+6. **Use `Bun.CryptoHasher`** instead of `crypto.createHash`
+7. **Use `Bun.password`** instead of `bcrypt`/`argon2` npm packages
+8. **Use `Bun.gzipSync`/`Bun.zstdCompressSync`** instead of `zlib`
+9. **Use `Bun.env`** for environment variables (same as `process.env` but typed)
+10. **Use `import.meta.dir`** instead of `__dirname` (or `import.meta.dirname` for Node compat)
+11. **Use `Bun.which()`** instead of `which` npm package

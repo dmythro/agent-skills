@@ -1,7 +1,8 @@
 ---
 name: git-commit
 description: Conventional Commits format for all git commits and PR/MR titles. Defines
-  type prefixes, scope rules, breaking change syntax, and commit message structure
+  type prefixes, scope rules, breaking change syntax, and commit message structure.
+  Use when making any git commit, creating PR/MR titles, or writing squash merge messages
 ---
 
 # Conventional Commits

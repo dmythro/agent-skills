@@ -1,7 +1,9 @@
 ---
 name: git-pr
 description: PR and MR workflows for GitHub (gh) and GitLab (glab). Covers creation,
-  review comment handling, line-specific comments, review state queries, and merging
+  review comment handling, line-specific comments, review state queries, and merging.
+  Use when creating PRs/MRs, addressing review feedback, checking review state, or
+  querying PR/MR data. Also covers tool allowlist patterns for read-only commands
 ---
 
 # PR and MR Workflows
@@ -21,8 +23,9 @@ description: PR and MR workflows for GitHub (gh) and GitLab (glab). Covers creat
 ## Critical Rules
 
 1. **Prefer CLI subcommands over raw API calls.** Subcommands handle pagination, error formatting, and repo detection. Only use `gh api` / `glab api` for operations not covered by subcommands (line comments, thread resolution, GraphQL).
-2. **Use `--json field1,field2` with `gh` to filter output.** This IS the efficiency mechanism -- no `--jq` needed for basic queries.
+2. **Use `--json field1,field2` with `gh` to filter output.** This IS the efficiency mechanism -- no `--jq` needed for basic queries. Only request fields you actually need.
 3. **`glab` has no `--json field1,field2` equivalent.** Use `-F json | jq '{fields}'` to filter output for token efficiency.
+4. **Use commands exactly as shown in this skill.** The commands below are designed to match auto-approval allowlist patterns. Improvising flag order or adding unexpected flags may trigger permission prompts.
 
 ---
 

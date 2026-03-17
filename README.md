@@ -7,7 +7,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | Skill | Description | Install |
 |---|---|---|
 | `bun-cli` | Bun CLI: package management, scripts, testing, bundling, compilation | `bunx skills add dmythro/agent-skills --skill bun-cli` <br> `npx skills add dmythro/agent-skills --skill bun-cli` |
-| `bun-api` | Bun runtime API: file I/O, shell, SQLite, hashing, compression, utilities | `bunx skills add dmythro/agent-skills --skill bun-api` <br> `npx skills add dmythro/agent-skills --skill bun-api` |
+| `bun-api` | Bun runtime API: file I/O, shell, SQLite, SQL client (PostgreSQL/MySQL), hashing, compression, utilities | `bunx skills add dmythro/agent-skills --skill bun-api` <br> `npx skills add dmythro/agent-skills --skill bun-api` |
 | `git-commit` | Conventional Commits format for all git commits and PR/MR titles | `bunx skills add dmythro/agent-skills --skill git-commit` <br> `npx skills add dmythro/agent-skills --skill git-commit` |
 | `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
 | `git-ci` | CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab) | `bunx skills add dmythro/agent-skills --skill git-ci` <br> `npx skills add dmythro/agent-skills --skill git-ci` |

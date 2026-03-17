@@ -1,20 +1,108 @@
 # Suggested Allowlist Patterns
 
-Tiered auto-approval patterns for Claude Code `settings.json` and OpenCode config. Covers read-only `gh` and `glab` PR/MR operations.
+Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh` and `glab` PR/MR operations.
 
 ## Pattern Syntax
 
-- **Claude Code**: `Bash(exact command)` or `Bash(command:*)` -- glob matching, shell-operator aware (`*` cannot match `&&`, `||`, `;`, `|`)
-- **OpenCode**: `"exact command": "allow"` -- uses picomatch(), last-match-wins
-- **Deprecated**: legacy `Bash(cmd *)` syntax. Use `Bash(command:*)` for Claude Code and space-star (` *`) for OpenCode instead.
+- `Bash(command:*)` -- colon-star matches command prefix with any arguments. This is the current recommended syntax.
+- `*` cannot match shell operators (`&&`, `||`, `;`, `|`) -- pipe-inclusive patterns must spell out the pipe explicitly
+- For `glab` commands piped to `jq`, use `Bash(glab ... | jq *)` because `*` cannot cross the pipe boundary
 
 ---
 
-## Tier 1: Exact (No Wildcards)
+## Recommended: Broad Patterns
 
-Current-branch commands. Auto-approve with zero risk.
+Match any read-only subcommand variation regardless of `--json` fields or flags. These subcommands are inherently read-only -- no flag combination can cause writes.
 
 ### Claude Code
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr status:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue status:*)",
+      "Bash(gh search prs:*)",
+      "Bash(gh search issues:*)",
+      "Bash(gh search code:*)",
+      "Bash(gh search commits:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh repo list:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh config list:*)",
+      "Bash(gh config get:*)",
+      "Bash(git remote get-url origin)",
+      "Bash(glab mr view *)",
+      "Bash(glab mr diff *)",
+      "Bash(glab mr list *)",
+      "Bash(glab issue view *)",
+      "Bash(glab issue list *)",
+      "Bash(glab auth status *)",
+      "Bash(glab mr view -F json | jq *)",
+      "Bash(glab mr view * -F json | jq *)",
+      "Bash(glab mr list -F json | jq *)",
+      "Bash(glab issue list -F json | jq *)"
+    ]
+  }
+}
+```
+
+### Why Broad Patterns Are Safe
+
+- `gh pr view`, `gh pr list`, `gh pr checks`, `gh pr diff`, `gh pr status` -- **read-only subcommands**, no `--json` field combination can cause writes
+- `gh issue view`, `gh issue list`, `gh issue status` -- read-only
+- `gh search *`, `gh label list`, `gh repo view` -- query-only
+- `glab mr view`, `glab mr list`, `glab mr diff` -- read-only
+- Shell operator awareness prevents injection (e.g., `gh pr view && rm -rf /` cannot match)
+
+---
+
+## GitHub API Read-Only Patterns
+
+`gh api` calls require specific patterns because the same command can perform reads or writes. These restrict to known GET-only endpoints.
+
+```json
+"Bash(gh api graphql -f query=*query(*))",
+"Bash(gh api repos/*/pulls/*/comments)",
+"Bash(gh api repos/*/pulls/*/reviews)",
+"Bash(gh api repos/*/pulls/*/files *)",
+"Bash(gh api repos/*/pulls/*/commits *)",
+"Bash(gh api repos/*/pulls/*/requested_reviewers)",
+"Bash(gh api repos/*/issues/*/comments)",
+"Bash(gh api repos/*/issues/*/labels)",
+"Bash(gh api repos/*/issues/*/timeline *)"
+```
+
+**Pattern details:**
+
+- **GraphQL `*query(*)`**: matches read queries containing `query(` but blocks mutations containing `mutation(` -- the glob requires `query(` to appear literally
+- **`/files` and `/commits`**: trailing `*` allows `--paginate` or `--jq` -- safe because these are GET-only endpoints in the GitHub API
+- **`/comments`, `/reviews`, `/requested_reviewers`**: no trailing `*` to block POST/DELETE operations (which append `-f`, `--method POST`, etc.)
+
+---
+
+## Not Included (Manual Approval Required)
+
+- **GraphQL mutations** -- `resolveReviewThread`, `addPullRequestReviewComment`, etc. use `mutation(` which does not match `*query(*)`
+- **REST writes** -- POST/PUT/DELETE on `/comments`, `/reviews`, `/requested_reviewers`
+- **Write subcommands** -- `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
+- **Comment operations** -- replies, line comments, review submissions
+- **Thread resolution** -- GraphQL mutations, `glab api --method PUT`
+
+---
+
+## Alternative: Strict Exact Patterns
+
+For maximum restriction, use exact command strings. These only auto-approve the specific `--json` field sets listed below and prompt for any variation. Useful when you want to control exactly which data the agent can query.
+
+### Tier 1: Current-Branch (No Wildcards)
 
 ```json
 "Bash(gh pr view --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
@@ -30,49 +118,10 @@ Current-branch commands. Auto-approve with zero risk.
 "Bash(gh issue list --json number,title,state,author,labels)",
 "Bash(gh label list)",
 "Bash(gh repo view --json name,owner,defaultBranchRef)",
-"Bash(gh auth status)",
-"Bash(glab mr view -F json | jq *)",
-"Bash(glab mr diff)",
-"Bash(glab mr list -F json | jq *)",
-"Bash(glab issue list -F json | jq *)",
-"Bash(glab auth status)"
+"Bash(gh auth status)"
 ```
 
-### OpenCode
-
-```json
-"gh pr view --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName": "allow",
-"gh pr view --json reviews,reviewRequests,latestReviews": "allow",
-"gh pr view --json files": "allow",
-"gh pr view --json commits": "allow",
-"gh pr view --json labels,milestone": "allow",
-"gh pr view --json closingIssuesReferences": "allow",
-"gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus": "allow",
-"gh pr diff --name-only": "allow",
-"gh pr list --json number,title,author,reviewDecision,updatedAt": "allow",
-"gh pr status": "allow",
-"gh issue list --json number,title,state,author,labels": "allow",
-"gh label list": "allow",
-"gh repo view --json name,owner,defaultBranchRef": "allow",
-"gh auth status": "allow",
-"glab mr view -F json | jq *": "allow",
-"glab mr diff": "allow",
-"glab mr list -F json | jq *": "allow",
-"glab issue list -F json | jq *": "allow",
-"glab auth status": "allow"
-```
-
-### Notes on glab Patterns
-
-`glab` has no `--json field1,field2` equivalent. Patterns use `| jq *` because Claude Code is shell-operator aware -- the pipe is literal and `*` only matches the jq expression. If using plain `glab mr view -F json` (full output), replace `| jq *` entries with the command without pipe.
-
----
-
-## Tier 2: Parametric (Single `*` for PR/MR Number)
-
-Slightly broader but still safe. Add these to Tier 1 patterns.
-
-### Claude Code
+### Tier 2: By-Number (Single `*` for PR/MR Number)
 
 ```json
 "Bash(gh pr view * --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
@@ -86,118 +135,5 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 "Bash(gh pr list --search * --json number,title,url)",
 "Bash(gh search prs *)",
 "Bash(gh search issues *)",
-"Bash(gh search code *)",
-"Bash(glab mr view * -F json | jq *)",
-"Bash(glab issue view * -F json | jq *)"
+"Bash(gh search code *)"
 ```
-
----
-
-## Tier 2b: GitHub API Read-Only
-
-GraphQL queries and REST GET endpoints used by the review-comment workflow. The GraphQL pattern `*query(*)` is a simple glob: `*` before `query(` matches any prefix (including whitespace in multi-line queries), and `*` after `(` matches any characters up to the next `)`. This passes read queries containing `query(` but blocks mutations since they use `mutation(` instead. Note: glob matching does not enforce balanced parentheses -- it simply requires `query(` and `)` to appear in order.
-
-REST patterns for `/files` and `/commits` include a trailing `*` (for `--paginate` or `--jq`) because these endpoints are GET-only in the GitHub API. Patterns for `/comments`, `/reviews`, and `/requested_reviewers` omit the trailing `*` because these endpoints also support POST/DELETE -- a trailing wildcard would auto-approve write operations.
-
-### Claude Code
-
-```json
-"Bash(gh api graphql -f query=*query(*))",
-"Bash(gh api repos/*/pulls/*/comments)",
-"Bash(gh api repos/*/pulls/*/reviews)",
-"Bash(gh api repos/*/pulls/*/files *)",
-"Bash(gh api repos/*/pulls/*/commits *)",
-"Bash(gh api repos/*/pulls/*/requested_reviewers)"
-```
-
----
-
-## All Patterns Combined
-
-### Claude Code
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh pr view --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
-      "Bash(gh pr view --json reviews,reviewRequests,latestReviews)",
-      "Bash(gh pr view --json files)",
-      "Bash(gh pr view --json commits)",
-      "Bash(gh pr view --json labels,milestone)",
-      "Bash(gh pr view --json closingIssuesReferences)",
-      "Bash(gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",
-      "Bash(gh pr diff --name-only)",
-      "Bash(gh pr list --json number,title,author,reviewDecision,updatedAt)",
-      "Bash(gh pr status)",
-      "Bash(gh issue list --json number,title,state,author,labels)",
-      "Bash(gh label list)",
-      "Bash(gh repo view --json name,owner,defaultBranchRef)",
-      "Bash(gh auth status)",
-      "Bash(glab mr view -F json | jq *)",
-      "Bash(glab mr diff)",
-      "Bash(glab mr list -F json | jq *)",
-      "Bash(glab issue list -F json | jq *)",
-      "Bash(glab auth status)",
-      "Bash(gh pr view * --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
-      "Bash(gh pr view * --json reviews,reviewRequests,latestReviews)",
-      "Bash(gh pr view * --json files)",
-      "Bash(gh pr view * --json commits)",
-      "Bash(gh pr view * --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",
-      "Bash(gh pr checks * --json name,state,conclusion,bucket)",
-      "Bash(gh pr diff * --name-only)",
-      "Bash(gh issue view * --json number,title,state,body,labels)",
-      "Bash(gh pr list --search * --json number,title,url)",
-      "Bash(gh search prs *)",
-      "Bash(gh search issues *)",
-      "Bash(gh search code *)",
-      "Bash(glab mr view * -F json | jq *)",
-      "Bash(glab issue view * -F json | jq *)",
-      "Bash(gh api graphql -f query=*query(*))",
-      "Bash(gh api repos/*/pulls/*/comments)",
-      "Bash(gh api repos/*/pulls/*/reviews)",
-      "Bash(gh api repos/*/pulls/*/files *)",
-      "Bash(gh api repos/*/pulls/*/commits *)",
-      "Bash(gh api repos/*/pulls/*/requested_reviewers)"
-    ]
-  }
-}
-```
-
-### OpenCode
-
-```json
-{
-  "gh pr view --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName": "allow",
-  "gh pr view --json reviews,reviewRequests,latestReviews": "allow",
-  "gh pr view --json files": "allow",
-  "gh pr view --json commits": "allow",
-  "gh pr view --json labels,milestone": "allow",
-  "gh pr view --json closingIssuesReferences": "allow",
-  "gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus": "allow",
-  "gh pr diff --name-only": "allow",
-  "gh pr list --json number,title,author,reviewDecision,updatedAt": "allow",
-  "gh pr status": "allow",
-  "gh issue list --json number,title,state,author,labels": "allow",
-  "gh label list": "allow",
-  "gh repo view --json name,owner,defaultBranchRef": "allow",
-  "gh auth status": "allow",
-  "glab mr view -F json | jq *": "allow",
-  "glab mr diff": "allow",
-  "glab mr list -F json | jq *": "allow",
-  "glab issue list -F json | jq *": "allow",
-  "glab auth status": "allow"
-}
-```
-
----
-
-## Not Included (Tier 3 -- Manual Approval)
-
-These require explicit user approval:
-
-- **GraphQL mutations** -- `mutation(` does not match the `*query(*)` pattern, so `resolveReviewThread`, `unresolveReviewThread`, `addPullRequestReviewComment`, and similar mutations require manual approval
-- **REST POST/PUT/DELETE** -- patterns for `/comments`, `/reviews`, and `/requested_reviewers` have no trailing wildcard, so write calls (with `-f`, `--method POST`, etc.) require manual approval. `/files` and `/commits` are GET-only endpoints in the GitHub API
-- **Write operations**: `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
-- **Thread resolution**: `gh api graphql -f query=*mutation(*)`, `glab api --method PUT`
-- **Comment operations**: replies, line comments, review submissions
