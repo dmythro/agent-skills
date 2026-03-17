@@ -2,9 +2,11 @@
 
 Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh` and `glab` PR/MR operations.
 
+**OpenCode**: Same commands work with picomatch format (`"command": "allow"`) in OpenCode config. See the previous version of this file for full OpenCode examples.
+
 ## Pattern Syntax
 
-- `Bash(command:*)` -- colon-star matches command prefix with any arguments. This is the current recommended syntax.
+- `Bash(command:*)` -- colon-star matches command prefix with any arguments (including none). This is the current recommended syntax for both `gh` and `glab` commands.
 - `*` cannot match shell operators (`&&`, `||`, `;`, `|`) -- pipe-inclusive patterns must spell out the pipe explicitly
 - For `glab` commands piped to `jq`, use `Bash(glab ... | jq *)` because `*` cannot cross the pipe boundary
 
@@ -39,12 +41,12 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
       "Bash(gh config list:*)",
       "Bash(gh config get:*)",
       "Bash(git remote get-url origin)",
-      "Bash(glab mr view *)",
-      "Bash(glab mr diff *)",
-      "Bash(glab mr list *)",
-      "Bash(glab issue view *)",
-      "Bash(glab issue list *)",
-      "Bash(glab auth status *)",
+      "Bash(glab mr view:*)",
+      "Bash(glab mr diff:*)",
+      "Bash(glab mr list:*)",
+      "Bash(glab issue view:*)",
+      "Bash(glab issue list:*)",
+      "Bash(glab auth status:*)",
       "Bash(glab mr view -F json | jq *)",
       "Bash(glab mr view * -F json | jq *)",
       "Bash(glab mr list -F json | jq *)",
