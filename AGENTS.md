@@ -72,9 +72,9 @@ description: >-
 ### Allowlist Files (`references/allowlist.md`)
 
 - H1 title "Suggested Allowlist Patterns"
-- H2 sections grouping patterns by category (Read-Only, Write, etc.)
+- H2 sections: "Recommended: Broad Patterns" (complete copy-paste JSON config),
+  optional "Alternative: Strict Exact Patterns", and "Not Included" (manual approval)
 - JSON code blocks with `Bash(command:*)` permission patterns
-- "All Patterns Combined" section with complete JSON config
 - "Not Included" section explaining what requires manual approval and why
 
 ## Formatting Conventions
