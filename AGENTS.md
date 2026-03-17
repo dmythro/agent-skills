@@ -40,12 +40,16 @@ Every skill's `SKILL.md` must include YAML frontmatter:
 ```yaml
 ---
 name: skill-name
-description: One or two sentences describing what the skill covers, no trailing period
+description: >-
+  What the skill covers, when to use it, and when not to use it.
+  No trailing period. Use YAML folded scalar (>-) for multi-line
 ---
 ```
 
 - `name`: kebab-case, matches the directory name
-- `description`: concise, plain text, no period at end
+- `description`: concise, plain text, no trailing period. Use YAML `>-` (folded
+  scalar) for multi-line. Include trigger guidance (when to use / not use) since
+  skills.sh uses this field for auto-loading decisions
 
 ### Document Structure
 
