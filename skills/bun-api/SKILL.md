@@ -1,17 +1,12 @@
 ---
 name: bun-api
-description: Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
+description: >-
+  Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
-  via DATABASE_URL, Bun.hash, Bun.password, compression, and utilities for file generation,
-  data processing, and scripting.
-  TRIGGER when user wants to write a script, automate a task, query or inspect a database, or
-  do file processing in a Bun project. Look for signals like "bun project", bun.lock,
-  bunfig.toml, DATABASE_URL with Bun context, "Bun.$", or requests to write bun scripts.
-  Essential for migration scripts, data pipelines, release automation, database inspection,
-  CSV processing, HTTP servers with Bun.serve, and any scripting task in a Bun project.
-  DO NOT TRIGGER for bun CLI commands (bun install, bun add, bun test -- that is bun-cli
-  skill), non-Bun runtimes (Node.js, Python, Deno), React/frontend components, or ORM CLI
-  tooling (drizzle-kit, prisma migrate) without Bun API usage
+  via DATABASE_URL, Bun.hash, Bun.password, compression, and scripting utilities.
+  Use when writing scripts, automating tasks, querying databases, or doing file processing
+  in a Bun project. Signals: bun.lock, bunfig.toml, DATABASE_URL, Bun.$ usage.
+  Not for bun CLI commands (bun-cli skill), non-Bun runtimes, or ORM CLI tooling
 ---
 
 # Bun Runtime API

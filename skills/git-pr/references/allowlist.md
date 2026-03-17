@@ -37,7 +37,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
       "Bash(gh label list:*)",
       "Bash(gh repo view:*)",
       "Bash(gh repo list:*)",
-      "Bash(gh auth status:*)",
+      "Bash(gh auth status)",
       "Bash(gh config list:*)",
       "Bash(gh config get:*)",
       "Bash(git remote get-url origin)",
@@ -46,7 +46,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
       "Bash(glab mr list:*)",
       "Bash(glab issue view:*)",
       "Bash(glab issue list:*)",
-      "Bash(glab auth status:*)",
+      "Bash(glab auth status)",
       "Bash(glab mr view -F json | jq *)",
       "Bash(glab mr view * -F json | jq *)",
       "Bash(glab mr list -F json | jq *)",
@@ -61,6 +61,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - `gh pr view`, `gh pr list`, `gh pr checks`, `gh pr diff`, `gh pr status` -- **read-only subcommands**, no `--json` field combination can cause writes
 - `gh issue view`, `gh issue list`, `gh issue status` -- read-only
 - `gh search *`, `gh label list`, `gh repo view` -- query-only
+- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials
 - `glab mr view`, `glab mr list`, `glab mr diff` -- read-only
 - Shell operator awareness prevents injection (e.g., `gh pr view && rm -rf /` cannot match)
 

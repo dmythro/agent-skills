@@ -27,11 +27,15 @@ REPO=$(gh repo view --json name --jq '.name')
 glab api projects/:fullpath | jq '.id'
 ```
 
-### GitHub (GraphQL) -- inline values, no GraphQL `$` variables
+### GitHub (GraphQL) -- shell variables, no GraphQL `$` variables
 
-Do NOT use GraphQL variables (`$owner`, `$repo`, `$pr`) -- the `$` signs break in shell environments. Instead, use double-quoted query strings with shell variable expansion:
+Do NOT use GraphQL variables (`$owner`, `$repo`, `$pr`) in these double-quoted query strings -- they conflict with shell variable expansion (`$OWNER`, `$REPO`, `$PR`). The shell expands all `$` references before `gh` receives the query, so GraphQL `$` declarations would be consumed by the shell. Instead, inline values directly via shell variables:
 
 ```bash
+OWNER=$(gh repo view --json owner --jq '.owner.login')
+REPO=$(gh repo view --json name --jq '.name')
+PR={number}
+
 gh api graphql -f query="
 {
   repository(owner: \"$OWNER\", name: \"$REPO\") {
