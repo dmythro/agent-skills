@@ -5,7 +5,7 @@ description: >-
   and compilation. Covers bun install/add/remove, bun run, bun test, bun build, bunx,
   bunfig.toml, bun.lock, and replacing npm/npx/yarn/pnpm with bun equivalents.
   Use for package management, lockfile issues, test runner config, or bundler setup.
-  Not for Bun runtime APIs like Bun.file(), Bun.$(), Bun.sql() (that is bun-api skill)
+  Not for Bun runtime APIs (Bun.file(), Bun.$(), Bun.sql()) -- use bun-api skill
 ---
 
 # Bun CLI
