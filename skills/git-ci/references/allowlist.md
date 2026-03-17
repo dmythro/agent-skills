@@ -2,9 +2,11 @@
 
 Auto-approval patterns for Claude Code `settings.json`. Covers read-only CI/CD operations for GitHub Actions (`gh`) and GitLab CI (`glab`).
 
+**OpenCode**: Same commands work with picomatch format (`"command": "allow"`) in OpenCode config. See the previous version of this file for full OpenCode examples.
+
 ## Pattern Syntax
 
-- `Bash(command:*)` -- colon-star matches command prefix with any arguments. This is the current recommended syntax.
+- `Bash(command:*)` -- colon-star matches command prefix with any arguments (including none). This is the current recommended syntax for both `gh` and `glab` commands.
 - `*` cannot match shell operators (`&&`, `||`, `;`, `|`)
 
 ---
@@ -32,13 +34,12 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
       "Bash(gh ruleset view:*)",
       "Bash(gh ruleset check:*)",
       "Bash(gh auth status:*)",
-      "Bash(glab ci status *)",
-      "Bash(glab ci get *)",
-      "Bash(glab ci list *)",
-      "Bash(glab ci view *)",
-      "Bash(glab ci trace *)",
-      "Bash(glab variable list *)",
-      "Bash(glab auth status *)"
+      "Bash(glab ci status:*)",
+      "Bash(glab ci get:*)",
+      "Bash(glab ci list:*)",
+      "Bash(glab ci view:*)",
+      "Bash(glab ci trace:*)",
+      "Bash(glab auth status:*)"
     ]
   }
 }
@@ -63,6 +64,7 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
 - **`gh run delete`** -- deletes workflow run logs
 - **`glab ci retry`** -- retries failed pipeline
 - **`glab ci cancel`** -- cancels running pipeline
+- **`glab variable list`** -- exposes CI/CD variable values, which often contain secrets (API keys, passwords)
 - **All `gh api` / `glab api` calls** -- cannot distinguish read from write by pattern alone
 
 ---
