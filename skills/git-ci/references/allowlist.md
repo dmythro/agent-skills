@@ -27,7 +27,6 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
       "Bash(gh workflow list:*)",
       "Bash(gh workflow view:*)",
       "Bash(gh variable list:*)",
-      "Bash(gh variable get:*)",
       "Bash(gh secret list:*)",
       "Bash(gh cache list:*)",
       "Bash(gh ruleset list:*)",
@@ -49,7 +48,7 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
 
 - `gh pr checks`, `gh run view`, `gh run list` -- **read-only subcommands**, no flag combination can cause writes
 - `gh workflow list`, `gh workflow view` -- list/view only, not `gh workflow run` (which triggers execution)
-- `gh variable list`, `gh secret list`, `gh cache list` -- read-only listing
+- `gh variable list`, `gh secret list`, `gh cache list` -- read-only listing (names only, not values)
 - `gh ruleset list/view/check` -- read-only inspection
 - `glab ci status/get/list/view/trace` -- all read-only CI queries
 - `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials
@@ -65,6 +64,7 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
 - **`gh run delete`** -- deletes workflow run logs
 - **`glab ci retry`** -- retries failed pipeline
 - **`glab ci cancel`** -- cancels running pipeline
+- **`gh variable get`** -- retrieves variable values, which may contain secrets
 - **`glab variable list`** -- exposes CI/CD variable values, which often contain secrets (API keys, passwords)
 - **All `gh api` / `glab api` calls** -- cannot distinguish read from write by pattern alone
 
