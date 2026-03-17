@@ -1,6 +1,13 @@
 ---
 name: bun-cli
-description: Bun CLI reference for package management, script running, testing, bundling, and compilation. Use when working with bun install, bun add, bun run, bun test, bun build, bunx, bunfig.toml, bun.lock, or replacing npm/npx/node commands.
+description: Bun CLI reference for package management, script running, testing,
+  bundling, and compilation.
+  TRIGGER when user asks about bun install, bun add, bun remove, bun run, bun test,
+  bun build, bunx, bunfig.toml, bun.lock, bun update, or replacing npm/npx/yarn/pnpm
+  commands with bun equivalents. Also trigger for package management issues,
+  lockfile problems, test runner configuration, or bundler setup in Bun projects.
+  DO NOT TRIGGER for Bun runtime APIs like Bun.file(), Bun.write(), Bun.$(), Bun.sql(),
+  bun:sqlite, or writing TypeScript scripts (that is bun-api skill)
 ---
 
 # Bun CLI
