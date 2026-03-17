@@ -2,7 +2,11 @@
 name: git-commit
 description: Conventional Commits format for all git commits and PR/MR titles. Defines
   type prefixes, scope rules, breaking change syntax, and commit message structure.
-  Use when making any git commit, creating PR/MR titles, or writing squash merge messages
+  TRIGGER when user asks to commit, wants to create a git commit, needs a commit
+  message, is creating PR/MR titles, or writing squash merge messages. Also trigger
+  when user says "commit this", "commit changes", or asks about commit message format.
+  DO NOT TRIGGER for PR/MR workflows (that is git-pr skill), CI/CD status (that is
+  git-ci skill), or general git operations like push, rebase, or branch management
 ---
 
 # Conventional Commits

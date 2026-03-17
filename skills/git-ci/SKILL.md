@@ -1,8 +1,13 @@
 ---
 name: git-ci
 description: CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab). Check
-  pipeline status, failing jobs, workflow runs, and merge readiness. Use when checking
-  CI status, debugging failing checks, watching runs, or assessing merge readiness
+  pipeline status, failing jobs, workflow runs, and merge readiness.
+  TRIGGER when user asks about CI status, failing checks, pipeline results, workflow
+  runs, job logs, merge readiness, or wants to watch/retry CI. Also trigger for
+  "are checks passing", "what's failing", "why did CI fail", or debugging build
+  failures. Covers gh/glab read-only allowlist patterns for CI commands.
+  DO NOT TRIGGER for creating PRs (that is git-pr skill), git commits (that is
+  git-commit skill), or deploying/releasing (those are project-specific)
 ---
 
 # CI/CD Status Queries

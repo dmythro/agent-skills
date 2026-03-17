@@ -2,8 +2,12 @@
 name: git-pr
 description: PR and MR workflows for GitHub (gh) and GitLab (glab). Covers creation,
   review comment handling, line-specific comments, review state queries, and merging.
-  Use when creating PRs/MRs, addressing review feedback, checking review state, or
-  querying PR/MR data. Also covers tool allowlist patterns for read-only commands
+  TRIGGER when user wants to create a PR/MR, address review comments, check review
+  state, query PR/MR details, merge, or set up allowlist patterns for gh/glab
+  read-only commands. Also trigger when user mentions "PR", "pull request", "MR",
+  "merge request", review feedback, or wants to push and open a PR.
+  DO NOT TRIGGER for git commits (that is git-commit skill), CI/CD pipeline status
+  (that is git-ci skill), or general git operations (add, push, rebase, etc.)
 ---
 
 # PR and MR Workflows
