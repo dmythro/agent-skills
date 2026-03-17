@@ -71,7 +71,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 `gh api` calls require specific patterns because the same command can perform reads or writes. These restrict to known GET-only endpoints.
 
 ```json
-"Bash(gh api graphql -f query=*query(*))",
+"Bash(gh api graphql -f query=*repository(*))",
 "Bash(gh api repos/*/pulls/*/comments)",
 "Bash(gh api repos/*/pulls/*/reviews)",
 "Bash(gh api repos/*/pulls/*/files *)",
@@ -84,7 +84,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 **Pattern details:**
 
-- **GraphQL `*query(*)`**: matches read queries containing `query(` but blocks mutations containing `mutation(` -- the glob requires `query(` to appear literally
+- **GraphQL `*repository(*)`**: matches read queries that access `repository(` but blocks mutations (which start with `mutation {`). The inline query format uses `{ repository(owner: ...) { ... } }` -- no GraphQL `$` variables needed
 - **`/files` and `/commits`**: trailing `*` allows `--paginate` or `--jq` -- safe because these are GET-only endpoints in the GitHub API
 - **`/comments`, `/reviews`, `/requested_reviewers`**: no trailing `*` to block POST/DELETE operations (which append `-f`, `--method POST`, etc.)
 

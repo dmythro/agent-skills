@@ -180,34 +180,64 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 
 ## Review Comment Handling
 
-> **Reference**: See `references/pr-comment-workflow.md` for the full opinionated workflow -- fetch unresolved threads, evaluate each comment critically, fix/reply/resolve.
+> **Reference**: See `references/pr-comment-workflow.md` for the full opinionated workflow with all command patterns and examples.
 
-Quick summary:
-1. Fetch unresolved review threads (Tier 3 -- manual approval)
-2. For each thread: read the code context, check if already addressed
-3. Decide: fix code + reply + resolve, or reply with evidence + resolve, or leave for discussion
-4. Don't blindly agree -- validate comments against actual code and conventions
+The workflow has two distinct phases -- never mix them:
+
+**Phase 1: Analyze and Fix (local work, no GitHub API writes)**
+1. Fetch all unresolved review threads in a single GraphQL query
+2. For each thread: read the file at the referenced path+line, check if the comment is valid by researching the codebase (patterns, conventions, CLAUDE.md, git log)
+3. Be critical -- validate each comment against actual code before accepting. Reviewers can be wrong.
+4. Make all necessary code fixes
+5. Commit and push the fixes
+
+**Phase 2: Reply and Resolve (GitHub API writes, after push)**
+6. Reply to each thread with a concise explanation (what was fixed, why it was dismissed, or why it needs discussion)
+7. Resolve threads that are definitively handled
+8. Leave unresolved only threads needing human decision
+
+This ordering matters: pushing fixes first ensures reviewers see the changes when they read replies. Never reply to a comment claiming "Fixed" before the fix is actually pushed.
 
 ### Fetch Unresolved Threads
 
-**GitHub (GraphQL):**
+**GitHub (GraphQL) -- inline values directly, no GraphQL `$` variables:**
+
+Do NOT use GraphQL variables (`$owner`, `$repo`, `$pr`) -- the `$` signs break in shell environments. Instead, use double-quoted query strings with shell variable expansion:
+
 ```bash
-gh api graphql -f query='
-query($owner: String!, $repo: String!, $pr: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $pr) {
+OWNER=$(gh repo view --json owner --jq '.owner.login')
+REPO=$(gh repo view --json name --jq '.name')
+PR={number}
+
+gh api graphql -f query="
+{
+  repository(owner: \"$OWNER\", name: \"$REPO\") {
+    pullRequest(number: $PR) {
       reviewThreads(first: 100) {
         nodes {
-          id, isResolved, isOutdated, path, line, startLine
-          comments(first: 10) {
-            nodes { id, databaseId, body, author { login } }
+          id isResolved isOutdated path line startLine
+          comments(first: 20) {
+            nodes { id databaseId body author { login } }
           }
         }
       }
     }
   }
-}' -f owner={owner} -f repo={repo} -F pr={number}
+}"
 ```
+
+Filter to unresolved:
+```bash
+... | jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+```
+
+**Response field mapping (critical -- using wrong ID causes silent failures):**
+
+| Field              | Format                  | Use for                      |
+|--------------------|-------------------------|------------------------------|
+| thread `.id`       | `PRRT_...` (node ID)    | `resolveReviewThread` mutation |
+| comment `.databaseId` | `2949637341` (numeric)  | REST reply endpoint          |
+| comment `.id`      | `PRRC_...` (node ID)    | Not typically needed          |
 
 **GitLab (REST):**
 ```bash
@@ -216,17 +246,22 @@ glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate | jq 
 
 ### Reply and Resolve
 
-**GitHub:**
+**GitHub -- reply uses `databaseId` (numeric), resolve uses thread `id` (PRRT_ node ID):**
 ```bash
-# Reply to thread
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies \
+# Reply to thread (use comment databaseId, NOT node id)
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{comment_databaseId}/replies \
   -f body="Fixed -- {explanation}."
+```
 
-# Resolve thread
-gh api graphql -f query='
-mutation($id: ID!) {
-  resolveReviewThread(input: {threadId: $id}) { thread { isResolved } }
-}' -f id="{thread_node_id}"
+```bash
+# Resolve thread (use thread id starting with PRRT_)
+THREAD_ID="PRRT_..."
+gh api graphql -f query="
+mutation {
+  resolveReviewThread(input: { threadId: \"$THREAD_ID\" }) {
+    thread { isResolved }
+  }
+}"
 ```
 
 **GitLab:**
