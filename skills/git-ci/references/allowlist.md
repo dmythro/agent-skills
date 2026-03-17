@@ -33,13 +33,13 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
       "Bash(gh ruleset list:*)",
       "Bash(gh ruleset view:*)",
       "Bash(gh ruleset check:*)",
-      "Bash(gh auth status:*)",
+      "Bash(gh auth status)",
       "Bash(glab ci status:*)",
       "Bash(glab ci get:*)",
       "Bash(glab ci list:*)",
       "Bash(glab ci view:*)",
       "Bash(glab ci trace:*)",
-      "Bash(glab auth status:*)"
+      "Bash(glab auth status)"
     ]
   }
 }
@@ -52,6 +52,7 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
 - `gh variable list`, `gh secret list`, `gh cache list` -- read-only listing
 - `gh ruleset list/view/check` -- read-only inspection
 - `glab ci status/get/list/view/trace` -- all read-only CI queries
+- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials
 - Shell operator awareness prevents injection
 
 ---

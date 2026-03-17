@@ -1,13 +1,11 @@
 ---
 name: git-pr
-description: PR and MR workflows for GitHub (gh) and GitLab (glab). Covers creation,
-  review comment handling, line-specific comments, review state queries, and merging.
-  TRIGGER when user wants to create a PR/MR, address review comments, check review
-  state, query PR/MR details, merge, or set up allowlist patterns for gh/glab
-  read-only commands. Also trigger when user mentions "PR", "pull request", "MR",
-  "merge request", review feedback, or wants to push and open a PR.
-  DO NOT TRIGGER for git commits (that is git-commit skill), CI/CD pipeline status
-  (that is git-ci skill), or general git operations (add, push, rebase, etc.)
+description: >-
+  PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
+  comment handling, thread resolution, review state queries, and merging.
+  Use when creating PRs/MRs, addressing review feedback, resolving threads, checking
+  approvals, querying PR data, or configuring gh/glab read-only allowlists.
+  Not for git commits (git-commit), CI/CD status (git-ci), or general git ops
 ---
 
 # PR and MR Workflows
@@ -200,9 +198,9 @@ This ordering matters: pushing fixes first ensures reviewers see the changes whe
 
 ### Fetch Unresolved Threads
 
-**GitHub (GraphQL) -- inline values directly, no GraphQL `$` variables:**
+**GitHub (GraphQL) -- shell variables, no GraphQL `$` variables:**
 
-Do NOT use GraphQL variables (`$owner`, `$repo`, `$pr`) -- the `$` signs break in shell environments. Instead, use double-quoted query strings with shell variable expansion:
+Do NOT use GraphQL variables (`$owner`, `$repo`, `$pr`) in these double-quoted query strings -- they conflict with shell variable expansion (`$OWNER`, `$REPO`, `$PR`). The shell expands all `$` references before `gh` receives the query, so GraphQL `$` declarations would be consumed by the shell. Instead, inline values directly via shell variables:
 
 ```bash
 OWNER=$(gh repo view --json owner --jq '.owner.login')
