@@ -1,7 +1,8 @@
 ---
 name: git-ci
 description: CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab). Check
-  pipeline status, failing jobs, workflow runs, and merge readiness
+  pipeline status, failing jobs, workflow runs, and merge readiness. Use when checking
+  CI status, debugging failing checks, watching runs, or assessing merge readiness
 ---
 
 # CI/CD Status Queries
@@ -22,6 +23,7 @@ description: CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab). 
 1. **Use `gh pr checks` (not `gh run`) for current-branch CI status.** The `pr checks` subcommand maps directly to the PR's required status checks.
 2. **Use `glab ci status` for current-branch CI in GitLab.** It shows the pipeline for the current branch without needing a pipeline ID.
 3. **Always use `--json` with `gh` to filter output fields.** Full JSON output wastes tokens.
+4. **Use commands exactly as shown in this skill.** The commands below are designed to match auto-approval allowlist patterns. Improvising flags may trigger permission prompts.
 
 ---
 

@@ -1,20 +1,77 @@
 # Suggested Allowlist Patterns
 
-Tiered auto-approval patterns for Claude Code `settings.json` and OpenCode config. Covers read-only CI/CD operations for GitHub Actions (`gh`) and GitLab CI (`glab`).
+Auto-approval patterns for Claude Code `settings.json`. Covers read-only CI/CD operations for GitHub Actions (`gh`) and GitLab CI (`glab`).
 
 ## Pattern Syntax
 
-- **Claude Code**: `Bash(exact command)` or `Bash(command:*)` -- glob matching, shell-operator aware (`*` cannot match `&&`, `||`, `;`, `|`)
-- **OpenCode**: `"exact command": "allow"` -- uses picomatch(), last-match-wins
-- **Deprecated**: legacy `Bash(cmd *)` syntax. Use `Bash(command:*)` for Claude Code and space-star (` *`) for OpenCode instead.
+- `Bash(command:*)` -- colon-star matches command prefix with any arguments. This is the current recommended syntax.
+- `*` cannot match shell operators (`&&`, `||`, `;`, `|`)
 
 ---
 
-## Tier 1: Exact (No Wildcards)
+## Recommended: Broad Patterns
 
-Current-branch commands. Auto-approve with zero risk.
+Match any read-only CI subcommand variation regardless of `--json` fields or flags. These subcommands are inherently read-only.
 
 ### Claude Code
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr checks:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh workflow list:*)",
+      "Bash(gh workflow view:*)",
+      "Bash(gh variable list:*)",
+      "Bash(gh variable get:*)",
+      "Bash(gh secret list:*)",
+      "Bash(gh cache list:*)",
+      "Bash(gh ruleset list:*)",
+      "Bash(gh ruleset view:*)",
+      "Bash(gh ruleset check:*)",
+      "Bash(gh auth status:*)",
+      "Bash(glab ci status *)",
+      "Bash(glab ci get *)",
+      "Bash(glab ci list *)",
+      "Bash(glab ci view *)",
+      "Bash(glab ci trace *)",
+      "Bash(glab variable list *)",
+      "Bash(glab auth status *)"
+    ]
+  }
+}
+```
+
+### Why Broad Patterns Are Safe
+
+- `gh pr checks`, `gh run view`, `gh run list` -- **read-only subcommands**, no flag combination can cause writes
+- `gh workflow list`, `gh workflow view` -- list/view only, not `gh workflow run` (which triggers execution)
+- `gh variable list`, `gh secret list`, `gh cache list` -- read-only listing
+- `gh ruleset list/view/check` -- read-only inspection
+- `glab ci status/get/list/view/trace` -- all read-only CI queries
+- Shell operator awareness prevents injection
+
+---
+
+## Not Included (Manual Approval Required)
+
+- **`gh run rerun`** -- re-runs workflow, consumes CI minutes
+- **`gh run cancel`** -- cancels running workflow
+- **`gh workflow run`** -- triggers workflow dispatch
+- **`gh run delete`** -- deletes workflow run logs
+- **`glab ci retry`** -- retries failed pipeline
+- **`glab ci cancel`** -- cancels running pipeline
+- **All `gh api` / `glab api` calls** -- cannot distinguish read from write by pattern alone
+
+---
+
+## Alternative: Strict Exact Patterns
+
+For maximum restriction, use exact command strings that only auto-approve specific field sets.
+
+### Tier 1: Current-Branch (No Wildcards)
 
 ```json
 "Bash(gh pr checks --json name,state,conclusion,bucket)",
@@ -34,33 +91,7 @@ Current-branch commands. Auto-approve with zero risk.
 "Bash(glab auth status)"
 ```
 
-### OpenCode
-
-```json
-"gh pr checks --json name,state,conclusion,bucket": "allow",
-"gh pr checks --watch --fail-fast": "allow",
-"gh run list --json databaseId,displayTitle,status,conclusion,headBranch,event --limit 10": "allow",
-"gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus": "allow",
-"gh workflow list --json id,name,state": "allow",
-"gh variable list": "allow",
-"gh secret list": "allow",
-"gh cache list": "allow",
-"gh ruleset list": "allow",
-"gh auth status": "allow",
-"glab ci status": "allow",
-"glab ci get": "allow",
-"glab ci list": "allow",
-"glab ci status --live": "allow",
-"glab auth status": "allow"
-```
-
----
-
-## Tier 2: Parametric (Single `*` for Run/Pipeline ID)
-
-Slightly broader but still safe. Add these to Tier 1 patterns.
-
-### Claude Code
+### Tier 2: By-ID (Single `*` for Run/Pipeline ID)
 
 ```json
 "Bash(gh pr checks * --json name,state,conclusion,bucket)",
@@ -75,81 +106,3 @@ Slightly broader but still safe. Add these to Tier 1 patterns.
 "Bash(glab mr view -F json | jq *)",
 "Bash(glab mr view * -F json | jq *)"
 ```
-
----
-
-## All Patterns Combined
-
-### Claude Code
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh pr checks --json name,state,conclusion,bucket)",
-      "Bash(gh pr checks --watch --fail-fast)",
-      "Bash(gh run list --json databaseId,displayTitle,status,conclusion,headBranch,event --limit 10)",
-      "Bash(gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",
-      "Bash(gh workflow list --json id,name,state)",
-      "Bash(gh variable list)",
-      "Bash(gh secret list)",
-      "Bash(gh cache list)",
-      "Bash(gh ruleset list)",
-      "Bash(gh auth status)",
-      "Bash(glab ci status)",
-      "Bash(glab ci get)",
-      "Bash(glab ci list)",
-      "Bash(glab ci status --live)",
-      "Bash(glab auth status)",
-      "Bash(gh pr checks * --json name,state,conclusion,bucket)",
-      "Bash(gh pr checks * --watch --fail-fast)",
-      "Bash(gh run view * --json jobs,status,conclusion,displayTitle)",
-      "Bash(gh run view * --log-failed)",
-      "Bash(gh run list --json databaseId,displayTitle,status,conclusion,headBranch,event --limit *)",
-      "Bash(gh ruleset view *)",
-      "Bash(gh ruleset check *)",
-      "Bash(glab ci view *)",
-      "Bash(glab ci trace *)",
-      "Bash(glab mr view -F json | jq *)",
-      "Bash(glab mr view * -F json | jq *)"
-    ]
-  }
-}
-```
-
-### OpenCode
-
-```json
-{
-  "gh pr checks --json name,state,conclusion,bucket": "allow",
-  "gh pr checks --watch --fail-fast": "allow",
-  "gh run list --json databaseId,displayTitle,status,conclusion,headBranch,event --limit 10": "allow",
-  "gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus": "allow",
-  "gh workflow list --json id,name,state": "allow",
-  "gh variable list": "allow",
-  "gh secret list": "allow",
-  "gh cache list": "allow",
-  "gh ruleset list": "allow",
-  "gh auth status": "allow",
-  "glab ci status": "allow",
-  "glab ci get": "allow",
-  "glab ci list": "allow",
-  "glab ci status --live": "allow",
-  "glab auth status": "allow"
-}
-```
-
----
-
-## Not Included (Tier 3 -- Manual Approval)
-
-These require explicit user approval:
-
-- **`glab variable list`** -- exposes CI/CD variable values, which often contain secrets (API keys, passwords)
-- **`gh run rerun`** -- re-runs workflow, consumes CI minutes
-- **`gh run cancel`** -- cancels running workflow
-- **`gh workflow run`** -- triggers workflow dispatch
-- **`gh run delete`** -- deletes workflow run logs
-- **`glab ci retry`** -- retries failed pipeline
-- **`glab ci cancel`** -- cancels running pipeline
-- **All `gh api` / `glab api` calls** -- cannot distinguish read from write by pattern
