@@ -6,7 +6,7 @@ description: >-
   bun patch, bunfig.toml, bun.lock, workspace catalogs, zero-config frontend dev,
   parallel/sequential execution, compile-to-browser, and replacing npm/npx/yarn/pnpm
   with bun equivalents. Use for package management, lockfile issues, test runner config,
-  bundler setup, or frontend dev server.
+  bundler setup, or frontend dev server
   Not for Bun runtime APIs (Bun.file(), Bun.$(), Bun.sql()) -- use bun-api skill
 ---
 
@@ -402,29 +402,11 @@ Bun supports `catalog:` protocol in `package.json` for centralized dependency ve
 ### Built-in Semver
 `Bun.semver.satisfies()`, `.order()` — replaces `semver` package.
 
-### Built-in S3 Client
-`Bun.s3` — native S3 operations with Web Blob API. Replaces `@aws-sdk/client-s3`.
-
-### Built-in Redis Client
-`Bun.redis` — native Redis/Valkey client. Replaces `ioredis`, `redis` packages.
-
-### Built-in Archive
-`Bun.Archive` — create and extract tarballs with gzip. Replaces `tar`, `archiver` packages.
-
-### Built-in JSONC Parser
-`JSONC.parse()` — parse JSON with comments and trailing commas. Replaces `jsonc-parser`, `json5`.
+### Built-in Runtime APIs
+For Bun's built-in runtime helpers (`Bun.s3`, `Bun.redis`, `Bun.Archive`, `JSONC`, `JSON5`, `JSONL`, `markdown`, `cron`), see the `bun-api` skill.
 
 ### Zero-Config Frontend Dev Server
 `bun ./index.html` — serve HTML with auto-bundling of JS/TS/CSS, HMR, and React Fast Refresh. Replaces Vite/Webpack dev server for simple projects.
-
-### Built-in Markdown Parser
-`markdown()` from `"bun"` — CommonMark-compliant Markdown to HTML. Replaces `marked`, `remark`, `markdown-it`.
-
-### Built-in JSON5/JSONL
-`JSON5.parse()`, `JSONL.parse()` from `"bun"` — extended JSON format parsing. Replaces `json5`, manual JSONL parsing.
-
-### Built-in Cron
-`cron` from `"bun"` — cron expression parsing and scheduling. Replaces `cron-parser`, `node-cron`.
 
 ### ES Decorators
 TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDecorators` tsconfig needed.

@@ -8,7 +8,7 @@ description: >-
   Bun.password, compression, and scripting utilities. Use when writing scripts, automating
   tasks, querying databases, working with S3 storage, Redis caching, parsing markdown/JSON
   variants, or doing file processing in a Bun project. Signals: bun.lock, bunfig.toml,
-  DATABASE_URL, REDIS_URL, AWS_ACCESS_KEY_ID, Bun.$ usage.
+  DATABASE_URL, REDIS_URL, AWS_ACCESS_KEY_ID, Bun.$ usage
   Not for bun CLI commands (bun-cli skill), non-Bun runtimes, or ORM CLI tooling
 ---
 

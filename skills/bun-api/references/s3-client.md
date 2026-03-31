@@ -112,6 +112,8 @@ const presigned = file.presign({ expiresIn: 3600 })
 S3File objects work directly with Response (they implement the Blob interface):
 
 ```typescript
+import { s3 } from "bun"
+
 const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url)
@@ -154,6 +156,8 @@ await write(s3.file("videos/large-video.mp4"), largeFile)
 ### Common Patterns
 
 ```typescript
+import { s3, write } from "bun"
+
 // JSON config stored in S3
 const config = await s3.file("config/app.json").json()
 

@@ -15,10 +15,10 @@ await redis.set("key", "value")
 const value = await redis.get("key")
 
 // Custom client with connection string
-const client = new RedisClient("redis://username:password@localhost:6379")
+const clientFromUrl = new RedisClient("redis://username:password@localhost:6379")
 
 // Custom client with options
-const client = new RedisClient({
+const clientWithOptions = new RedisClient({
   url: "redis://localhost:6379",
   // Or individual fields:
   hostname: "localhost",
