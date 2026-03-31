@@ -3,8 +3,10 @@ name: bun-cli
 description: >-
   Bun CLI reference for package management, script running, testing, bundling,
   and compilation. Covers bun install/add/remove, bun run, bun test, bun build, bunx,
-  bunfig.toml, bun.lock, and replacing npm/npx/yarn/pnpm with bun equivalents.
-  Use for package management, lockfile issues, test runner config, or bundler setup.
+  bun patch, bunfig.toml, bun.lock, workspace catalogs, zero-config frontend dev,
+  parallel/sequential execution, compile-to-browser, and replacing npm/npx/yarn/pnpm
+  with bun equivalents. Use for package management, lockfile issues, test runner config,
+  bundler setup, or frontend dev server.
   Not for Bun runtime APIs (Bun.file(), Bun.$(), Bun.sql()) -- use bun-api skill
 ---
 
@@ -163,6 +165,13 @@ bunx --bun command             # Force Bun runtime for the command
 bunx command@version           # Run specific version
 ```
 
+### Parallel and Sequential Execution
+
+```bash
+bun --parallel run build lint typecheck    # Run all concurrently
+bun --sequential run clean build deploy    # Run one after another
+```
+
 ### Workspace-Aware Execution
 
 ```bash
@@ -179,6 +188,17 @@ bun run --silent script        # Suppress script name echo
 bun run --shell=bun script     # Use Bun's built-in shell (cross-platform, default on Windows)
 bun run --shell=system script  # Use system shell (default on macOS/Linux)
 ```
+
+### Zero-Config Frontend Development
+
+Run HTML files directly as a dev server -- no Vite, Webpack, or any config needed:
+
+```bash
+bun ./index.html               # Start dev server, auto-bundles JS/TS/CSS
+bun --hot ./index.html         # With hot module replacement
+```
+
+Bun automatically transpiles TypeScript, JSX, TSX, and CSS linked from the HTML. Resolves `node_modules` imports in `<script>` tags. Enables HMR and React Fast Refresh.
 
 > **Reference**: See `references/running-and-execution.md` for complete details.
 
@@ -250,6 +270,11 @@ bun build ./src/cli.ts --compile --minify           # Minified executable
 
 Available compilation targets: `bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-x64`, `bun-darwin-arm64`, `bun-windows-x64`.
 
+Browser target (v1.3.10+) -- compile to a self-contained HTML file:
+```bash
+bun build --compile --target=browser ./app.tsx --outfile ./dist/app.html
+```
+
 ### Build Options
 
 ```bash
@@ -307,7 +332,9 @@ bun --inspect file.ts              # Start debugger (WebSocket, connect via Chro
 bun --inspect-wait file.ts         # Wait for debugger to attach before executing
 bun --inspect-brk file.ts         # Break on first line
 bun --cpu-prof file.ts             # Generate CPU profile
+bun --cpu-prof-md file.ts          # CPU profile as Markdown (v1.3.7+)
 bun --heap-prof file.ts            # Generate heap profile
+bun --heap-prof-md file.ts         # Heap profile as Markdown (v1.3.7+)
 BUN_JSC_logJITCodeForPerf=1 bun file.ts  # Linux perf integration
 ```
 
@@ -374,6 +401,33 @@ Bun supports `catalog:` protocol in `package.json` for centralized dependency ve
 
 ### Built-in Semver
 `Bun.semver.satisfies()`, `.order()` — replaces `semver` package.
+
+### Built-in S3 Client
+`Bun.s3` — native S3 operations with Web Blob API. Replaces `@aws-sdk/client-s3`.
+
+### Built-in Redis Client
+`Bun.redis` — native Redis/Valkey client. Replaces `ioredis`, `redis` packages.
+
+### Built-in Archive
+`Bun.Archive` — create and extract tarballs with gzip. Replaces `tar`, `archiver` packages.
+
+### Built-in JSONC Parser
+`JSONC.parse()` — parse JSON with comments and trailing commas. Replaces `jsonc-parser`, `json5`.
+
+### Zero-Config Frontend Dev Server
+`bun ./index.html` — serve HTML with auto-bundling of JS/TS/CSS, HMR, and React Fast Refresh. Replaces Vite/Webpack dev server for simple projects.
+
+### Built-in Markdown Parser
+`markdown()` from `"bun"` — CommonMark-compliant Markdown to HTML. Replaces `marked`, `remark`, `markdown-it`.
+
+### Built-in JSON5/JSONL
+`JSON5.parse()`, `JSONL.parse()` from `"bun"` — extended JSON format parsing. Replaces `json5`, manual JSONL parsing.
+
+### Built-in Cron
+`cron` from `"bun"` — cron expression parsing and scheduling. Replaces `cron-parser`, `node-cron`.
+
+### ES Decorators
+TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDecorators` tsconfig needed.
 
 ## Key Gotchas
 

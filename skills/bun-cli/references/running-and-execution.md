@@ -74,7 +74,9 @@ All flags available when running files directly:
 | `--inspect-wait` | Wait for debugger before execution |
 | `--inspect-brk` | Break on first line |
 | `--cpu-prof` | CPU profiling |
+| `--cpu-prof-md` | CPU profiling in Markdown format (v1.3.7+) |
 | `--heap-prof` | Heap profiling |
+| `--heap-prof-md` | Heap profiling in Markdown format (v1.3.7+) |
 | `--conditions name` | Custom export conditions |
 | `--tsconfig-override path` | Use specific tsconfig.json |
 | `--define K=V` | Compile-time defines |
@@ -127,6 +129,50 @@ bun exec "shell command here"
 ```
 
 Uses Bun's built-in shell, which works consistently across macOS, Linux, and Windows.
+
+## Zero-Config Frontend Development
+
+Run HTML files directly with Bun for instant frontend development -- no bundler config, no dev server setup.
+
+```bash
+bun ./index.html                   # Start dev server for HTML file
+bun --hot ./index.html             # With hot module replacement
+```
+
+Bun automatically:
+- Serves the HTML file with a local dev server
+- Transpiles linked JavaScript, TypeScript, JSX, and TSX files
+- Processes CSS imports
+- Enables Hot Module Replacement (HMR) and React Fast Refresh
+- Resolves `node_modules` imports in `<script>` tags
+
+### Example HTML
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./app.tsx"></script>
+</body>
+</html>
+```
+
+Running `bun ./index.html` serves this with all linked assets automatically bundled and served. TypeScript and JSX are transpiled on the fly. No `vite.config.ts`, `webpack.config.js`, or any configuration needed.
+
+## Parallel and Sequential Script Execution
+
+Run multiple scripts concurrently or in strict order:
+
+```bash
+bun --parallel run build lint typecheck    # Run all three concurrently
+bun --sequential run clean build deploy    # Run one after another
+```
+
+Useful for task orchestration without external tools like `concurrently` or `npm-run-all`.
 
 ## Auto-Install
 

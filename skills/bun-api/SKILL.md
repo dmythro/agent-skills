@@ -3,9 +3,12 @@ name: bun-api
 description: >-
   Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
-  via DATABASE_URL, Bun.hash, Bun.password, compression, and scripting utilities.
-  Use when writing scripts, automating tasks, querying databases, or doing file processing
-  in a Bun project. Signals: bun.lock, bunfig.toml, DATABASE_URL, Bun.$ usage.
+  via DATABASE_URL, Bun.s3 for S3-compatible storage, Bun.redis for Redis/Valkey,
+  Bun.Archive for tarballs, Bun.JSONC/JSON5/JSONL, Bun.markdown, Bun.cron, Bun.hash,
+  Bun.password, compression, and scripting utilities. Use when writing scripts, automating
+  tasks, querying databases, working with S3 storage, Redis caching, parsing markdown/JSON
+  variants, or doing file processing in a Bun project. Signals: bun.lock, bunfig.toml,
+  DATABASE_URL, REDIS_URL, AWS_ACCESS_KEY_ID, Bun.$ usage.
   Not for bun CLI commands (bun-cli skill), non-Bun runtimes, or ORM CLI tooling
 ---
 
@@ -22,6 +25,8 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 - Shell scripting and automation
 - Database operations with SQLite (`bun:sqlite`)
 - **Database queries via connection URL** -- project has `DATABASE_URL` in `.env` or environment (PostgreSQL, MySQL, SQLite via `Bun.sql()`)
+- **S3 storage operations** -- project has `AWS_ACCESS_KEY_ID` or uses S3-compatible storage (`Bun.s3`)
+- **Redis/Valkey caching and pub/sub** -- project has `REDIS_URL` or `VALKEY_URL` (`Bun.redis`)
 - Any scripting task in a Bun project
 
 ## HTTP Server (Bun.serve)
@@ -340,6 +345,130 @@ await sql.begin(async (tx) => {
 
 > **Reference**: See `references/sql-client.md` for connection options, pool management, savepoints, MySQL specifics, and prepared statement configuration.
 
+## S3 Client (Bun.s3)
+
+Built-in S3 client with Web standard Blob API. Zero dependencies, works with any S3-compatible service (AWS S3, Cloudflare R2, MinIO, etc.). **Use when the project has `AWS_ACCESS_KEY_ID` or S3-compatible credentials in environment.**
+
+```typescript
+import { s3, write } from "bun"
+
+// Reads credentials from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, etc.
+const file = s3.file("data.json")              // Lazy reference, no network yet
+
+// Read from S3
+const data = await file.json()                  // Download and parse JSON
+const text = await file.text()                  // Download as string
+const stream = file.stream()                    // ReadableStream
+
+// Upload to S3
+await write(s3.file("output.json"), JSON.stringify(data))
+
+// Presigned URLs (synchronous, no network request)
+const url = s3.presign("report.pdf", {
+  expiresIn: 3600,                              // 1 hour
+  method: "PUT",                                // For uploads
+  acl: "public-read",
+})
+
+// Delete
+await file.delete()
+```
+
+> **Reference**: See `references/s3-client.md` for custom S3Client, presign options, multipart upload, and serving from Bun.serve.
+
+## Redis Client (Bun.redis)
+
+Built-in Redis/Valkey client with zero dependencies. **Use when the project has `REDIS_URL` or `VALKEY_URL` in environment.**
+
+```typescript
+import { redis, RedisClient } from "bun"
+
+// Default client -- reads REDIS_URL from environment
+await redis.set("key", "value")
+const value = await redis.get("key")            // "value" | null
+
+// With expiration
+await redis.set("session", "data", "EX", 3600)
+
+// Counter operations
+await redis.incr("counter")
+await redis.incrby("counter", 5)
+
+// Hash operations
+await redis.hset("user:1", "name", "Alice", "email", "alice@example.com")
+await redis.hget("user:1", "name")              // "Alice"
+
+// Custom client
+const client = new RedisClient("redis://user:pass@host:6379")
+```
+
+> **Reference**: See `references/redis-client.md` for all commands (strings, hashes, lists, sets, sorted sets), pub/sub, pipelines, and common patterns.
+
+## Archive (Bun.Archive)
+
+Create and extract tarballs with optional gzip compression.
+
+```typescript
+// Create archive
+const archive = new Bun.Archive({
+  "hello.txt": "Hello, World!",
+  "config.json": JSON.stringify({ key: "value" }),
+})
+await Bun.write("archive.tar", archive)
+
+// With gzip compression
+const compressed = new Bun.Archive(
+  { "hello.txt": "Hello, World!" },
+  { compress: "gzip", level: 9 }
+)
+await Bun.write("archive.tar.gz", compressed)
+
+// Extract (auto-detects gzip)
+const tarball = await Bun.file("archive.tar.gz").bytes()
+const extracted = new Bun.Archive(tarball)
+```
+
+## JSONC (JSON with Comments)
+
+Parse JSON with comments and trailing commas -- replaces `jsonc-parser` or `json5` packages.
+
+```typescript
+import { JSONC } from "bun"
+
+const config = JSONC.parse(`{
+  // Database config
+  "host": "localhost",
+  "port": 5432,  // default port
+}`)
+```
+
+Bun automatically uses JSONC parsing for `tsconfig.json`, `jsconfig.json`, `package.json`, and `bun.lock`. `.jsonc` files can be imported directly: `import config from "./config.jsonc"`.
+
+## Additional Parsing and Utilities (v1.3+)
+
+```typescript
+import { JSON5, JSONL, markdown } from "bun"
+
+// JSON5 -- superset of JSON (comments, unquoted keys, trailing commas)
+const config = JSON5.parse(`{ unquoted: 'value', /* comment */ }`)
+
+// JSONL -- newline-delimited JSON
+const records = JSONL.parse('{"a":1}\n{"a":2}\n')
+
+// Markdown -- built-in CommonMark parser (replaces marked, remark, etc.)
+const html = markdown("# Title\n\n**Bold** text.")
+
+// Cron -- expression parsing and scheduling
+import { cron } from "bun"
+const next = cron.next("0 9 * * 1-5")     // Next weekday 9am
+
+// ANSI-aware string utilities (replace wrap-ansi, slice-ansi npm packages)
+Bun.wrapAnsi(coloredText, 80)              // Wrap to column width
+Bun.sliceAnsi(coloredText, 0, 40)          // Grapheme-aware slice
+```
+
+> **Reference**: See `references/utilities.md` for full details on all parsing and utility APIs.
+
 ---
 
 ## SQLite (bun:sqlite)
@@ -580,3 +709,12 @@ db.close()
 9. **Use `Bun.env`** for environment variables (same as `process.env` but typed)
 10. **Use `import.meta.dir`** instead of `__dirname` (or `import.meta.dirname` for Node compat)
 11. **Use `Bun.which()`** instead of `which` npm package
+12. **Use `Bun.s3`** instead of `@aws-sdk/client-s3` for S3 operations
+13. **Use `Bun.redis`** instead of `ioredis` or `redis` npm packages
+14. **Use `Bun.Archive`** instead of `tar` or `archiver` npm packages for tarballs
+15. **Use `JSONC.parse()`** instead of `jsonc-parser` package
+16. **Use `JSON5.parse()`** instead of `json5` package
+17. **Use `JSONL.parse()`** instead of manual newline splitting for JSON Lines
+18. **Use `markdown()`** instead of `marked`, `remark`, or `markdown-it` packages
+19. **Use `Bun.wrapAnsi()`** instead of `wrap-ansi` npm package
+20. **Use `Bun.sliceAnsi()`** instead of `slice-ansi` npm package

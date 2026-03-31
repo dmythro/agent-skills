@@ -96,6 +96,7 @@ Default: `[dir]/[name].[ext]`
 | `--ignore-dce-annotations` | Ignore `/* @__PURE__ */` and `sideEffects` |
 | `--tree-shaking` | Enable/disable tree shaking (default: true for production) |
 | `--manifest` | Generate build manifest file |
+| `--metafile` | Generate bundle analysis metadata (v1.3.6+) |
 | `--server-components` | Enable React Server Components support |
 | `--css-chunking` | Enable CSS code splitting |
 | `--emit-dce-annotations` | Emit dead code elimination annotations |
@@ -126,6 +127,16 @@ bun build --compile --target bun-darwin-x64 ./app.ts
 bun build --compile --target bun-darwin-arm64 ./app.ts
 bun build --compile --target bun-windows-x64 ./app.ts
 ```
+
+### Browser Target (v1.3.10+)
+
+Compile to a self-contained HTML file that runs in the browser:
+
+```bash
+bun build --compile --target=browser ./app.tsx --outfile ./dist/app.html
+```
+
+Produces a single HTML file with all JS/CSS inlined -- useful for distributing single-file web apps.
 
 ### Embedding Assets
 
@@ -158,6 +169,7 @@ const result = await Bun.build({
   },
   publicPath: '/cdn/',
   loader: { '.svg': 'text' },
+  metafile: true,              // Generate bundle analysis metadata
   plugins: [myPlugin],
   root: './src',
   banner: '/* banner */',

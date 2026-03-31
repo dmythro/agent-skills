@@ -30,6 +30,8 @@ bun test [flags] [file/dir patterns...]
 | `--no-color` | Disable color output |
 | `--env-file path` | Load env file |
 | `--cwd path` | Set working directory |
+| `--grep pattern` | Filter tests by pattern (v1.3.6+) |
+| `--path-ignore-patterns pattern` | Exclude paths from test discovery (v1.3.11+) |
 
 ### Test File Discovery
 
@@ -203,7 +205,7 @@ mock.module('module-name', () => ({
   namedExport: 'mocked',
 }))
 
-// Timer mocking
+// Timer mocking (jest-compatible API)
 jest.useFakeTimers()
 jest.advanceTimersByTime(1000)
 jest.runAllTimers()
@@ -215,6 +217,74 @@ fn.mockClear()        // Clear call history
 fn.mockReset()        // Clear history + implementation
 fn.mockRestore()      // Restore original
 ```
+
+## Fake Timers (vi API)
+
+Bun also supports a Vitest-compatible `vi` API for fake timers, offering finer control over time-dependent code.
+
+```typescript
+import { vi, test, expect } from 'bun:test'
+
+test('fake timers with vi API', () => {
+  vi.useFakeTimers()
+
+  let called = false
+  setTimeout(() => { called = true }, 1000)
+
+  // Advance time
+  vi.advanceTimersByTime(1000)
+  expect(called).toBe(true)
+
+  vi.useRealTimers()
+})
+
+test('set system time', () => {
+  vi.useFakeTimers()
+
+  // Set a specific date/time
+  vi.setSystemTime(new Date('2025-01-01T00:00:00Z'))
+  expect(new Date().toISOString()).toBe('2025-01-01T00:00:00.000Z')
+
+  vi.useRealTimers()
+})
+```
+
+### vi Fake Timer Methods
+
+| Method | Description |
+|---|---|
+| `vi.useFakeTimers()` | Replace global timers with fakes |
+| `vi.useRealTimers()` | Restore original timers |
+| `vi.advanceTimersByTime(ms)` | Advance all timers by ms |
+| `vi.runAllTimers()` | Run all pending timers |
+| `vi.runOnlyPendingTimers()` | Run only currently pending timers |
+| `vi.setSystemTime(date)` | Set fake system time |
+| `vi.getTimerCount()` | Number of pending timers |
+| `vi.clearAllTimers()` | Clear all pending timers |
+
+Both `jest.*` and `vi.*` timer APIs are available. Use whichever matches your project's conventions.
+
+## onTestFinished Hook
+
+Run cleanup code after each individual test completes, regardless of pass/fail. Useful for teardown that depends on per-test setup done inside the test body.
+
+```typescript
+import { test, expect, onTestFinished } from 'bun:test'
+
+test('creates temp resources', async () => {
+  const tmpDir = await createTempDir()
+
+  // Register cleanup -- runs after this test completes
+  onTestFinished(async () => {
+    await removeTempDir(tmpDir)
+  })
+
+  // Test logic using tmpDir
+  expect(tmpDir).toBeDefined()
+})
+```
+
+`onTestFinished` is scoped to the test it's called in. Multiple callbacks can be registered and they run in reverse order (LIFO).
 
 ## Coverage Configuration
 
