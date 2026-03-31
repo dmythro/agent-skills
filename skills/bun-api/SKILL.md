@@ -4,7 +4,7 @@ description: >-
   Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
   via DATABASE_URL, Bun.s3 for S3-compatible storage, Bun.redis for Redis/Valkey,
-  Bun.Archive for tarballs, Bun.JSONC/JSON5/JSONL, Bun.markdown, Bun.cron, Bun.hash,
+  Bun.Archive for tarballs, JSONC/JSON5/JSONL/markdown/cron (named imports), Bun.hash,
   Bun.password, compression, and scripting utilities. Use when writing scripts, automating
   tasks, querying databases, working with S3 storage, Redis caching, parsing markdown/JSON
   variants, or doing file processing in a Bun project. Signals: bun.lock, bunfig.toml,
@@ -447,7 +447,7 @@ Bun automatically uses JSONC parsing for `tsconfig.json`, `jsconfig.json`, `pack
 ## Additional Parsing and Utilities (v1.3+)
 
 ```typescript
-import { JSON5, JSONL, markdown } from "bun"
+import { JSON5, JSONL, markdown, cron } from "bun"
 
 // JSON5 -- superset of JSON (comments, unquoted keys, trailing commas)
 const config = JSON5.parse(`{ unquoted: 'value', /* comment */ }`)
@@ -459,12 +459,12 @@ const records = JSONL.parse('{"a":1}\n{"a":2}\n')
 const html = markdown("# Title\n\n**Bold** text.")
 
 // Cron -- expression parsing and scheduling
-import { cron } from "bun"
 const next = cron.next("0 9 * * 1-5")     // Next weekday 9am
 
 // ANSI-aware string utilities (replace wrap-ansi, slice-ansi npm packages)
+const coloredText = "\x1b[31mHello, World!\x1b[0m"
 Bun.wrapAnsi(coloredText, 80)              // Wrap to column width
-Bun.sliceAnsi(coloredText, 0, 40)          // Grapheme-aware slice
+Bun.sliceAnsi(coloredText, 0, 5)           // Grapheme-aware slice
 ```
 
 > **Reference**: See `references/utilities.md` for full details on all parsing and utility APIs.

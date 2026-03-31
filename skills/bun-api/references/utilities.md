@@ -182,9 +182,9 @@ Bun.color('hsl(0, 100%, 50%)', '[rgba]')  // [255, 0, 0, 255]
 Bun.color('invalid', 'css')       // null
 ```
 
-## Bun.JSONC
+## JSONC
 
-Parse JSON with comments and trailing commas.
+Parse JSON with comments and trailing commas. Available as a named import from `"bun"`.
 
 ```typescript
 import { JSONC } from "bun"
@@ -256,9 +256,9 @@ const html = markdown("# Hello\n\nThis is **bold** text.")
 // '<h1>Hello</h1>\n<p>This is <strong>bold</strong> text.</p>\n'
 ```
 
-## Bun.JSON5
+## JSON5
 
-Parse JSON5 format (superset of JSON with comments, trailing commas, unquoted keys, etc.) -- replaces the `json5` npm package.
+Parse JSON5 format (superset of JSON with comments, trailing commas, unquoted keys, etc.) -- replaces the `json5` npm package. Available as a named import from `"bun"`.
 
 ```typescript
 import { JSON5 } from "bun"
@@ -270,9 +270,9 @@ const config = JSON5.parse(`{
 }`)
 ```
 
-## Bun.JSONL
+## JSONL
 
-Parse and produce JSON Lines (newline-delimited JSON) format.
+Parse and produce JSON Lines (newline-delimited JSON) format. Available as a named import from `"bun"`.
 
 ```typescript
 import { JSONL } from "bun"
@@ -282,9 +282,9 @@ const records = JSONL.parse('{"a":1}\n{"a":2}\n{"a":3}')
 // [{ a: 1 }, { a: 2 }, { a: 3 }]
 ```
 
-## Bun.cron
+## cron
 
-OS-level cron expression parsing and job scheduling.
+OS-level cron expression parsing and job scheduling. Available as a named import from `"bun"`.
 
 ```typescript
 import { cron } from "bun"
@@ -298,11 +298,13 @@ const next = cron.next("0 9 * * 1-5")  // Next weekday 9am
 ANSI-aware string manipulation for terminal output.
 
 ```typescript
+const coloredText = "\x1b[31mHello, World!\x1b[0m"
+
 // Wrap text with ANSI codes to a column width
 Bun.wrapAnsi(coloredText, 80)          // 33-88x faster than wrap-ansi npm
 
 // Slice a string while preserving ANSI escape codes
-Bun.sliceAnsi(coloredText, 0, 40)      // Grapheme/ANSI-aware slicing
+Bun.sliceAnsi(coloredText, 0, 5)       // Grapheme/ANSI-aware slicing
 ```
 
 ## Compression Functions

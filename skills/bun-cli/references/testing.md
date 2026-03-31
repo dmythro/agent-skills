@@ -269,22 +269,19 @@ Both `jest.*` and `vi.*` timer APIs are available. Use whichever matches your pr
 Run cleanup code after each individual test completes, regardless of pass/fail. Useful for teardown that depends on per-test setup done inside the test body.
 
 ```typescript
-import { test, expect, onTestFinished } from 'bun:test'
+import { test, onTestFinished } from 'bun:test'
 
-test('creates temp resources', async () => {
-  const tmpDir = await createTempDir()
+test('cleanup after test', () => {
+  const resource = acquireResource()
 
-  // Register cleanup -- runs after this test completes
-  onTestFinished(async () => {
-    await removeTempDir(tmpDir)
+  // Runs after this test completes (after all afterEach hooks)
+  onTestFinished(() => {
+    resource.release()
   })
-
-  // Test logic using tmpDir
-  expect(tmpDir).toBeDefined()
 })
 ```
 
-`onTestFinished` is scoped to the test it's called in. Multiple callbacks can be registered and they run in reverse order (LIFO).
+`onTestFinished` is scoped to the test it's called in. Multiple callbacks can be registered and they run in reverse order (LIFO). Not supported in concurrent tests -- use `test.serial` instead.
 
 ## Coverage Configuration
 
