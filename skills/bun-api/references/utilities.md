@@ -182,6 +182,131 @@ Bun.color('hsl(0, 100%, 50%)', '[rgba]')  // [255, 0, 0, 255]
 Bun.color('invalid', 'css')       // null
 ```
 
+## JSONC
+
+Parse JSON with comments and trailing commas. Available as a named import from `"bun"`.
+
+```typescript
+import { JSONC } from "bun"
+
+// Parse JSONC string
+const config = JSONC.parse(`{
+  // Database settings
+  "host": "localhost",
+  "port": 5432,  // default Postgres port
+}`)
+// { host: "localhost", port: 5432 }
+```
+
+Bun automatically uses the JSONC loader for `tsconfig.json`, `jsconfig.json`, `package.json`, and `bun.lock` files. You can also import `.jsonc` files directly:
+
+```typescript
+import config from "./config.jsonc"
+```
+
+## Bun.Archive
+
+Create and extract tarballs with optional gzip compression.
+
+```typescript
+// Create an archive from an object mapping filenames to content
+const archive = new Bun.Archive({
+  "hello.txt": "Hello, World!",
+  "data.json": JSON.stringify({ key: "value" }),
+})
+
+// Write uncompressed tar
+await Bun.write("archive.tar", archive)
+
+// Create with gzip compression
+const compressed = new Bun.Archive(
+  { "hello.txt": "Hello, World!" },
+  { compress: "gzip" }
+)
+await Bun.write("archive.tar.gz", compressed)
+
+// Gzip with custom compression level (1-12)
+const maxCompressed = new Bun.Archive(
+  { "hello.txt": "Hello, World!" },
+  { compress: "gzip", level: 12 }
+)
+```
+
+### Reading Archives
+
+```typescript
+// Read from file (auto-detects gzip)
+const tarball = await Bun.file("archive.tar.gz").bytes()
+const archive = new Bun.Archive(tarball)
+
+// Extract all files
+for (const [filename, content] of archive) {
+  await Bun.write(`output/${filename}`, content)
+}
+```
+
+## Bun.markdown
+
+Built-in CommonMark-compliant Markdown parser -- replaces `marked`, `markdown-it`, or `remark` packages.
+
+```typescript
+import { markdown } from "bun"
+
+const html = markdown("# Hello\n\nThis is **bold** text.")
+// '<h1>Hello</h1>\n<p>This is <strong>bold</strong> text.</p>\n'
+```
+
+## JSON5
+
+Parse JSON5 format (superset of JSON with comments, trailing commas, unquoted keys, etc.) -- replaces the `json5` npm package. Available as a named import from `"bun"`.
+
+```typescript
+import { JSON5 } from "bun"
+
+const config = JSON5.parse(`{
+  // Comments allowed
+  unquoted: 'keys work',
+  trailing: 'commas',
+}`)
+```
+
+## JSONL
+
+Parse and produce JSON Lines (newline-delimited JSON) format. Available as a named import from `"bun"`.
+
+```typescript
+import { JSONL } from "bun"
+
+// Parse JSONL string
+const records = JSONL.parse('{"a":1}\n{"a":2}\n{"a":3}')
+// [{ a: 1 }, { a: 2 }, { a: 3 }]
+```
+
+## cron
+
+OS-level cron expression parsing and job scheduling. Available as a named import from `"bun"`.
+
+```typescript
+import { cron } from "bun"
+
+// Parse a cron expression
+const next = cron.next("0 9 * * 1-5")  // Next weekday 9am
+```
+
+## Bun.wrapAnsi() / Bun.sliceAnsi()
+
+ANSI-aware string manipulation for terminal output.
+
+```typescript
+const coloredText = "\x1b[31mHello, World!\x1b[0m"
+
+// Wrap text with ANSI codes to a column width
+Bun.wrapAnsi(coloredText, 80)          // 33-88x faster than wrap-ansi npm
+
+// Slice a string while preserving ANSI escape codes
+Bun.sliceAnsi(coloredText, 0, 5)       // Grapheme/ANSI-aware slicing
+```
+
 ## Compression Functions
 
 ### Gzip

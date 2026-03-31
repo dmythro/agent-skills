@@ -198,6 +198,26 @@ bun publish [flags]
 | `--token token` | Auth token |
 | `--registry url` | Custom registry URL |
 
+## Isolated Installs (Workspaces)
+
+Since Bun v1.3, isolated installs are the default for workspaces. Each workspace package can only access its own declared dependencies, preventing accidental use of undeclared transitive dependencies.
+
+```bash
+# Isolated installs are automatic in workspace projects
+bun install
+
+# If a workspace imports a package it doesn't declare, it fails at runtime
+# Fix: add the missing dependency to that workspace's package.json
+bun --filter 'my-package' add missing-dep
+```
+
+This prevents the common monorepo pitfall where code works locally (because a sibling workspace installed the package) but breaks in production. If you need the old hoisting behavior, set `hoistAll` in bunfig.toml:
+
+```toml
+[install]
+hoistAll = true   # Revert to pre-1.3 behavior (not recommended)
+```
+
 ## Workspace Commands
 
 ```bash
