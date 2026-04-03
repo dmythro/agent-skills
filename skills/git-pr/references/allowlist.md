@@ -9,6 +9,8 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh` an
 - `Bash(command:*)` -- colon-star matches command prefix with any arguments (including none). This is the current recommended syntax for both `gh` and `glab` commands.
 - `*` cannot match shell operators (`&&`, `||`, `;`, `|`) -- pipe-inclusive patterns must spell out the pipe explicitly
 - For `glab` commands piped to `jq`, use `Bash(glab ... | jq *)` because `*` cannot cross the pipe boundary
+- **Variable assignments break matching** -- any `VAR=value` line before the command (inline or separate line) makes the command string start with `VAR=...`. Use `$(...)` command substitution directly in the command arguments instead
+- **`*` does not match across newlines** -- pattern matching checks the first line only. Key tokens like `repository(` must appear on the same line as the command prefix
 
 ---
 
@@ -74,20 +76,29 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 ```json
 "Bash(gh api graphql -f query=*repository(*))",
 "Bash(gh api repos/*/pulls/*/comments)",
+"Bash(gh api repos/*/pulls/*/comments --paginate)",
+"Bash(gh api repos/*/pulls/*/comments --jq *)",
+"Bash(gh api repos/*/pulls/*/comments --paginate --jq *)",
 "Bash(gh api repos/*/pulls/*/reviews)",
+"Bash(gh api repos/*/pulls/*/reviews --paginate)",
+"Bash(gh api repos/*/pulls/*/reviews --jq *)",
 "Bash(gh api repos/*/pulls/*/files *)",
 "Bash(gh api repos/*/pulls/*/commits *)",
 "Bash(gh api repos/*/pulls/*/requested_reviewers)",
 "Bash(gh api repos/*/issues/*/comments)",
+"Bash(gh api repos/*/issues/*/comments --paginate)",
+"Bash(gh api repos/*/issues/*/comments --jq *)",
 "Bash(gh api repos/*/issues/*/labels)",
+"Bash(gh api repos/*/issues/*/labels --jq *)",
 "Bash(gh api repos/*/issues/*/timeline *)"
 ```
 
 **Pattern details:**
 
-- **GraphQL `*repository(*)`**: matches read queries that access `repository(` but blocks mutations (which start with `mutation {`). The inline query format uses `{ repository(owner: ...) { ... } }` -- no GraphQL `$` variables needed
-- **`/files` and `/commits`**: trailing `*` allows `--paginate` or `--jq` -- safe because these are GET-only endpoints in the GitHub API
-- **`/comments`, `/reviews`, `/requested_reviewers`**: no trailing `*` to block POST/DELETE operations (which append `-f`, `--method POST`, etc.)
+- **GraphQL `*repository(*)`**: matches read queries where `repository(` appears on the first line of the command (`*` does not match across newlines). Blocks mutations (which use `mutation {` instead). Use `$(...)` substitution for owner/repo and structure the command so `{ repository(` is on the first line. `--jq` filters after the closing query string are fine
+- **`/files` and `/commits`**: trailing `*` allows any flags -- safe because these are GET-only endpoints
+- **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate` and `--jq *` variants added separately for read-only flag support
+- **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`) is safer
 
 ---
 
@@ -98,6 +109,8 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **Write subcommands** -- `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
 - **Comment operations** -- replies, line comments, review submissions
 - **Thread resolution** -- GraphQL mutations, `glab api --method PUT`
+
+**Batching for speed**: All replies and resolves should be combined into a single `&&`-chained command so the user approves once. See `references/pr-comment-workflow.md` for the batched pattern.
 
 ---
 

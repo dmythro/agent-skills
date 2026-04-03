@@ -12,6 +12,25 @@ description: >-
 
 **Primary skill for pull request and merge request workflows across GitHub and GitLab.** Covers the full lifecycle: creation, review queries, comment handling, line-specific comments, and merging. All recipes use minimal field sets for token efficiency.
 
+## Context Check (Do This First)
+
+Before starting any PR workflow, detect the current state. This determines the right action:
+
+```bash
+# Check if a PR exists for the current branch (allowlisted, zero approval)
+gh pr view --json number,state,reviewDecision,reviewRequests,title 2>/dev/null
+```
+
+| Result                                     | Next action                                                |
+|--------------------------------------------|------------------------------------------------------------|
+| PR exists, `CHANGES_REQUESTED`             | Fetch unresolved threads (see Review Comment Handling)      |
+| PR exists, `REVIEW_REQUIRED` or has pending `reviewRequests` | Check review state or wait for reviewers  |
+| PR exists, `APPROVED`                      | Check CI status or proceed with merge                      |
+| PR exists, no review decision yet          | Check CI status, review state, or push more changes        |
+| No PR for current branch                   | Create a PR (see PR/MR Creation)                           |
+
+This avoids offering to create a PR when one already exists, and immediately surfaces pending review work. The `reviewDecision` field reliably indicates whether a reviewer has requested changes without needing to fetch individual threads.
+
 ## When to Use
 
 - **Creating PRs or MRs** -- draft workflows, fill patterns, title format
@@ -182,52 +201,40 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 
 The workflow has two distinct phases -- never mix them:
 
-**Phase 1: Analyze and Fix (local work, no GitHub API writes)**
-1. Fetch all unresolved review threads in a single GraphQL query
+**Phase 1: Analyze and Fix (local work, no GitHub API writes, zero approvals)**
+1. Fetch all unresolved review threads in a single GraphQL query with inline `--jq` filter
 2. For each thread: read the file at the referenced path+line, check if the comment is valid by researching the codebase (patterns, conventions, CLAUDE.md, git log)
 3. Be critical -- validate each comment against actual code before accepting. Reviewers can be wrong.
 4. Make all necessary code fixes
 5. Commit and push the fixes
 
-**Phase 2: Reply and Resolve (GitHub API writes, after push)**
-6. Reply to each thread with a concise explanation (what was fixed, why it was dismissed, or why it needs discussion)
-7. Resolve threads that are definitively handled
-8. Leave unresolved only threads needing human decision
+**Phase 2: Reply and Resolve (one batched command, one approval)**
+6. Combine all replies and all resolves into a single `&&`-chained command
+7. REST replies first, then a single GraphQL mutation with aliases to batch-resolve all handled threads
+8. Leave "Needs discussion" threads unresolved
 
 This ordering matters: pushing fixes first ensures reviewers see the changes when they read replies. Never reply to a comment claiming "Fixed" before the fix is actually pushed.
 
-### Fetch Unresolved Threads
+### Fetch Unresolved Threads (Zero Approvals)
 
-**GitHub (GraphQL) -- shell variables, no GraphQL `$` variables:**
-
-Do NOT use GraphQL variables (`$owner`, `$repo`, `$pr`) in these double-quoted query strings -- they conflict with shell variable expansion (`$OWNER`, `$REPO`, `$PR`). The shell expands all `$` references before `gh` receives the query, so GraphQL `$` declarations would be consumed by the shell. Instead, inline values directly via shell variables:
+**GitHub** -- one command with `$(...)` substitution. `{ repository(` must be on the first line to match the allowlist pattern. Do NOT assign variables on preceding lines:
 
 ```bash
-OWNER=$(gh repo view --json owner --jq '.owner.login')
-REPO=$(gh repo view --json name --jq '.name')
-PR={number}
-
-gh api graphql -f query="
-{
-  repository(owner: \"$OWNER\", name: \"$REPO\") {
-    pullRequest(number: $PR) {
-      reviewThreads(first: 100) {
-        nodes {
-          id isResolved isOutdated path line startLine
-          comments(first: 20) {
-            nodes { id databaseId body author { login } }
-          }
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") {
+  pullRequest(number: $(gh pr view --json number --jq '.number')) {
+    reviewThreads(first: 100) {
+      nodes {
+        id isResolved isOutdated path line startLine
+        comments(first: 20) {
+          nodes { id databaseId body author { login } }
         }
       }
     }
   }
-}"
+}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
 ```
 
-Filter to unresolved:
-```bash
-... | jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
-```
+Returns only unresolved threads directly.
 
 **Response field mapping (critical -- using wrong ID causes silent failures):**
 
@@ -242,35 +249,26 @@ Filter to unresolved:
 glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate | jq '[.[] | select(.notes[0].resolvable==true and .notes[0].resolved==false) | {id:.id,path:.notes[0].position.new_path,line:.notes[0].position.new_line,body:.notes[0].body,author:.notes[0].author.username}]'
 ```
 
-### Reply and Resolve
+### Reply and Resolve (One Batched Command)
 
-**GitHub -- reply uses `databaseId` (numeric), resolve uses thread `id` (PRRT_ node ID):**
-```bash
-# Reply to thread (use comment databaseId, NOT node id)
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{comment_databaseId}/replies \
-  -f body="Fixed -- {explanation}."
-```
+**GitHub** -- combine all REST replies and a batch GraphQL resolve mutation into one `&&`-chained command. Reply uses `databaseId` (numeric), resolve uses thread `id` (PRRT_ node ID):
 
 ```bash
-# Resolve thread (use thread id starting with PRRT_)
-THREAD_ID="PRRT_..."
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_2}/replies -f body="Addressed in {sha}" && \
 gh api graphql -f query="
 mutation {
-  resolveReviewThread(input: { threadId: \"$THREAD_ID\" }) {
-    thread { isResolved }
-  }
+  t1: resolveReviewThread(input: {threadId: \"PRRT_thread1\"}) { thread { isResolved } }
+  t2: resolveReviewThread(input: {threadId: \"PRRT_thread2\"}) { thread { isResolved } }
 }"
 ```
 
 **GitLab:**
 ```bash
-# Reply to discussion
-glab api projects/{project_id}/merge_requests/{iid}/discussions/{discussion_id}/notes \
-  --method POST --field "body=Fixed -- {explanation}."
-
-# Resolve discussion
-glab api projects/{project_id}/merge_requests/{iid}/discussions/{discussion_id} \
-  --method PUT --field "resolved=true"
+glab api projects/{id}/merge_requests/{iid}/discussions/{disc_1}/notes --method POST --field "body=Fixed in {sha}" && \
+glab api projects/{id}/merge_requests/{iid}/discussions/{disc_1} --method PUT --field "resolved=true" && \
+glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2}/notes --method POST --field "body=Addressed" && \
+glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --field "resolved=true"
 ```
 
 ---
