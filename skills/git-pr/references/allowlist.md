@@ -73,7 +73,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 `gh api` calls require specific patterns because the same command can perform reads or writes. These restrict to known GET-only endpoints.
 
-```json
+```text
 "Bash(gh api graphql -f query=*{ repository*)",
 "Bash(gh api repos/*/pulls/*/comments)",
 "Bash(gh api repos/*/pulls/*/comments --paginate)",
@@ -120,7 +120,7 @@ For maximum restriction, use exact command strings. These only auto-approve the 
 
 ### Tier 1: Current-Branch (No Wildcards)
 
-```json
+```text
 "Bash(gh pr view --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
 "Bash(gh pr view --json reviews,reviewRequests,latestReviews)",
 "Bash(gh pr view --json files)",
@@ -139,7 +139,7 @@ For maximum restriction, use exact command strings. These only auto-approve the 
 
 ### Tier 2: By-Number (Single `*` for PR/MR Number)
 
-```json
+```text
 "Bash(gh pr view * --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
 "Bash(gh pr view * --json reviews,reviewRequests,latestReviews)",
 "Bash(gh pr view * --json files)",
