@@ -17,45 +17,21 @@ Always start by fetching **unresolved** threads. Don't show already-resolved thr
 
 ### GitHub: Single GraphQL Fetch (Zero Approvals)
 
-One command, zero approvals. The command must start with `gh api graphql` and contain `{ repository(` on the **first line** to match the allowlist pattern `Bash(gh api graphql -f query=*repository(*))`. Use `$(...)` substitution for owner, repo, and PR number -- do NOT assign shell variables on preceding lines.
+One command, zero approvals. This single call returns all threads, comments, and resolution status -- never split into separate count and data calls.
 
-This single call returns all threads, comments, and resolution status -- never split into separate count and data calls.
+**Generate as a single line.** Allowlist `*` patterns may not match across newlines (undocumented behavior). GraphQL ignores whitespace, so a one-liner works fine. Use `$(...)` substitution for owner, repo, and PR number inline.
 
 ```bash
-gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") {
-  pullRequest(number: $(gh pr view --json number --jq '.number')) {
-    reviewThreads(first: 100) {
-      nodes {
-        id
-        isResolved
-        isOutdated
-        path
-        line
-        startLine
-        diffSide
-        comments(first: 20) {
-          nodes {
-            id
-            databaseId
-            body
-            author { login }
-            createdAt
-            outdated
-            replyTo { id }
-          }
-        }
-      }
-    }
-  }
-}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path line startLine diffSide comments(first: 20) { nodes { id databaseId body author { login } createdAt outdated replyTo { id } } } } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
 ```
 
 Returns only unresolved threads directly.
 
 **Critical rules:**
 
-- Do NOT assign shell variables (`OWNER=...`, `REPO=...`) on lines before `gh api graphql` -- variable assignments make the command string start with `VAR=...` instead of `gh api graphql`, and `*` in allowlist patterns does not match across newlines
-- Do NOT use GraphQL `$` variables (`$owner`, `$repo`) in double-quoted query strings -- they conflict with shell `$` expansion
+- **Generate as a single line** -- `*` may not match across newlines
+- Do NOT assign shell variables (`OWNER=...`, `REPO=...`) before `gh api graphql` -- breaks pattern matching
+- Do NOT use GraphQL `$` variables (`$owner`, `$repo`) in double-quoted query strings -- conflicts with shell `$` expansion
 - Do NOT pipe to `jq` -- use the `--jq` flag instead (pipes break allowlist matching)
 
 **Response field mapping (critical -- using wrong ID causes silent failures):**

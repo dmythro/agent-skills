@@ -217,21 +217,10 @@ This ordering matters: pushing fixes first ensures reviewers see the changes whe
 
 ### Fetch Unresolved Threads (Zero Approvals)
 
-**GitHub** -- one command with `$(...)` substitution. `{ repository(` must be on the first line to match the allowlist pattern. Do NOT assign variables on preceding lines:
+**GitHub** -- one command with `$(...)` substitution. **Generate as a single line** -- `*` may not match across newlines:
 
 ```bash
-gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") {
-  pullRequest(number: $(gh pr view --json number --jq '.number')) {
-    reviewThreads(first: 100) {
-      nodes {
-        id isResolved isOutdated path line startLine
-        comments(first: 20) {
-          nodes { id databaseId body author { login } }
-        }
-      }
-    }
-  }
-}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path line startLine comments(first: 20) { nodes { id databaseId body author { login } } } } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
 ```
 
 Returns only unresolved threads directly.

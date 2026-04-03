@@ -10,7 +10,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh` an
 - `*` cannot match shell operators (`&&`, `||`, `;`, `|`) -- pipe-inclusive patterns must spell out the pipe explicitly
 - For `glab` commands piped to `jq`, use `Bash(glab ... | jq *)` because `*` cannot cross the pipe boundary
 - **Variable assignments break matching** -- any `VAR=value` line before the command (inline or separate line) makes the command string start with `VAR=...`. Use `$(...)` command substitution directly in the command arguments instead
-- **`*` does not match across newlines** -- pattern matching checks the first line only. Key tokens like `repository(` must appear on the same line as the command prefix
+- **Single-line commands recommended** -- `*` may not match across newlines (undocumented). Generate commands that need allowlist matching as a single line to be safe
 
 ---
 
@@ -74,7 +74,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 `gh api` calls require specific patterns because the same command can perform reads or writes. These restrict to known GET-only endpoints.
 
 ```json
-"Bash(gh api graphql -f query=*repository(*))",
+"Bash(gh api graphql -f query=*repository*)",
 "Bash(gh api repos/*/pulls/*/comments)",
 "Bash(gh api repos/*/pulls/*/comments --paginate)",
 "Bash(gh api repos/*/pulls/*/comments --jq *)",
@@ -95,7 +95,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 **Pattern details:**
 
-- **GraphQL `*repository(*)`**: matches read queries where `repository(` appears on the first line of the command (`*` does not match across newlines). Blocks mutations (which use `mutation {` instead). Use `$(...)` substitution for owner/repo and structure the command so `{ repository(` is on the first line. `--jq` filters after the closing query string are fine
+- **GraphQL `*repository*`**: matches single-line read queries containing `repository`. Blocks mutations (which use `mutation {` instead). The command must be a single line -- multiline commands never match `*`. Use `$(...)` substitution for owner/repo inline
 - **`/files` and `/commits`**: trailing `*` allows any flags -- safe because these are GET-only endpoints
 - **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate` and `--jq *` variants added separately for read-only flag support
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`) is safer
