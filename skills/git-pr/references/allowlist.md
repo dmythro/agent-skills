@@ -74,7 +74,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 `gh api` calls require specific patterns because the same command can perform reads or writes. These restrict to known GET-only endpoints.
 
 ```json
-"Bash(gh api graphql -f query=*repository*)",
+"Bash(gh api graphql -f query=*{ repository*)",
 "Bash(gh api repos/*/pulls/*/comments)",
 "Bash(gh api repos/*/pulls/*/comments --paginate)",
 "Bash(gh api repos/*/pulls/*/comments --jq *)",
@@ -95,7 +95,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 **Pattern details:**
 
-- **GraphQL `*repository*`**: matches single-line read queries containing `repository`. Blocks mutations (which use `mutation {` instead). The command must be a single line -- multiline commands never match `*`. Use `$(...)` substitution for owner/repo inline
+- **GraphQL `*{ repository*`**: matches single-line read queries containing `{ repository`. The `{` prefix prevents matching `repositoryId` or similar strings in mutations. The command should be a single line -- `*` may not match across newlines reliably. Use `$(...)` substitution for owner/repo inline
 - **`/files` and `/commits`**: trailing `*` allows any flags -- safe because these are GET-only endpoints
 - **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate` and `--jq *` variants added separately for read-only flag support
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`) is safer
