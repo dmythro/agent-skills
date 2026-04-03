@@ -15,57 +15,48 @@ This ordering matters: pushing fixes first ensures reviewers see the changes whe
 
 Always start by fetching **unresolved** threads. Don't show already-resolved threads unless explicitly asked.
 
-### GitHub: Two-Step Fetch (Zero Approvals)
+### GitHub: Single GraphQL Fetch (Zero Approvals)
 
-**Step 1** -- get owner, repo, and PR number (allowlisted via `gh repo view:*` and `gh pr view:*`):
+One command, zero approvals. The command must start with `gh api graphql` and contain `{ repository(` on the **first line** to match the allowlist pattern `Bash(gh api graphql -f query=*repository(*))`. Use `$(...)` substitution for owner, repo, and PR number -- do NOT assign shell variables on preceding lines.
 
-```bash
-OWNER=$(gh repo view --json owner --jq '.owner.login')
-REPO=$(gh repo view --json name --jq '.name')
-PR=$(gh pr view --json number --jq '.number')
-```
-
-**Step 2** -- fetch unresolved review threads in a single GraphQL call with inline `--jq` filter (allowlisted via `gh api graphql -f query=*repository(*)`). No pipe needed -- `--jq` is part of the command:
+This single call returns all threads, comments, and resolution status -- never split into separate count and data calls.
 
 ```bash
-gh api graphql -f query="
-{
-  repository(owner: \"$OWNER\", name: \"$REPO\") {
-    pullRequest(number: $PR) {
-      reviewThreads(first: 100) {
-        nodes {
-          id
-          isResolved
-          isOutdated
-          path
-          line
-          startLine
-          diffSide
-          comments(first: 20) {
-            nodes {
-              id
-              databaseId
-              body
-              author { login }
-              createdAt
-              outdated
-              replyTo { id }
-            }
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") {
+  pullRequest(number: $(gh pr view --json number --jq '.number')) {
+    reviewThreads(first: 100) {
+      nodes {
+        id
+        isResolved
+        isOutdated
+        path
+        line
+        startLine
+        diffSide
+        comments(first: 20) {
+          nodes {
+            id
+            databaseId
+            body
+            author { login }
+            createdAt
+            outdated
+            replyTo { id }
           }
         }
       }
     }
   }
-}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
 ```
 
-Returns only unresolved threads. No separate filter step needed.
+Returns only unresolved threads directly.
 
-**Critical rules for zero-approval fetching:**
+**Critical rules:**
 
-- Assign variables on **separate lines** before `gh api graphql`. Do NOT use inline env var syntax (`OWNER=foo gh api graphql ...`) -- it prepends text before the command and breaks allowlist pattern matching
-- This single call returns all threads, comments, and resolution status -- never split into separate count and data calls
-- Do NOT use GraphQL `$` variables (`$owner`, `$repo`) in double-quoted query strings -- they conflict with shell `$` expansion. Inline values directly via shell variables
+- Do NOT assign shell variables (`OWNER=...`, `REPO=...`) on lines before `gh api graphql` -- variable assignments make the command string start with `VAR=...` instead of `gh api graphql`, and `*` in allowlist patterns does not match across newlines
+- Do NOT use GraphQL `$` variables (`$owner`, `$repo`) in double-quoted query strings -- they conflict with shell `$` expansion
+- Do NOT pipe to `jq` -- use the `--jq` flag instead (pipes break allowlist matching)
 
 **Response field mapping (critical -- using wrong ID causes silent failures):**
 

@@ -18,17 +18,18 @@ Before starting any PR workflow, detect the current state. This determines the r
 
 ```bash
 # Check if a PR exists for the current branch (allowlisted, zero approval)
-gh pr view --json number,state,reviewDecision,title 2>/dev/null
+gh pr view --json number,state,reviewDecision,reviewRequests,title 2>/dev/null
 ```
 
-| Result                              | Next action                                                |
-|-------------------------------------|------------------------------------------------------------|
-| PR exists, has review comments      | Fetch unresolved threads (see Review Comment Handling)      |
-| PR exists, no review comments       | Check CI status, review state, or proceed with merge       |
-| PR exists, `CHANGES_REQUESTED`      | Fetch unresolved threads -- reviewer is waiting for fixes  |
-| No PR for current branch            | Create a PR (see PR/MR Creation)                           |
+| Result                                     | Next action                                                |
+|--------------------------------------------|------------------------------------------------------------|
+| PR exists, `CHANGES_REQUESTED`             | Fetch unresolved threads (see Review Comment Handling)      |
+| PR exists, `REVIEW_REQUIRED` or has pending `reviewRequests` | Check review state or wait for reviewers  |
+| PR exists, `APPROVED`                      | Check CI status or proceed with merge                      |
+| PR exists, no review decision yet          | Check CI status, review state, or push more changes        |
+| No PR for current branch                   | Create a PR (see PR/MR Creation)                           |
 
-This avoids offering to create a PR when one already exists, and immediately surfaces pending review work.
+This avoids offering to create a PR when one already exists, and immediately surfaces pending review work. The `reviewDecision` field reliably indicates whether a reviewer has requested changes without needing to fetch individual threads.
 
 ## When to Use
 
@@ -216,31 +217,24 @@ This ordering matters: pushing fixes first ensures reviewers see the changes whe
 
 ### Fetch Unresolved Threads (Zero Approvals)
 
-**GitHub** -- assign variables on separate lines, then fetch with inline `--jq` filter. Do NOT use inline env var syntax (`OWNER=foo gh api graphql ...`) -- it breaks allowlist matching:
+**GitHub** -- one command with `$(...)` substitution. `{ repository(` must be on the first line to match the allowlist pattern. Do NOT assign variables on preceding lines:
 
 ```bash
-OWNER=$(gh repo view --json owner --jq '.owner.login')
-REPO=$(gh repo view --json name --jq '.name')
-PR=$(gh pr view --json number --jq '.number')
-
-gh api graphql -f query="
-{
-  repository(owner: \"$OWNER\", name: \"$REPO\") {
-    pullRequest(number: $PR) {
-      reviewThreads(first: 100) {
-        nodes {
-          id isResolved isOutdated path line startLine
-          comments(first: 20) {
-            nodes { id databaseId body author { login } }
-          }
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") {
+  pullRequest(number: $(gh pr view --json number --jq '.number')) {
+    reviewThreads(first: 100) {
+      nodes {
+        id isResolved isOutdated path line startLine
+        comments(first: 20) {
+          nodes { id databaseId body author { login } }
         }
       }
     }
   }
-}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
 ```
 
-Returns only unresolved threads directly -- no separate filter step needed.
+Returns only unresolved threads directly.
 
 **Response field mapping (critical -- using wrong ID causes silent failures):**
 
