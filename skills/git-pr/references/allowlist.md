@@ -104,7 +104,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 ## Not Included (Manual Approval Required)
 
-- **GraphQL mutations** -- `resolveReviewThread`, `addPullRequestReviewComment`, etc. use `mutation {` which does not match the `*repository(*)` allowlist pattern
+- **GraphQL mutations** -- `resolveReviewThread`, `addPullRequestReviewComment`, etc. use `mutation {` which does not match the `*{ repository*` allowlist pattern
 - **REST writes** -- POST/PUT/DELETE on `/comments`, `/reviews`, `/requested_reviewers`
 - **Write subcommands** -- `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
 - **Comment operations** -- replies, line comments, review submissions
