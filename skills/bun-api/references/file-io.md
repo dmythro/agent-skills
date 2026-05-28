@@ -185,7 +185,7 @@ const watcher = watch('./src', { recursive: true }, (event, filename) => {
 watcher.close()
 ```
 
-Note: Bun uses native OS file watching (FSEvents on macOS, inotify on Linux).
+Note: Bun uses native OS file watching (FSEvents on macOS, inotify on Linux). As of v1.3.14, recursive directory watching on Linux detects files created after the watch starts and re-emits events when a watched file is deleted and recreated.
 
 ## ReadableStream Utilities
 

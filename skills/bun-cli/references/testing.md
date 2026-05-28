@@ -32,6 +32,10 @@ bun test [flags] [file/dir patterns...]
 | `--cwd path` | Set working directory |
 | `--grep pattern` | Filter tests by pattern (v1.3.6+) |
 | `--path-ignore-patterns pattern` | Exclude paths from test discovery (v1.3.11+) |
+| `--isolate` | Run each test file in a fresh global environment within the same process (v1.3.13+) |
+| `--parallel[=N]` | Distribute test files across N worker processes (default: CPU count) (v1.3.13+) |
+| `--shard=M/N` | Run shard M of N -- split test files across CI runners, round-robin (v1.3.13+) |
+| `--changed[=ref]` | Only run test files affected by git changes; optional ref (commit/branch/tag) (v1.3.13+) |
 
 ### Test File Discovery
 
@@ -41,6 +45,31 @@ Patterns searched (in order):
 3. `*.spec.{ts,tsx,js,jsx,mts,mjs}`
 4. `*_spec.{ts,tsx,js,jsx,mts,mjs}`
 5. `__tests__/**/*.{ts,tsx,js,jsx,mts,mjs}`
+
+## Parallelism & CI Sharding
+
+Speed up large suites and split work across CI runners (v1.3.13+).
+
+```bash
+# Distribute test files across worker processes (default: CPU count)
+bun test --parallel
+bun test --parallel=8
+
+# Fresh global environment per test file, same process (isolation without workers)
+bun test --isolate
+
+# Split test files across CI runners (round-robin) -- run on each runner:
+bun test --shard=1/3
+bun test --shard=2/3
+bun test --shard=3/3
+
+# Only run test files affected by your git changes
+bun test --changed
+bun test --changed=main          # since a branch/tag/commit
+bun test --changed --watch       # re-run affected tests on save
+```
+
+`--shard=M/N` matches the syntax used by Jest, Vitest, and Playwright.
 
 ## Test API
 

@@ -4,10 +4,12 @@ description: >-
   Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
   via DATABASE_URL, Bun.s3 for S3-compatible storage, Bun.redis for Redis/Valkey,
-  Bun.Archive for tarballs, JSONC/JSON5/JSONL/markdown/cron (named imports), Bun.hash,
-  Bun.password, compression, and scripting utilities. Use when writing scripts, automating
-  tasks, querying databases, working with S3 storage, Redis caching, parsing markdown/JSON
-  variants, or doing file processing in a Bun project. Signals: bun.lock, bunfig.toml,
+  Bun.Archive for tarballs, Bun.Image image processing, Bun.WebView headless browser
+  automation, Bun.cron in-process scheduler, JSONC/JSON5/JSONL/markdown (named imports),
+  Bun.hash, Bun.password, compression, and scripting utilities. Use when writing scripts,
+  automating tasks, querying databases, working with S3 storage, Redis caching, processing
+  images, automating a headless browser, parsing markdown/JSON variants, or doing file
+  processing in a Bun project. Signals: bun.lock, bunfig.toml,
   DATABASE_URL, REDIS_URL, AWS_ACCESS_KEY_ID, Bun.$ usage
   Not for bun CLI commands (bun-cli skill), non-Bun runtimes, or ORM CLI tooling
 ---
@@ -17,6 +19,8 @@ description: >-
 Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build step. Run any `.ts` file directly with `bun file.ts`. Use Bun's native APIs instead of Node.js equivalents — they're faster, more ergonomic, and require no additional dependencies.
 
 **Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
+
+**Verified against Bun v1.3.14** (2026-05-28).
 
 ## When to Use
 
@@ -63,6 +67,23 @@ console.log(`Listening on ${server.url}`)
 Key methods: `server.stop()`, `server.reload()` (hot-swap handler), `server.requestIP(req)`, `server.upgrade(req)` (WebSocket).
 
 > **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming responses, static file serving, and full server API.
+
+## TCP / UDP Sockets
+
+Raw sockets for non-HTTP protocols -- `Bun.listen()` / `Bun.connect()` for TCP, `Bun.udpSocket()` for UDP, plus the built-in `WebSocket` client and `fetch()`.
+
+```typescript
+const server = Bun.listen({
+  hostname: '127.0.0.1',
+  port: 8080,
+  socket: {
+    open(socket) { socket.write('welcome\n') },
+    data(socket, data) { /* Buffer */ },
+  },
+})
+```
+
+> **Reference**: See `references/networking.md` for TCP/UDP handlers, Unix sockets, the WebSocket client (`ws+unix://`), and `fetch()` transport options (HTTP/2, HTTP/3, proxies, system CA).
 
 ## File I/O
 
@@ -456,10 +477,12 @@ const config = JSON5.parse(`{ unquoted: 'value', /* comment */ }`)
 const records = JSONL.parse('{"a":1}\n{"a":2}\n')
 
 // Markdown -- built-in CommonMark parser (replaces marked, remark, etc.)
-const html = markdown("# Title\n\n**Bold** text.")
+const html = markdown.html("# Title\n\n**Bold** text.")
+const ansi = markdown.ansi("# Title")        // ANSI terminal output (v1.3.12+)
 
-// Cron -- expression parsing and scheduling
-const next = cron.next("0 9 * * 1-5")     // Next weekday 9am
+// Cron -- in-process scheduler + expression parser
+const job = cron("0 9 * * 1-5", runReport)   // scheduler (v1.3.12+)
+const next = cron.parse("0 9 * * 1-5")       // next run as ISO string
 
 // ANSI-aware string utilities (replace wrap-ansi, slice-ansi npm packages)
 const coloredText = "\x1b[31mHello, World!\x1b[0m"
@@ -636,6 +659,36 @@ const restored = deserialize(bytes)        // Original structure
 
 Faster than `JSON.stringify`/`JSON.parse` for complex objects. Supports types JSON doesn't: `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, etc.
 
+## Image Processing (Bun.Image)
+
+Built-in image decode/transform/encode (v1.3.14+) — replaces `sharp` and `jimp`. Supports JPEG, PNG, WebP, GIF, BMP, HEIC, AVIF, TIFF.
+
+```typescript
+const thumb = await Bun.file('upload.jpg')
+  .image()
+  .resize(400, 400, { fit: 'cover' })
+  .webp({ quality: 82 })
+  .bytes()
+
+const { width, height, format } = await new Bun.Image(buffer).metadata()
+const blur = await Bun.file('hero.jpg').image().placeholder()  // thumbhash data URL
+```
+
+> **Reference**: See `references/image.md` for transforms, output formats, and metadata.
+
+## Browser Automation (Bun.WebView)
+
+Headless browser automation (v1.3.12+) — navigate, click, type, run JS, and screenshot without Playwright or Puppeteer (WebKit on macOS, Chrome backend elsewhere).
+
+```typescript
+await using view = new Bun.WebView({ width: 1280, height: 720 })
+await view.navigate('https://bun.sh')
+const title = await view.evaluate('document.title')
+await Bun.write('page.png', await view.screenshot())
+```
+
+> **Reference**: See `references/webview.md` for the full method list and CDP access.
+
 ## Script Patterns
 
 ### CLI Script Template
@@ -715,6 +768,7 @@ db.close()
 15. **Use `JSONC.parse()`** instead of `jsonc-parser` package
 16. **Use `JSON5.parse()`** instead of `json5` package
 17. **Use `JSONL.parse()`** instead of manual newline splitting for JSON Lines
-18. **Use `markdown()`** instead of `marked`, `remark`, or `markdown-it` packages
+18. **Use `markdown.html()`/`markdown.ansi()`** instead of `marked`, `remark`, or `markdown-it` packages
 19. **Use `Bun.wrapAnsi()`** instead of `wrap-ansi` npm package
 20. **Use `Bun.sliceAnsi()`** instead of `slice-ansi` npm package
+21. **Use `Bun.Image`** instead of `sharp` or `jimp` for image processing

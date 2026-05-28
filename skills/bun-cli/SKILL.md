@@ -14,6 +14,8 @@ description: >-
 
 Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, and test runner. Bun runs TypeScript natively — `bun file.ts` directly, no compile step, no `tsc`, no `ts-node`. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
 
+**Verified against Bun v1.3.14** (2026-05-28).
+
 ## Detecting Bun Projects
 
 A project uses Bun if any of these are present:

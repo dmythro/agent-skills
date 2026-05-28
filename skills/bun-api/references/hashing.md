@@ -57,7 +57,9 @@ const hasher = new Bun.CryptoHasher(algorithm: string)
 
 ### Algorithms
 
-`'sha1'`, `'sha224'`, `'sha256'`, `'sha384'`, `'sha512'`, `'sha512-256'`, `'md4'`, `'md5'`, `'blake2b256'`, `'blake2b512'`, `'ripemd160'`
+`'sha1'`, `'sha224'`, `'sha256'`, `'sha384'`, `'sha512'`, `'sha512-224'`, `'sha512-256'`, `'sha3-224'`, `'sha3-256'`, `'sha3-384'`, `'sha3-512'`, `'shake128'`, `'shake256'`, `'md4'`, `'md5'`, `'ripemd160'`, `'blake2b256'`, `'blake2b512'`, `'blake2s256'`
+
+SHA3 (`'sha3-*'`) and SHAKE (`'shake128'`/`'shake256'`) require Bun v1.3.13+. The same SHA3 variants are also available through Node's `crypto.createHash('sha3-256')` and WebCrypto `crypto.subtle.digest('SHA3-256', data)`. WebCrypto also gained X25519 key agreement via `crypto.subtle.deriveBits()` (v1.3.13+).
 
 ### Interface
 
