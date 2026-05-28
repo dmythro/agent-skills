@@ -2,7 +2,7 @@
 
 ## bun:sqlite
 
-Built-in SQLite3 with zero dependencies. Faster than `better-sqlite3`.
+Built-in SQLite3 with zero dependencies. Faster than `better-sqlite3`. Bundles SQLite 3.53.0 (as of Bun v1.3.14).
 
 ```typescript
 import { Database, Statement, constants } from 'bun:sqlite'

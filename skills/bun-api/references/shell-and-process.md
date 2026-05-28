@@ -298,3 +298,29 @@ proc.kill()              // SIGTERM
 proc.kill('SIGKILL')     // Force kill
 proc.kill(9)             // Signal number
 ```
+
+## process.execve() (v1.3.14+)
+
+Replace the current process image in place (POSIX `execve`). The new program keeps the same PID; on success this call never returns.
+
+```typescript
+process.execve('/usr/bin/node', ['node', 'script.js'], {
+  ...process.env,
+  NODE_ENV: 'production',
+})
+// Nothing after a successful execve() runs -- Bun has been replaced by node.
+```
+
+## Bun.Terminal (v1.3.14+)
+
+Pseudo-terminal (PTY) for driving interactive programs with a real TTY. On Windows this is backed by the ConPTY API.
+
+```typescript
+const term = new Bun.Terminal(options)
+
+term.write('ls -la\n')      // send input to the PTY
+term.resize(cols, rows)     // resize the terminal
+term.setRawMode(true)       // toggle raw mode
+term.ref(); term.unref()    // control event-loop liveness
+term.close()
+```

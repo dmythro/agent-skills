@@ -247,14 +247,34 @@ for (const [filename, content] of archive) {
 
 ## Bun.markdown
 
-Built-in CommonMark-compliant Markdown parser -- replaces `marked`, `markdown-it`, or `remark` packages.
+Built-in CommonMark-compliant Markdown parser -- replaces `marked`, `markdown-it`, or `remark`. `markdown` is a namespace (`markdown.html`, `markdown.ansi`, `markdown.render`, `markdown.react`), available as `Bun.markdown` or a named import from `"bun"`.
 
 ```typescript
 import { markdown } from "bun"
 
-const html = markdown("# Hello\n\nThis is **bold** text.")
+// Render to HTML
+const html = markdown.html("# Hello\n\nThis is **bold** text.")
 // '<h1>Hello</h1>\n<p>This is <strong>bold</strong> text.</p>\n'
+
+// Render to ANSI-colored terminal output (v1.3.12+)
+process.stdout.write(markdown.ansi("# Hello\n\n**bold** and *italic*\n"))
 ```
+
+### markdown.ansi() Options (v1.3.12+)
+
+```typescript
+markdown.ansi("# Hi", { colors: false })                       // plain text, no ANSI
+markdown.ansi("[docs](https://bun.sh)", { hyperlinks: true })  // OSC 8 terminal links
+markdown.ansi(longText, { columns: 60 })                       // wrap to width
+markdown.ansi("![alt](./logo.png)", { kittyGraphics: true })   // inline images (kitty)
+```
+
+| Option | Description |
+|---|---|
+| `colors` | Emit ANSI color codes (default: true) |
+| `hyperlinks` | Emit OSC 8 terminal hyperlinks |
+| `columns` | Wrap output to a column width |
+| `kittyGraphics` | Render images inline via the kitty graphics protocol |
 
 ## JSON5
 
@@ -282,16 +302,56 @@ const records = JSONL.parse('{"a":1}\n{"a":2}\n{"a":3}')
 // [{ a: 1 }, { a: 2 }, { a: 3 }]
 ```
 
-## cron
+## cron / Bun.cron
 
-OS-level cron expression parsing and job scheduling. Available as a named import from `"bun"`.
+In-process cron scheduler and expression parser. The named `cron` import is the same value as `Bun.cron`. Schedules use 5 fields (`minute hour day month weekday`) -- seconds are not supported.
+
+### Scheduling (v1.3.12+)
 
 ```typescript
 import { cron } from "bun"
 
-// Parse a cron expression
-const next = cron.next("0 9 * * 1-5")  // Next weekday 9am
+// Run a callback on a schedule (in-process -- no external cron daemon)
+const job = cron("0 9 * * 1-5", async () => {
+  await sendDailyReport()          // weekdays at 09:00
+})
+
+// Overlapping runs are skipped automatically; errors surface via
+// process 'unhandledRejection'.
+
+job.stop()        // stop the job
+job.unref()       // don't keep the process alive
+job.ref()         // keep the process alive (default)
+
+// Auto-stop at scope exit with explicit resource management
+{
+  using daily = cron("0 0 * * *", rotateLogs)
+}  // job disposed here
 ```
+
+### Parsing
+
+```typescript
+cron.parse("0 9 * * 1-5")   // '2026-05-29T09:00:00.000Z' -- next run as ISO string
+cron.remove(job)            // remove a scheduled job
+```
+
+## Explicit Resource Management (using / await using)
+
+Bun natively supports the TC39 `using` and `await using` declarations (v1.3.12+; emitted without transpilation when targeting Bun as of v1.3.14). A value with `Symbol.dispose` or `Symbol.asyncDispose` is released automatically at scope exit.
+
+```typescript
+{
+  using job = Bun.cron('0 * * * *', hourly)   // job.stop() runs at scope exit
+}
+
+{
+  await using view = new Bun.WebView()         // view.close() runs at scope exit
+  await view.navigate('https://bun.sh')
+}
+```
+
+`Bun.cron()` jobs and `Bun.WebView` are common examples of disposable Bun resources.
 
 ## Bun.wrapAnsi() / Bun.sliceAnsi()
 

@@ -22,12 +22,15 @@ bun install [flags]
 | `--trust` | Run lifecycle scripts for new dependencies |
 | `--concurrent-scripts N` | Max parallel lifecycle scripts |
 | `--backend` | Install backend: `hardlink` (default), `symlink`, `copyfile`, `clonefile` |
+| `--linker hoisted\|isolated` | Dependency layout: `isolated` (strict, default in workspaces) or `hoisted` (npm-style); isolated speeds up peer-heavy installs (v1.3.13+) |
 | `--cwd path` | Set working directory |
 | `-g, --global` | Install globally |
 | `--config path` | Load specific bunfig.toml |
 | `--no-verify` | Skip checksum verification |
 | `--no-cache` | Disable package cache |
 | `--cache-dir path` | Custom cache directory |
+
+Since v1.3.13, `bun install` streams tarballs to disk during download instead of buffering them in memory, so large installs use dramatically less memory.
 
 ### Lockfile Behavior
 
@@ -197,6 +200,8 @@ bun publish [flags]
 | `--auth-type legacy/web` | Auth type |
 | `--token token` | Auth token |
 | `--registry url` | Custom registry URL |
+
+Since v1.3.14, `bun publish` auto-detects the package `README` and sends its contents as npm registry metadata.
 
 ## Isolated Installs (Workspaces)
 

@@ -21,6 +21,7 @@ bun run [flags] <script|file> [args...]
 | `--filter pattern` | Run in specific workspace(s) |
 | `--if-present` | Don't error if script is missing |
 | `--preconnect url` | Pre-connect to server URLs for faster startup (repeatable) |
+| `--no-orphans` | Exit when the parent process dies, then SIGKILL every descendant (Linux/macOS, v1.3.14+) |
 
 ### Script Resolution Order
 
@@ -57,7 +58,10 @@ bun file.jsx            # Run JSX
 bun file.tsx            # Run TSX
 bun file.mjs            # Run ESM JavaScript
 bun file.cjs            # Run CommonJS JavaScript
+bun file.md             # Render Markdown in the terminal (v1.3.12+)
 ```
+
+Running a `.md` file renders it as ANSI-colored terminal output (via `Bun.markdown.ansi()`) with no VM startup -- a fast built-in Markdown viewer.
 
 ### Flags for Direct Execution
 
@@ -88,6 +92,9 @@ All flags available when running files directly:
 | `--no-install` | Disable auto-install |
 | `-e, --eval code` | Evaluate string as script |
 | `--print code` | Evaluate and print result |
+| `--experimental-http2-fetch` | Offer HTTP/2 (h2) in `fetch()` TLS ALPN (v1.3.14+) |
+| `--experimental-http3-fetch` | Honor `Alt-Svc: h3` and upgrade `fetch()` to HTTP/3 (v1.3.14+) |
+| `--use-system-ca` | Trust the system's certificate authorities (v1.3.14+) |
 
 ## bunx
 
@@ -118,6 +125,7 @@ bunx create-react-app my-app
 bunx tsc --noEmit
 bunx -p typescript tsc --noEmit     # Install typescript, run tsc
 bunx cowsay@1.0.0 "hello"          # Specific version
+bunx claude                        # Built-in alias for @anthropic-ai/claude-code (v1.3.13+)
 ```
 
 ## bun exec

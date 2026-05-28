@@ -128,6 +128,10 @@ bun build --compile --target bun-darwin-arm64 ./app.ts
 bun build --compile --target bun-windows-x64 ./app.ts
 ```
 
+On Linux (v1.3.12+), the runtime is embedded via a dedicated `.bun` ELF section instead of being read from `/proc/self/exe`, which allows execute-only (non-readable) standalone binaries.
+
+Bun's runtime also ships native first-party builds for FreeBSD and Android (v1.3.14+), alongside Linux, macOS, and Windows -- these are runtime platforms, not `--compile` targets.
+
 ### Browser Target (v1.3.10+)
 
 Compile to a self-contained HTML file that runs in the browser:
@@ -136,7 +140,7 @@ Compile to a self-contained HTML file that runs in the browser:
 bun build --compile --target=browser ./app.tsx --outfile ./dist/app.html
 ```
 
-Produces a single HTML file with all JS/CSS inlined -- useful for distributing single-file web apps.
+Produces a single HTML file with all JS/CSS inlined -- useful for distributing single-file web apps. As of v1.3.13, file-loader assets (images, fonts) are also inlined as data URIs, so the output is truly self-contained.
 
 ### Embedding Assets
 

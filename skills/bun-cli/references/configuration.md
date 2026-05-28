@@ -29,6 +29,7 @@ globalDir = "~/.bun/install/global" # Global install location
 globalBinDir = "~/.bun/bin"         # Global bin location
 concurrentScripts = 8               # Max parallel lifecycle scripts
 saveTextLockfile = true             # Use text lockfile (bun.lock)
+globalStore = false                 # Share the package store across projects via symlinks (v1.3.14+)
 
 [install.cache]
 dir = "~/.bun/install/cache"        # Cache directory

@@ -172,6 +172,19 @@ const server = Bun.serve({
 })
 ```
 
+## Range Requests (v1.3.13+)
+
+File-backed responses (`new Response(Bun.file(...))`) automatically honor HTTP `Range` headers -- Bun returns `206 Partial Content` with the correct `Content-Range`, or `416 Range Not Satisfiable` for an invalid range. No manual handling is needed for video streaming or resumable downloads.
+
+```typescript
+Bun.serve({
+  fetch(req) {
+    // Range requests against this file are served automatically
+    return new Response(Bun.file('./video.mp4'))
+  },
+})
+```
+
 ## TLS / HTTPS
 
 ```typescript
@@ -201,6 +214,19 @@ Bun.serve({
     { serverName: 'b.example.com', key: Bun.file('b.key'), cert: Bun.file('b.cert') },
   ],
   fetch(req) { return new Response('Hello') },
+})
+```
+
+### HTTP/3 (QUIC) (v1.3.14+)
+
+Serve HTTP/3 over QUIC (UDP/443) alongside HTTP/1.1 and HTTP/2 by setting `http3: true` (requires TLS):
+
+```typescript
+Bun.serve({
+  port: 443,
+  tls: { key: Bun.file('key.pem'), cert: Bun.file('cert.pem') },
+  http3: true,
+  fetch(req) { return new Response('Served over HTTP/3') },
 })
 ```
 
