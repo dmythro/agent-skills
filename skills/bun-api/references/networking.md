@@ -94,12 +94,24 @@ const ws = new WebSocket('ws+unix:///tmp/app.sock:/realtime')
 
 `fetch()` is the standard global; Bun adds several transport controls.
 
+### HTTP Version Selection (v1.3.14+, experimental)
+
+The `protocol` option in `RequestInit` pins the HTTP version for a request. Accepted values: `'http1.1'`/`'h1'`, `'http2'`/`'h2'`, `'http3'`/`'h3'`. The HTTP/2 and HTTP/3 clients are **experimental** in this release.
+
 ```typescript
-// Select the HTTP version per request (v1.3.14+)
-await fetch(url, { protocol: 'http2' })   // 'http1.1' | 'http2' | 'http3'
+// HTTP/2 per request works standalone -- no flag required
+await fetch(url, { protocol: 'http2' })
+
+// HTTP/3 also needs the client enabled globally first:
+//   bun --experimental-http3-fetch app.ts
+//   (or BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP3_CLIENT=1)
+await fetch(url, { protocol: 'http3' })
 ```
+
+Enable HTTP/2 globally (instead of per request) with `--experimental-http2-fetch`, or `BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP2_CLIENT=1`.
+
+### Other Transport Behavior
 
 - **HTTP/2 connection pooling** (v1.3.14+) -- concurrent fetches to the same origin share one multiplexed connection.
 - **HTTPS proxy tunneling** (v1.3.12+) -- `CONNECT` tunnels are reused across sequential proxied HTTPS requests.
-- **System CA** -- run with `--use-system-ca` (or read `tls.getCACertificates('system')`) to trust the OS certificate store (v1.3.14+).
-- **Experimental h2/h3** -- enable client HTTP/2 or HTTP/3 with `--experimental-http2-fetch` / `--experimental-http3-fetch` (v1.3.14+).
+- **System CA** (v1.3.14+) -- run with `--use-system-ca`, or read the OS trust store via `tls.getCACertificates('system')` from `node:tls`.

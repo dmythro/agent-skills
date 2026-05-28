@@ -61,7 +61,7 @@ bun file.cjs            # Run CommonJS JavaScript
 bun file.md             # Render Markdown in the terminal (v1.3.12+)
 ```
 
-Running a `.md` file renders it as ANSI-colored terminal output (via `Bun.markdown.ansi()`) with no VM startup -- a fast built-in Markdown viewer.
+Running a `.md` file renders it as ANSI-colored terminal output (via `Bun.markdown.ansi()`) with no JavaScript VM startup overhead -- a fast built-in Markdown viewer.
 
 ### Flags for Direct Execution
 
