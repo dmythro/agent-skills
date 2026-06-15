@@ -269,7 +269,7 @@ glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --
 
 > **Reference**: See `references/copilot-review-loop.md` for the full loop: the three Copilot author logins, the `copilot_status`/`copilot_tick` driver, polling, and termination logic.
 
-GitHub Copilot code review is **GitHub-only**, **asynchronous** (~3-11 min per request), and never blocks: its review `state` is always `COMMENTED`. Copilot does **not** auto re-review on push -- you must re-request each round. Repo auto-review (if enabled) covers only the first round. It also requires **gh >= 2.88** and Copilot code review **enabled** for the repo/account (plan + org/enterprise + repo settings) -- if it is not available, `copilot_tick` exits `5` rather than polling forever.
+GitHub Copilot code review is **GitHub-only**, **asynchronous** (~3-11 min per request), and never blocks: its review `state` is always `COMMENTED`. Copilot does **not** auto re-review on push -- you must re-request each round. Repo auto-review (if enabled) covers only the first round. It also requires **gh >= 2.88** and Copilot code review **enabled** for the repo/account (plan + org/enterprise + repo settings). `copilot_tick` exits `5` when the remote isn't GitHub or the re-request errors; a request that's accepted but never answered exits `3` (timeout) -- which can mean slow *or* silently unavailable, so don't read `3` as merely "slow".
 
 Iterate until there are zero unresolved Copilot threads on current HEAD:
 

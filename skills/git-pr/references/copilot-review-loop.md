@@ -164,7 +164,7 @@ repeat:
     exit 0 -> STOP "clean: Copilot has no unresolved comments"
     exit 5 -> STOP "not applicable -- non-GitHub remote, or Copilot code review not enabled here"
     exit 4 -> STOP "Copilot review keeps failing -- escalate (PR size / binary files / quota)"
-    exit 3 -> STOP "review timed out -- retry later"
+    exit 3 -> STOP "review timed out -- retry later, or Copilot may be silently unavailable"
     exit 2 -> address this round (pr-comment-workflow.md Phase 1/2):
                 evaluate each unresolved Copilot thread with the Research
                   Checklist -- bots false-positive often, so be critical
