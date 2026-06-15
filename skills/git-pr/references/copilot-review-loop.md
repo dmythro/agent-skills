@@ -165,15 +165,19 @@ repeat:
     exit 5 -> STOP "not applicable -- non-GitHub remote, or Copilot code review not enabled here"
     exit 4 -> STOP "Copilot review keeps failing -- escalate (PR size / binary files / quota)"
     exit 3 -> STOP "review timed out -- retry later, or Copilot may be silently unavailable"
-    exit 2 -> address this round (pr-comment-workflow.md Phase 1/2):
-                evaluate each unresolved Copilot thread with the Research
-                  Checklist -- bots false-positive often, so be critical
-                fix the valid ones -> commit -> push   (advances HEAD)
-                reply + resolve every handled thread (one batched command)
-                continue
+    exit 2 -> validate every unresolved Copilot comment (pr-comment-workflow.md
+                Research Checklist) -- Copilot is useful but can be out of context
+                or working from outdated knowledge, so judge each on its merits:
+                  valid   -> fix it
+                  invalid -> reply with the rationale + resolve (no code change)
+              if NONE were valid this round (nothing to fix):
+                STOP "zero valid comments -- the remaining Copilot points were all
+                      rejected with rationale; re-requesting would only resurface them"
+              else:
+                commit + push the fixes (advances HEAD); re-request; continue
 ```
 
-**Why it always terminates.** A round only loops again when the agent pushed a fix, which advances HEAD. A round that changes no code (e.g. every comment was a false positive the agent replied to and resolved) leaves HEAD unchanged: the next iteration's `head == prev_head` guard stops it, and even without that guard `copilot_tick` would not re-request (a review for that HEAD already exists) and would return `0` once the handled threads are resolved. Failed reviews are retried at most **3 times** inside `copilot_tick` before surfacing as `exit 4`, and the whole loop is bounded by `MAX_ROUNDS` (default 20). The infinite "new thread for the same nit on the same code" loop cannot happen.
+**Why it always terminates.** The loop continues only when a round produced at least one *valid* comment that was fixed (advancing HEAD). A round whose comments are all rejected as invalid produces no fix -- the **zero-valid** exit stops it immediately, rather than re-requesting identical code only to watch the same points resurface (the `head == prev_head` guard is a backstop for the same case). Failed reviews are retried at most **3 times** before surfacing as `exit 4`, unavailability is `exit 5`, and the whole loop is bounded by `MAX_ROUNDS` (default 20). So the loop converges on substance: it ends when Copilot is silent, when only rejectable noise remains, on repeated failure or unavailability, or at the cap -- the infinite "new thread for the same nit on the same code" loop cannot happen.
 
 **Round count as the "parameter".** Invocations like "loop the Copilot review 3 rounds" set `MAX_ROUNDS=3`; with no number it defaults to **20**. The HEAD-unchanged guard and the failed-review cap usually stop the loop well before the cap.
 
@@ -190,3 +194,4 @@ repeat:
 9. **The thread query caps at 100** -- `reviewThreads(first: 100)` is not paginated. `copilot_status` compares against `totalCount` and refuses to report "clean" when more threads exist than were fetched, so the termination guarantee holds; paginate (cursor `after:`) only if you routinely exceed 100 threads on one PR.
 10. **GitHub-only, and not always available** -- no GitLab equivalent, and Copilot code review needs an enabled plan/org/repo. Gate on the provider and on the re-request succeeding (exit `5`); don't poll for a review that will never come. There is no read-only availability endpoint -- the re-request erroring is the signal.
 11. **Use unquoted REST paths** -- `gh api repos/$owner/...` (not `gh api "repos/..."`); the quotes prevent the unquoted allowlist patterns from matching and trigger a prompt.
+12. **Stop on zero *valid* comments, not just zero comments** -- validate each comment; if a whole round is out-of-context or outdated, reject each with a rationale + resolve, and stop there. Don't blind-fix to silence Copilot, and don't loop forever chasing a bot that keeps resurfacing rejected points.

@@ -277,7 +277,7 @@ Iterate until there are zero unresolved Copilot threads on current HEAD:
 2. **Poll** -- no `--watch` for reviews; poll `gh api repos/{owner}/{repo}/pulls/{n}/reviews` until a review by `copilot-pull-request-reviewer[bot]` with `commit_id` == current HEAD appears.
 3. **Handle failures** -- a review body or PR comment saying "Copilot encountered an error and was unable to review this pull request" is **not** "no comments". Wait ~90s, re-request, and cap retries (causes like an oversized PR, binary files, or exhausted quota will not self-heal).
 4. **Address** -- evaluate each comment (Research Checklist), fix valid ones, commit, push, then reply and resolve (Phase 1/2 above).
-5. **Terminate** -- stop when no unresolved Copilot threads remain; after the round cap (default 20, or "loop 3" to lower it); after 3 errored reviews; or if HEAD is unchanged since the last round (re-requesting unchanged code resurfaces the same comments).
+5. **Terminate** -- stop when Copilot generates no comments; when a round yields **zero valid comments** (all rejected as out-of-context/outdated -- re-requesting would only resurface them); after the round cap (default 20, or "loop 3" to lower it); after 3 errored reviews; on unavailability (exit `5`); or if HEAD is unchanged since the last round.
 
 **Identity gotcha:** the same bot has three logins -- `copilot-pull-request-reviewer[bot]` (REST reviews), `Copilot` (REST comments), and `copilot-pull-request-reviewer` (GraphQL threads). Use the right one per endpoint.
 
