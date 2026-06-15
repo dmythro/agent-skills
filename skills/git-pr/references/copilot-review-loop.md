@@ -1,6 +1,6 @@
 # Copilot Review Loop
 
-**Iterate GitHub Copilot code-review rounds on a PR until no *valid* comments remain.** Copilot code review is GitHub-only, asynchronous (~3-11 min per request), and never blocking -- its review state is always `COMMENTED`, so treat it as advisory. This file owns the Copilot-specific mechanics (re-request, wait, detect, decide when to stop); it delegates the per-round evaluate/fix/reply/resolve work to `pr-comment-workflow.md`.
+**Iterate GitHub Copilot code-review rounds on a PR until no *valid* comments remain.** Copilot code review is GitHub-only, asynchronous (~3-11 min per request), and never blocking -- its review state is always `COMMENTED`, so treat it as advisory. The loop is **driven by Copilot** (it re-requests Copilot and waits for its async review), but each round **clears the whole review**: validate and resolve every unresolved thread from *any* reviewer (Copilot, CodeRabbit, humans), not just Copilot's. Only Copilot is re-requested -- push-triggered bots like CodeRabbit re-review on their own. Per-comment evaluate/fix/reply/resolve mechanics live in `pr-comment-workflow.md`.
 
 ## Run It
 
@@ -10,15 +10,15 @@ Source the two functions below, then drive rounds. One mechanical round:
 copilot_tick <PR>    # re-request if needed + poll once
 ```
 
-Branch on its exit code per **The Loop**: `0` done, `2` validate + fix, `3` retry, `4` failed (escalate), `5` not applicable. A tick returns within ~5 min -- run it in the background, or with a Bash timeout `>= 330000` ms, and just re-run it on `3`. The agent owns the round loop and the validate/fix decision; both functions are read-only except the single re-request write.
+Branch on its exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4` failed (escalate), `5` not applicable. A tick returns within ~5 min -- run it in the background, or with a Bash timeout `>= 330000` ms, and just re-run it on `3`. The agent owns the round loop and the validate/fix decision; both functions are read-only except the single re-request write.
 
 ## copilot_status (read-only detector)
 
-The authoritative "done?" signal is the count of **unresolved Copilot review threads** (PR-wide -- the thread query is not commit-filtered; only the review-presence check is matched to HEAD), not the per-review `K` count.
+The authoritative "done?" signal is **zero unresolved review threads from any reviewer** (Copilot, CodeRabbit, humans), gated on Copilot having reviewed the current HEAD. The thread query is PR-wide (not commit-filtered); only the review-presence check is matched to HEAD. Not the per-review `K` count.
 
 ```bash
 # Usage: copilot_status <PR_NUMBER>   (read-only)
-# Exit: 0 clean | 2 not clean (comments, or >100-thread inconclusive) | 3 pending | 4 failed
+# Exit: 0 clean (no unresolved threads, any reviewer) | 2 not clean | 3 pending | 4 failed
 copilot_status() {
   pr="$1"
   owner="$(gh repo view --json owner --jq '.owner.login')"
@@ -36,19 +36,19 @@ copilot_status() {
     fi
     k="$(printf '%s' "$review" | jq -r '.body' | grep -oE 'generated [0-9]+ comment' | grep -oE '[0-9]+' | head -1)"
     echo "Copilot reviewed HEAD ${head:0:8}; summary says ${k:-0} comment(s)"
-    # Unresolved Copilot threads. GraphQL author.login is copilot-pull-request-reviewer (NOT the
-    # ...[bot] or "Copilot" forms -- see the logins table). Match the "copilot" prefix to be safe.
+    # Unresolved threads from ANY reviewer (Copilot, CodeRabbit, humans) -- the round isn't clear
+    # until all are addressed. Print each thread's author so the agent validates every one.
     threads="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
-    unresolved="$(printf '%s' "$threads" | jq '[.nodes[] | select(.isResolved==false and (.comments.nodes[0].author.login | ascii_downcase | startswith("copilot")))]')"
+    unresolved="$(printf '%s' "$threads" | jq '[.nodes[] | select(.isResolved==false)]')"
     n="$(printf '%s' "$unresolved" | jq 'length')"
     if [ "${n:-0}" -gt 0 ]; then
-      echo "Unresolved Copilot threads ($n):"
-      printf '%s' "$unresolved" | jq -r '.[] | "  \(.path):\(.line)  \(.comments.nodes[0].body | gsub("\n";" ") | .[0:90])"'
+      echo "Unresolved review threads ($n):"
+      printf '%s' "$unresolved" | jq -r '.[] | "  [\(.comments.nodes[0].author.login)] \(.path):\(.line)  \(.comments.nodes[0].body | gsub("\n";" ") | .[0:80])"'
       return 2
     fi
     # Trust "clean" only if we saw every thread: reviewThreads(first: 100) does not paginate.
     [ "$(printf '%s' "$threads" | jq '.totalCount')" -gt 100 ] && { echo "Inconclusive: >100 threads exceed the 100 fetched"; return 2; }
-    echo "No unresolved Copilot threads -- clean."; return 0
+    echo "No unresolved review threads -- clean."; return 0
   fi
 
   # No review at HEAD: a failure can also arrive as a PR comment. Scan Copilot comments since the
@@ -94,7 +94,7 @@ copilot_tick() {
 
 The agent drives rounds; `copilot_tick` is one mechanical round. **Validate every comment** -- Copilot is useful but can be out of context or working from outdated knowledge, so judge each on its merits and never blind-fix.
 
-```
+```text
 INPUT: PR N; MAX_ROUNDS = integer parsed from the request ("loop 3" -> 3), else 20
 prev_head = ""; round = 0
 repeat:
@@ -103,16 +103,18 @@ repeat:
   if round > 1 and head == prev_head: STOP "no code change -- re-review would resurface the same points"
   prev_head = head
   copilot_tick N:
-    0 -> STOP "clean -- Copilot has no unresolved comments"
+    0 -> STOP "clean -- Copilot reviewed HEAD and no unresolved review threads remain (any reviewer)"
     5 -> STOP "not applicable -- non-GitHub remote, or Copilot review not enabled"
     3 -> re-run copilot_tick (still pending); after a couple of timeouts STOP "timed out / maybe silently unavailable"
     4 -> STOP "review failed -- likely an oversized PR, binary/minified files, or exhausted quota.
               These rarely resolve on retry; fix the cause, then re-run the loop (or re-request manually)."
-    2 -> validate each unresolved Copilot comment (pr-comment-workflow.md Research Checklist):
+    2 -> not clean. If copilot_status flagged the rare >100-thread inconclusive case, paginate/resolve
+         to confirm before trusting clean. Otherwise validate EVERY unresolved thread -- from any
+         reviewer (Copilot, CodeRabbit, humans), via pr-comment-workflow.md's all-threads fetch:
            valid   -> fix
            invalid -> reply with the rationale + resolve (no code change)
          if NONE were valid (nothing to fix): STOP "zero valid comments -- re-requesting would only resurface them"
-         else: commit + push the fixes (advances HEAD); continue
+         else: commit + push (advances HEAD; re-triggers push-based bots like CodeRabbit); re-request Copilot; continue
 ```
 
 **It always terminates.** A round continues only when a *valid* comment was fixed (advancing HEAD); an all-rejected round stops at the zero-valid exit (the `head == prev_head` guard is a backstop). Failures and unavailability stop immediately, and `MAX_ROUNDS` caps the whole thing. So it converges on substance -- ending when Copilot is silent, when only rejectable noise remains, on failure/unavailability, or at the cap.
@@ -131,6 +133,8 @@ The same bot has **three different logins** by surface -- filter the wrong one a
 - A successful review body says `Copilot reviewed N out of M changed files ... and generated K comments.` (singular at `K==1` -- parse the digits).
 - **A failed review is not silence:** `Copilot encountered an error and was unable to review this pull request.` Detect the phrase (review body or PR comment) and re-request; never treat it as clean.
 - **No auto re-review on push** -- re-request every round after the first (repo auto-review, if enabled, covers only round 1).
+
+**Other review bots** share the pattern: a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (e.g. CodeRabbit: `coderabbitai[bot]` on REST, `coderabbitai` on threads). The loop **clears their threads too** (validate each on its merits), but only **re-requests Copilot** -- push-based bots like CodeRabbit re-review automatically on the next push, or on demand via a `@coderabbitai review` comment.
 
 ## Preconditions
 
