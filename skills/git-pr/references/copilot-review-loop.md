@@ -38,7 +38,7 @@ The authoritative "are we done?" signal is **the count of unresolved review thre
 ```bash
 # Usage: copilot_status <PR_NUMBER>
 # Read-only. Exit: 0 = clean (reviewed OK, no unresolved Copilot threads)
-#                  2 = unresolved Copilot comments remain
+#                  2 = not clean -- unresolved Copilot comments, or inconclusive (>100 threads)
 #                  3 = no Copilot review for current HEAD yet (pending / not requested)
 #                  4 = Copilot review FAILED ("unable to review") -- re-request needed
 copilot_status() {
@@ -98,7 +98,7 @@ Reviews are **asynchronous** (typically ~3-11 min after a request) and there is 
 
 ```bash
 # Usage: copilot_tick <PR_NUMBER>  -- re-request if needed (incl. after a failure), poll for the outcome.
-# Wraps copilot_status. Exit: 0 clean / 2 comments / 3 timed out / 4 failed repeatedly (escalate).
+# Wraps copilot_status. Exit: 0 clean / 2 not clean (comments or inconclusive) / 3 timed out / 4 failed repeatedly (escalate).
 copilot_tick() {
   pr="$1"; fails=0
   copilot_status "$pr"; rc=$?
