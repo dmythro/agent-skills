@@ -42,7 +42,7 @@ gh pr edit {N} --add-reviewer "@copilot"
 
 ## Detect Done (Read-Only)
 
-The authoritative "are we done?" signal is **the count of unresolved review threads opened by Copilot on the current HEAD** -- not the per-review `K` count (which resets every round and ignores resolution state). `copilot_status` reports it, and distinguishes a **failed** review from a clean one. Every command in it is read-only and allowlistable.
+The authoritative "are we done?" signal is **the count of unresolved Copilot review threads on the PR** (after confirming a review exists for the current HEAD) -- not the per-review `K` count (which resets every round and ignores resolution state). The thread query is not commit-filtered; only the `/reviews` check is matched to HEAD. `copilot_status` reports it, and distinguishes a **failed** review from a clean one. Every command in it is read-only and allowlistable.
 
 ```bash
 # Usage: copilot_status <PR_NUMBER>
@@ -60,7 +60,7 @@ copilot_status() {
   # Latest Copilot review whose commit_id == current HEAD. REST /reviews login = ...[bot].
   # NOTE: --paginate with -q/--jq applies the filter PER PAGE (one result per page). Use
   # --paginate --slurp (an array of pages) piped to jq and flatten with .[][], so "last" is
-  # the overall latest across all pages -- not a per-page last. (--slurp can't combine with -q.)
+  # the overall latest across all pages -- not a per-page last. (--slurp can't combine with -q/--jq.)
   review="$(gh api repos/$owner/$repo/pulls/$pr/reviews --paginate --slurp | jq -c --arg head "$head" '[.[][] | select(.user.login=="copilot-pull-request-reviewer[bot]" and .commit_id==$head)] | last')"
 
   if [ -n "$review" ] && [ "$review" != "null" ]; then
