@@ -49,8 +49,10 @@ copilot_status() {
   fail_re='unable to review this pull request|encountered an error'
 
   # Latest Copilot review whose commit_id == current HEAD. REST /reviews login = ...[bot].
-  review="$(gh api "repos/$owner/$repo/pulls/$pr/reviews" --paginate \
-    --jq "[.[] | select(.user.login==\"copilot-pull-request-reviewer[bot]\" and .commit_id==\"$head\")] | last")"
+  # NOTE: --paginate with -q/--jq applies the filter PER PAGE (one result per page). Use
+  # --paginate --slurp (an array of pages) piped to jq and flatten with .[][], so "last" is
+  # the overall latest across all pages -- not a per-page last. (--slurp can't combine with -q.)
+  review="$(gh api "repos/$owner/$repo/pulls/$pr/reviews" --paginate --slurp | jq -c --arg head "$head" '[.[][] | select(.user.login=="copilot-pull-request-reviewer[bot]" and .commit_id==$head)] | last')"
 
   if [ -n "$review" ] && [ "$review" != "null" ]; then
     # Failed review = error notice in the body, NOT a clean result.
@@ -62,8 +64,7 @@ copilot_status() {
 
     # Unresolved Copilot threads. GraphQL author.login = copilot-pull-request-reviewer
     # (NOT "Copilot" or "...[bot]"). Match case-insensitively on the "copilot" prefix to be safe.
-    threads="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" \
-      --jq '.data.repository.pullRequest.reviewThreads')"
+    threads="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
     unresolved="$(printf '%s' "$threads" | jq '[.nodes[] | select(.isResolved==false and (.comments.nodes[0].author.login | ascii_downcase | startswith("copilot")))]')"
     n="$(printf '%s' "$unresolved" | jq 'length')"
     if [ "${n:-0}" -gt 0 ]; then
@@ -83,8 +84,7 @@ copilot_status() {
   # No review for HEAD. The failure can also arrive as a PR (issue) comment -- distinguish
   # "failed" from "still pending" by scanning Copilot comments posted after the HEAD commit.
   since="$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')"
-  failed="$(gh api "repos/$owner/$repo/issues/$pr/comments" --paginate \
-    --jq "[.[] | select((.user.login|test(\"copilot\";\"i\")) and (.created_at > \"$since\") and (.body|test(\"$fail_re\";\"i\")))] | length")"
+  failed="$(gh api "repos/$owner/$repo/issues/$pr/comments" --paginate --slurp | jq --arg since "$since" --arg fail "$fail_re" '[.[][] | select((.user.login|test("copilot";"i")) and (.created_at > $since) and (.body|test($fail;"i")))] | length')"
   if [ "${failed:-0}" -gt 0 ]; then
     echo "Copilot review FAILED on HEAD ${head:0:8} (error notice in PR comments) -- re-request needed"; return 4
   fi
