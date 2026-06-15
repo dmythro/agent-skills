@@ -3,7 +3,7 @@ name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
   comment handling, thread resolution, review state queries, merging, and
-  looping bot review rounds (Copilot, CodeRabbit) until clean. Use when creating PRs/MRs,
+  looping bot review rounds (GitHub: Copilot, CodeRabbit) until clean. Use when creating PRs/MRs,
   addressing review feedback, resolving threads, looping bot reviews,
   checking approvals, querying PR data, or configuring gh/glab read-only
   allowlists. Not for git commits (git-commit), CI/CD status (git-ci), or
@@ -273,7 +273,7 @@ GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (
 
 Iterate until no **valid** comments remain. Source a bot's config + the `bot_status`/`bot_tick` driver -- one round is:
 
-1. **Re-request + wait** -- `bot_tick {N}` re-requests the bot (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment -- or just a push, which auto-triggers it) and polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed / `5` not applicable.
+1. **Re-request + wait** -- `bot_tick {N}` re-requests the bot (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment) and polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed / `5` not applicable.
 2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
 3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); on a failed review (`exit 4` -- usually structural: oversized PR, binary files, quota; escalate); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3"); or if HEAD is unchanged since the last round.
 
