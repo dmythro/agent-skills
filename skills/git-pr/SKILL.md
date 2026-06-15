@@ -3,8 +3,8 @@ name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
   comment handling, thread resolution, review state queries, merging, and
-  looping GitHub Copilot review rounds until clean. Use when creating PRs/MRs,
-  addressing review feedback, resolving threads, looping GitHub Copilot reviews,
+  looping bot review rounds (Copilot, CodeRabbit) until clean. Use when creating PRs/MRs,
+  addressing review feedback, resolving threads, looping bot reviews,
   checking approvals, querying PR data, or configuring gh/glab read-only
   allowlists. Not for git commits (git-commit), CI/CD status (git-ci), or
   general git ops
@@ -41,7 +41,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 - **Checking review state** -- approvals, pending reviewers, review decisions
 - **Querying PR/MR data** -- files changed, commits, labels, linked issues
 - **Posting comments on PRs/MRs** -- line-specific comments, thread replies
-- **Looping GitHub Copilot review rounds** (GitHub only; no GitLab equivalent) -- re-request Copilot, wait for the async review, address comments, repeat until no unresolved Copilot comments remain ("loop the Copilot review", "loop 3 rounds")
+- **Looping bot review rounds** (GitHub only; Copilot, CodeRabbit) -- re-request the bot, wait for the async review, address comments, repeat until no valid comments remain ("loop the Copilot review", "loop 3 rounds")
 - **Configuring tool allowlists** -- auto-approval patterns for read-only commands
 
 ## Critical Rules
@@ -265,19 +265,19 @@ glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --
 
 ---
 
-## Copilot Review Loop (GitHub)
+## Bot Review Loop (GitHub)
 
-> **Reference**: See `references/copilot-review-loop.md` for the full loop: the three Copilot author logins, the `copilot_status`/`copilot_tick` driver, polling, and termination logic.
+> **Reference**: See `references/bot-review-loop.md` for the full loop: per-bot config blocks (Copilot, CodeRabbit), the `bot_status`/`bot_tick` driver, polling, and termination logic.
 
-GitHub Copilot code review is **GitHub-only**, **asynchronous** (~3-11 min per request), and never blocks: its review `state` is always `COMMENTED`. Copilot does **not** auto re-review on push -- you must re-request each round. Repo auto-review (if enabled) covers only the first round. It also requires **gh >= 2.88** and Copilot code review **enabled** for the repo/account (plan + org/enterprise + repo settings). `copilot_tick` exits `5` when the remote isn't GitHub or the re-request errors; a request that's accepted but never answered exits `3` (timeout) -- which can mean slow *or* silently unavailable, so don't read `3` as merely "slow".
+GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (~minutes per review), and never block: their review `state` is always `COMMENTED`. The loop is identical per bot; only the **identity** (which login to filter) and the **re-request trigger** differ -- a per-bot config block sets both. There's no read-only "is it enabled" endpoint, so `bot_tick` exits `5` when the remote isn't GitHub or the re-request errors; an accepted-but-unanswered request exits `3` (slow *or* silently unavailable).
 
-Iterate until no **valid** comments remain. The loop is Copilot-driven (re-request + async wait), but each round **clears the whole review** -- validate every unresolved comment from any reviewer (Copilot, CodeRabbit, humans), not just Copilot's. Use the `copilot_status` / `copilot_tick` driver from the reference -- one round is:
+Iterate until no **valid** comments remain. Source a bot's config + the `bot_status`/`bot_tick` driver -- one round is:
 
-1. **Re-request + wait** -- `copilot_tick {N}` re-requests Copilot (`gh pr edit {N} --add-reviewer "@copilot"`, opt-in allowlistable) and polls for the async review (there is no `--watch`). It returns within ~5 min: `0` clean, `2` not clean, `3` retry, `4` failed, `5` not applicable.
-2. **Validate every reviewer's comments, don't blind-fix** -- evaluate each unresolved thread from any reviewer (Research Checklist); bots are useful but can be out of context or outdated. Fix the valid ones (commit + push -- which also re-triggers push-based bots like CodeRabbit), and reply with a rationale + resolve the invalid ones. Only Copilot is re-requested.
-3. **Terminate** -- stop when Copilot generates no comments; when a round yields **zero valid comments** (re-requesting would only resurface them); on a failed review (`exit 4` -- usually an oversized PR, binary files, or quota, which won't self-heal, so escalate); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3" to lower it); or if HEAD is unchanged since the last round.
+1. **Re-request + wait** -- `bot_tick {N}` re-requests the bot (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment -- or just a push, which auto-triggers it) and polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed / `5` not applicable.
+2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
+3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); on a failed review (`exit 4` -- usually structural: oversized PR, binary files, quota; escalate); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3"); or if HEAD is unchanged since the last round.
 
-**Identity gotcha:** the same bot has three logins -- `copilot-pull-request-reviewer[bot]` (REST reviews), `Copilot` (REST comments), and `copilot-pull-request-reviewer` (GraphQL threads). Use the right one per endpoint.
+**Identity gotcha:** each bot has a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (Copilot: `copilot-pull-request-reviewer[bot]` / `copilot-pull-request-reviewer`, plus `Copilot` on REST inline comments; CodeRabbit: `coderabbitai[bot]` / `coderabbitai`). Filter the right one per surface.
 
 ---
 

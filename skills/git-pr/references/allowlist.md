@@ -105,9 +105,9 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 ---
 
-## Copilot Re-Request (Opt-In Write)
+## Bot Re-Request (Opt-In Write)
 
-The Copilot review loop (`references/copilot-review-loop.md`) re-requests a review each round. This is the **only write** this skill suggests auto-approving. The canonical command re-requests Copilot as a reviewer and does not merge or close the PR -- but the pattern is **not** a hard sandbox: it uses a `*` wildcard (see Scope and Caveat below), so read those before trusting it. Its read-only polling (`gh api .../reviews`, `gh pr view --json headRefOid`, the GraphQL `reviewThreads` query) is already covered by the patterns above.
+The bot review loop (`references/bot-review-loop.md`) re-requests a review each round. These are the **only writes** this skill suggests auto-approving -- a Copilot reviewer request, or a CodeRabbit `@coderabbitai review` comment. Neither merges or closes the PR, but both patterns key on the command *ending* (a `*` wildcard precedes it; see Caveat), so review them before trusting. The read-only polling (`gh api .../reviews`, `gh pr view --json headRefOid`, the GraphQL `reviewThreads` query) is already covered by the patterns above.
 
 ### Claude Code
 
@@ -115,16 +115,17 @@ The Copilot review loop (`references/copilot-review-loop.md`) re-requests a revi
 {
   "permissions": {
     "allow": [
-      "Bash(gh pr edit * --add-reviewer \"@copilot\")"
+      "Bash(gh pr edit * --add-reviewer \"@copilot\")",
+      "Bash(gh pr comment * --body \"@coderabbitai review\")"
     ]
   }
 }
 ```
 
-- **Issue the command in exactly this canonical form**: `gh pr edit {N} --add-reviewer "@copilot"` (quoted `"@copilot"`, flag last). The loop depends on this form matching; reordering flags or dropping the quotes will prompt.
-- **Scope**: matches any `gh pr edit` command **ending** in `--add-reviewer "@copilot"`. A command where the reviewer flag is not last (e.g. `--add-reviewer "@copilot" --title X`) is not matched and stays manual.
-- **Caveat**: because the command only needs to *end* with `--add-reviewer "@copilot"`, extra flags placed before it (e.g. `--title`, `--body`) would also be auto-approved and **could modify PR content**. The loop only ever issues the bare canonical form; if you want zero `gh pr edit` latitude, omit this entry and approve the re-request manually.
-- The removal command (`--remove-reviewer "@copilot"`) is not allowlisted -- it is not part of the loop.
+- **Issue each in its canonical form**: Copilot `gh pr edit {N} --add-reviewer "@copilot"` (quoted, flag last); CodeRabbit `gh pr comment {N} --body "@coderabbitai review"`. The loop depends on these exact forms; reordering or dropping quotes will prompt.
+- **Scope**: each matches only commands **ending** in the shown flag/body. A command where it isn't last (e.g. `--add-reviewer "@copilot" --title X`) is not matched and stays manual. The CodeRabbit pattern is scoped to the exact trigger text, so it can't auto-approve arbitrary `gh pr comment` bodies.
+- **Caveat**: because matching keys on the *ending*, extra flags placed before it (e.g. `--title`, `--body` on `gh pr edit`) would also be auto-approved and **could modify PR content**. The loop only issues the bare canonical forms; for zero latitude, omit these and approve manually.
+- Removal/cleanup commands (`gh pr edit --remove-reviewer "@copilot"`) are not allowlisted -- not part of the loop.
 
 ---
 
