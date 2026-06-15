@@ -2,6 +2,15 @@
 
 **Iterate GitHub Copilot code-review rounds on a PR until Copilot has no unresolved comments left on the current HEAD.** This builds on `pr-comment-workflow.md` for the per-round evaluate/fix/reply/resolve work -- this file owns only the Copilot-specific parts: re-requesting, waiting for the async review, detecting failed reviews, and deciding when to stop. Copilot code review is **GitHub-only**, **asynchronous**, and **never blocks** (its review state is always `COMMENTED`), so treat its output as advisory, not a merge gate.
 
+## Preconditions
+
+The loop is **GitHub-only** and only works where Copilot code review is enabled:
+
+- **GitHub only** -- Copilot code review is a GitHub feature with no GitLab/`glab` equivalent. Confirm the remote first (`git remote get-url origin` contains `github.com`); for GitLab MRs this loop does not apply. `copilot_tick` checks this and exits `5`.
+- **gh >= 2.88** -- earlier versions lack `--add-reviewer "@copilot"`.
+- **Copilot code review enabled** -- not available on every account/repo. It needs a plan that includes Copilot code review plus enablement at the org/enterprise level and in repo Settings > Copilot > Code review. There is no read-only "is it enabled" endpoint, so detect it behaviorally: if `gh pr edit {N} --add-reviewer "@copilot"` errors (caught as exit `5`), or no review and no failure notice ever arrive, treat it as unavailable and stop -- do not poll forever.
+- **Allowlisting** -- the read-only commands match the patterns in `allowlist.md`; the opt-in re-request needs its own pattern (also in `allowlist.md`). Use unquoted REST paths so they match.
+
 ## How Copilot Reviews Appear
 
 Copilot exposes **three different author logins for the same bot**, depending on which surface you query. Filtering the wrong one returns nothing and silently breaks detection:
@@ -52,7 +61,7 @@ copilot_status() {
   # NOTE: --paginate with -q/--jq applies the filter PER PAGE (one result per page). Use
   # --paginate --slurp (an array of pages) piped to jq and flatten with .[][], so "last" is
   # the overall latest across all pages -- not a per-page last. (--slurp can't combine with -q.)
-  review="$(gh api "repos/$owner/$repo/pulls/$pr/reviews" --paginate --slurp | jq -c --arg head "$head" '[.[][] | select(.user.login=="copilot-pull-request-reviewer[bot]" and .commit_id==$head)] | last')"
+  review="$(gh api repos/$owner/$repo/pulls/$pr/reviews --paginate --slurp | jq -c --arg head "$head" '[.[][] | select(.user.login=="copilot-pull-request-reviewer[bot]" and .commit_id==$head)] | last')"
 
   if [ -n "$review" ] && [ "$review" != "null" ]; then
     # Failed review = error notice in the body, NOT a clean result.
@@ -84,7 +93,7 @@ copilot_status() {
   # No review for HEAD. The failure can also arrive as a PR (issue) comment -- distinguish
   # "failed" from "still pending" by scanning Copilot comments posted after the HEAD commit.
   since="$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')"
-  failed="$(gh api "repos/$owner/$repo/issues/$pr/comments" --paginate --slurp | jq --arg since "$since" --arg fail "$fail_re" '[.[][] | select((.user.login|test("copilot";"i")) and (.created_at > $since) and (.body|test($fail;"i")))] | length')"
+  failed="$(gh api repos/$owner/$repo/issues/$pr/comments --paginate --slurp | jq --arg since "$since" --arg fail "$fail_re" '[.[][] | select((.user.login|test("copilot";"i")) and (.created_at > $since) and (.body|test($fail;"i")))] | length')"
   if [ "${failed:-0}" -gt 0 ]; then
     echo "Copilot review FAILED on HEAD ${head:0:8} (error notice in PR comments) -- re-request needed"; return 4
   fi
@@ -98,9 +107,14 @@ Reviews are **asynchronous** (typically ~3-11 min after a request) and there is 
 
 ```bash
 # Usage: copilot_tick <PR_NUMBER>  -- re-request if needed (incl. after a failure), poll for the outcome.
-# Wraps copilot_status. Exit: 0 clean / 2 not clean (comments or inconclusive) / 3 timed out / 4 failed repeatedly (escalate).
+# Wraps copilot_status. Exit: 0 clean / 2 not clean (comments or inconclusive) / 3 timed out / 4 failed repeatedly / 5 unavailable (non-GitHub, or Copilot review not enabled).
 copilot_tick() {
   pr="$1"; fails=0
+  # GitHub only -- Copilot code review has no GitLab equivalent.
+  case "$(git remote get-url origin 2>/dev/null)" in
+    *github.com*) : ;;
+    *) echo "Copilot review loop is GitHub-only (origin is not github.com)"; return 5 ;;
+  esac
   copilot_status "$pr"; rc=$?
   while [ "$rc" -eq 3 ] || [ "$rc" -eq 4 ]; do
     if [ "$rc" -eq 4 ]; then
@@ -110,7 +124,11 @@ copilot_tick() {
       fi
       echo "Failed review; waiting ~90s before re-requesting (attempt $fails)"; sleep 90
     fi
-    gh pr edit "$pr" --add-reviewer "@copilot" >/dev/null     # WRITE; no-op if pending
+    # Re-request (WRITE; no-op if pending). A failure usually means Copilot code review is not
+    # enabled here (or gh < 2.88) -- stop rather than poll for a review that will never come.
+    if ! gh pr edit "$pr" --add-reviewer "@copilot" >/dev/null 2>&1; then
+      echo "Cannot request Copilot review -- not enabled here, or gh < 2.88 (check plan / org / repo Settings > Copilot > Code review)"; return 5
+    fi
     deadline=$(( $(date +%s) + 480 ))                         # ~8 min; keep under the 10-min Bash cap
     rc=3
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -144,6 +162,7 @@ repeat:
   prev_head = head
   copilot_tick N:
     exit 0 -> STOP "clean: Copilot has no unresolved comments"
+    exit 5 -> STOP "not applicable -- non-GitHub remote, or Copilot code review not enabled here"
     exit 4 -> STOP "Copilot review keeps failing -- escalate (PR size / binary files / quota)"
     exit 3 -> STOP "review timed out -- retry later"
     exit 2 -> address this round (pr-comment-workflow.md Phase 1/2):
@@ -169,3 +188,5 @@ repeat:
 7. **`K==1` uses singular "comment"** -- parse digits (`generated [0-9]+ comment`), not the word.
 8. **Match the canonical re-request form** -- `gh pr edit {N} --add-reviewer "@copilot"`, quoted, flag last, or the allowlist entry will not match and it will prompt.
 9. **The thread query caps at 100** -- `reviewThreads(first: 100)` is not paginated. `copilot_status` compares against `totalCount` and refuses to report "clean" when more threads exist than were fetched, so the termination guarantee holds; paginate (cursor `after:`) only if you routinely exceed 100 threads on one PR.
+10. **GitHub-only, and not always available** -- no GitLab equivalent, and Copilot code review needs an enabled plan/org/repo. Gate on the provider and on the re-request succeeding (exit `5`); don't poll for a review that will never come. There is no read-only availability endpoint -- the re-request erroring is the signal.
+11. **Use unquoted REST paths** -- `gh api repos/$owner/...` (not `gh api "repos/..."`); the quotes prevent the unquoted allowlist patterns from matching and trigger a prompt.
