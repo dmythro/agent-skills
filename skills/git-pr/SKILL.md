@@ -271,13 +271,11 @@ glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --
 
 GitHub Copilot code review is **GitHub-only**, **asynchronous** (~3-11 min per request), and never blocks: its review `state` is always `COMMENTED`. Copilot does **not** auto re-review on push -- you must re-request each round. Repo auto-review (if enabled) covers only the first round. It also requires **gh >= 2.88** and Copilot code review **enabled** for the repo/account (plan + org/enterprise + repo settings). `copilot_tick` exits `5` when the remote isn't GitHub or the re-request errors; a request that's accepted but never answered exits `3` (timeout) -- which can mean slow *or* silently unavailable, so don't read `3` as merely "slow".
 
-Iterate until there are zero unresolved Copilot threads on current HEAD:
+Iterate until no **valid** Copilot comments remain. Use the `copilot_status` / `copilot_tick` driver from the reference -- one round is:
 
-1. **Re-request** -- `gh pr edit {N} --add-reviewer "@copilot"` (write; gh >= 2.88; opt-in allowlistable).
-2. **Poll** -- no `--watch` for reviews; poll `gh api repos/{owner}/{repo}/pulls/{n}/reviews` until a review by `copilot-pull-request-reviewer[bot]` with `commit_id` == current HEAD appears.
-3. **Handle failures** -- a review body or PR comment saying "Copilot encountered an error and was unable to review this pull request" is **not** "no comments". Wait ~90s, re-request, and cap retries (causes like an oversized PR, binary files, or exhausted quota will not self-heal).
-4. **Address** -- evaluate each comment (Research Checklist), fix valid ones, commit, push, then reply and resolve (Phase 1/2 above).
-5. **Terminate** -- stop when Copilot generates no comments; when a round yields **zero valid comments** (all rejected as out-of-context/outdated -- re-requesting would only resurface them); after the round cap (default 20, or "loop 3" to lower it); after 3 errored reviews; on unavailability (exit `5`); or if HEAD is unchanged since the last round.
+1. **Re-request + wait** -- `copilot_tick {N}` re-requests Copilot (`gh pr edit {N} --add-reviewer "@copilot"`, opt-in allowlistable) and polls for the async review (there is no `--watch`). It returns within ~5 min: `0` clean, `2` comments, `3` retry, `4` failed, `5` not applicable.
+2. **Validate, don't blind-fix** -- evaluate each comment (Research Checklist); Copilot is useful but can be out of context or outdated. Fix the valid ones (commit + push), and reply with a rationale + resolve the invalid ones (no code change).
+3. **Terminate** -- stop when Copilot generates no comments; when a round yields **zero valid comments** (re-requesting would only resurface them); on a failed review (`exit 4` -- usually an oversized PR, binary files, or quota, which won't self-heal, so escalate); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3" to lower it); or if HEAD is unchanged since the last round.
 
 **Identity gotcha:** the same bot has three logins -- `copilot-pull-request-reviewer[bot]` (REST reviews), `Copilot` (REST comments), and `copilot-pull-request-reviewer` (GraphQL threads). Use the right one per endpoint.
 
