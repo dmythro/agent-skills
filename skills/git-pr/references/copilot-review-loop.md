@@ -94,7 +94,7 @@ copilot_status() {
 
 ## Wait for the Review (Polling)
 
-Reviews are **asynchronous** (typically ~3-11 min after a request) and there is **no `--watch`** for reviews (unlike `gh pr checks --watch`). `copilot_tick` re-requests when needed, polls until an outcome lands, and on a failed review waits ~90s before re-requesting (capped, since structural failures will not self-heal):
+Reviews are **asynchronous** (typically ~3-11 min after a request) and there is **no `--watch`** for reviews (unlike `gh pr checks --watch`). `copilot_tick` re-requests when needed, polls until an outcome lands, and on a failed review waits ~90s before re-requesting (capped at **3 errored reviews**, since structural failures will not self-heal):
 
 ```bash
 # Usage: copilot_tick <PR_NUMBER>  -- re-request if needed (incl. after a failure), poll for the outcome.
@@ -131,13 +131,13 @@ If `copilot_tick` returns `3` (timeout), just run it again -- it re-checks for a
 The agent orchestrates the outer loop; `copilot_tick` handles the mechanical round. Termination has several independent triggers so a noisy or failing bot can never trap the agent.
 
 ```
-INPUT: PR number N; optional MAX_ROUNDS (from "loop 3" -> 3; default: unlimited)
+INPUT: PR number N; MAX_ROUNDS (from "loop 3" -> 3; default 20)
 prev_head = ""; round = 0
 repeat:
   round += 1
   head = gh pr view N --json headRefOid --jq .headRefOid
-  if MAX_ROUNDS set and round > MAX_ROUNDS:
-      STOP "ran the requested N round(s); unresolved Copilot comments remain"
+  if round > MAX_ROUNDS:
+      STOP "hit the round cap (MAX_ROUNDS, default 20); comments may remain -- escalate"
   if round > 1 and head == prev_head:
       STOP "no code change since last round -- re-reviewing identical code
             would resurface the same comments"
@@ -154,9 +154,9 @@ repeat:
                 continue
 ```
 
-**Why it always terminates.** A round only loops again when the agent pushed a fix, which advances HEAD. A round that changes no code (e.g. every comment was a false positive the agent replied to and resolved) leaves HEAD unchanged: the next iteration's `head == prev_head` guard stops it, and even without that guard `copilot_tick` would not re-request (a review for that HEAD already exists) and would return `0` once the handled threads are resolved. Failed reviews are retried at most a few times inside `copilot_tick`, then surface as `exit 4`. The infinite "new thread for the same nit on the same code" loop cannot happen.
+**Why it always terminates.** A round only loops again when the agent pushed a fix, which advances HEAD. A round that changes no code (e.g. every comment was a false positive the agent replied to and resolved) leaves HEAD unchanged: the next iteration's `head == prev_head` guard stops it, and even without that guard `copilot_tick` would not re-request (a review for that HEAD already exists) and would return `0` once the handled threads are resolved. Failed reviews are retried at most **3 times** inside `copilot_tick` before surfacing as `exit 4`, and the whole loop is bounded by `MAX_ROUNDS` (default 20). The infinite "new thread for the same nit on the same code" loop cannot happen.
 
-**Round count as the "parameter".** Invocations like "loop the Copilot review 3 rounds" set `MAX_ROUNDS=3`; with no number, loop until clean (the HEAD-unchanged guard still prevents runaway).
+**Round count as the "parameter".** Invocations like "loop the Copilot review 3 rounds" set `MAX_ROUNDS=3`; with no number it defaults to **20**. The HEAD-unchanged guard and the failed-review cap usually stop the loop well before the cap.
 
 ## Key Gotchas
 
