@@ -82,12 +82,14 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/pulls/*/reviews)",
 "Bash(gh api repos/*/pulls/*/reviews --paginate)",
 "Bash(gh api repos/*/pulls/*/reviews --jq *)",
+"Bash(gh api repos/*/pulls/*/reviews --paginate --jq *)",
 "Bash(gh api repos/*/pulls/*/files *)",
 "Bash(gh api repos/*/pulls/*/commits *)",
 "Bash(gh api repos/*/pulls/*/requested_reviewers)",
 "Bash(gh api repos/*/issues/*/comments)",
 "Bash(gh api repos/*/issues/*/comments --paginate)",
 "Bash(gh api repos/*/issues/*/comments --jq *)",
+"Bash(gh api repos/*/issues/*/comments --paginate --jq *)",
 "Bash(gh api repos/*/issues/*/labels)",
 "Bash(gh api repos/*/issues/*/labels --jq *)",
 "Bash(gh api repos/*/issues/*/timeline *)"
@@ -102,11 +104,35 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 ---
 
+## Copilot Re-Request (Opt-In Write)
+
+The Copilot review loop (`references/copilot-review-loop.md`) re-requests a review each round. This is the **only write** this skill suggests auto-approving; it is narrowly scoped -- it can re-request Copilot as a reviewer but cannot merge, close, or modify PR content. Its read-only polling (`gh api .../reviews`, `gh pr view --json headRefOid`, the GraphQL `reviewThreads` query) is already covered by the patterns above.
+
+### Claude Code
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr edit * --add-reviewer \"@copilot\")"
+    ]
+  }
+}
+```
+
+- **Issue the command in exactly this canonical form**: `gh pr edit {N} --add-reviewer "@copilot"` (quoted `"@copilot"`, flag last). The loop depends on this form matching; reordering flags or dropping the quotes will prompt.
+- **Scope**: matches only `gh pr edit` invocations ending in `--add-reviewer "@copilot"`. Other edits (`--title`, `--body`, `--base`, other reviewers) are not matched and stay manual.
+- **Caveat**: `*` matches any text between `gh pr edit` and the trailing flag, so a command that also sets another flag before `--add-reviewer "@copilot"` would match. In practice the loop only ever issues the canonical form. Omit this entry to keep all writes manual.
+- The removal command (`--remove-reviewer "@copilot"`) is not allowlisted -- it is not part of the loop.
+
+---
+
 ## Not Included (Manual Approval Required)
 
 - **GraphQL mutations** -- `resolveReviewThread`, `addPullRequestReviewComment`, etc. use `mutation {` which does not match the `*{ repository*` allowlist pattern
 - **REST writes** -- POST/PUT/DELETE on `/comments`, `/reviews`, `/requested_reviewers`
 - **Write subcommands** -- `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
+- **PR edits** -- `gh pr edit` (title, body, base, reviewers) stays manual, except the narrowly-scoped Copilot re-request documented above under "Copilot Re-Request (Opt-In Write)"
 - **Comment operations** -- replies, line comments, review submissions
 - **Thread resolution** -- GraphQL mutations, `glab api --method PUT`
 

@@ -2,10 +2,12 @@
 name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
-  comment handling, thread resolution, review state queries, and merging.
-  Use when creating PRs/MRs, addressing review feedback, resolving threads, checking
-  approvals, querying PR data, or configuring gh/glab read-only allowlists.
-  Not for git commits (git-commit), CI/CD status (git-ci), or general git ops
+  comment handling, thread resolution, review state queries, merging, and
+  looping Copilot review rounds until clean. Use when creating PRs/MRs,
+  addressing review feedback, resolving threads, looping Copilot reviews,
+  checking approvals, querying PR data, or configuring gh/glab read-only
+  allowlists. Not for git commits (git-commit), CI/CD status (git-ci), or
+  general git ops
 ---
 
 # PR and MR Workflows
@@ -39,6 +41,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 - **Checking review state** -- approvals, pending reviewers, review decisions
 - **Querying PR/MR data** -- files changed, commits, labels, linked issues
 - **Posting comments on PRs/MRs** -- line-specific comments, thread replies
+- **Looping Copilot review rounds** -- re-request Copilot, wait for the async review, address comments, repeat until no unresolved Copilot comments remain ("loop the Copilot review", "loop 3 rounds")
 - **Configuring tool allowlists** -- auto-approval patterns for read-only commands
 
 ## Critical Rules
@@ -259,6 +262,24 @@ glab api projects/{id}/merge_requests/{iid}/discussions/{disc_1} --method PUT --
 glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2}/notes --method POST --field "body=Addressed" && \
 glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --field "resolved=true"
 ```
+
+---
+
+## Copilot Review Loop (GitHub)
+
+> **Reference**: See `references/copilot-review-loop.md` for the full loop: the three Copilot author logins, the `copilot_status`/`copilot_tick` driver, polling, and termination logic.
+
+GitHub Copilot code review is **GitHub-only**, **asynchronous** (~3-11 min per request), and never blocks: its review `state` is always `COMMENTED`. Copilot does **not** auto re-review on push -- you must re-request each round. Repo auto-review (if enabled) covers only the first round.
+
+Iterate until there are zero unresolved Copilot threads on current HEAD:
+
+1. **Re-request** -- `gh pr edit {N} --add-reviewer "@copilot"` (write; gh >= 2.88; opt-in allowlistable).
+2. **Poll** -- no `--watch` for reviews; poll `gh api repos/{owner}/{repo}/pulls/{n}/reviews` until a review by `copilot-pull-request-reviewer[bot]` with `commit_id` == current HEAD appears.
+3. **Handle failures** -- a review body or PR comment saying "Copilot encountered an error and was unable to review this pull request" is **not** "no comments". Wait ~90s, re-request, and cap retries (causes like an oversized PR, binary files, or exhausted quota will not self-heal).
+4. **Address** -- evaluate each comment (Research Checklist), fix valid ones, commit, push, then reply and resolve (Phase 1/2 above).
+5. **Terminate** -- stop when no unresolved Copilot threads remain; or after a requested round count ("loop 3"); or if HEAD is unchanged since the last round (re-requesting unchanged code resurfaces the same comments).
+
+**Identity gotcha:** the same bot has three logins -- `copilot-pull-request-reviewer[bot]` (REST reviews), `Copilot` (REST comments), and `copilot-pull-request-reviewer` (GraphQL threads). Use the right one per endpoint.
 
 ---
 
