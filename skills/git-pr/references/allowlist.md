@@ -106,7 +106,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 ## Copilot Re-Request (Opt-In Write)
 
-The Copilot review loop (`references/copilot-review-loop.md`) re-requests a review each round. This is the **only write** this skill suggests auto-approving; it is narrowly scoped -- it can re-request Copilot as a reviewer but cannot merge, close, or modify PR content. Its read-only polling (`gh api .../reviews`, `gh pr view --json headRefOid`, the GraphQL `reviewThreads` query) is already covered by the patterns above.
+The Copilot review loop (`references/copilot-review-loop.md`) re-requests a review each round. This is the **only write** this skill suggests auto-approving. The canonical command re-requests Copilot as a reviewer and does not merge or close the PR -- but the pattern is **not** a hard sandbox: it uses a `*` wildcard (see Scope and Caveat below), so read those before trusting it. Its read-only polling (`gh api .../reviews`, `gh pr view --json headRefOid`, the GraphQL `reviewThreads` query) is already covered by the patterns above.
 
 ### Claude Code
 
@@ -121,8 +121,8 @@ The Copilot review loop (`references/copilot-review-loop.md`) re-requests a revi
 ```
 
 - **Issue the command in exactly this canonical form**: `gh pr edit {N} --add-reviewer "@copilot"` (quoted `"@copilot"`, flag last). The loop depends on this form matching; reordering flags or dropping the quotes will prompt.
-- **Scope**: matches only `gh pr edit` invocations ending in `--add-reviewer "@copilot"`. Other edits (`--title`, `--body`, `--base`, other reviewers) are not matched and stay manual.
-- **Caveat**: `*` matches any text between `gh pr edit` and the trailing flag, so a command that also sets another flag before `--add-reviewer "@copilot"` would match. In practice the loop only ever issues the canonical form. Omit this entry to keep all writes manual.
+- **Scope**: matches any `gh pr edit` command **ending** in `--add-reviewer "@copilot"`. A command where the reviewer flag is not last (e.g. `--add-reviewer "@copilot" --title X`) is not matched and stays manual.
+- **Caveat**: because the command only needs to *end* with `--add-reviewer "@copilot"`, extra flags placed before it (e.g. `--title`, `--body`) would also be auto-approved and **could modify PR content**. The loop only ever issues the bare canonical form; if you want zero `gh pr edit` latitude, omit this entry and approve the re-request manually.
 - The removal command (`--remove-reviewer "@copilot"`) is not allowlisted -- it is not part of the loop.
 
 ---
