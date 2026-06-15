@@ -62,13 +62,22 @@ copilot_status() {
 
     # Unresolved Copilot threads. GraphQL author.login = copilot-pull-request-reviewer
     # (NOT "Copilot" or "...[bot]"). Match case-insensitively on the "copilot" prefix to be safe.
-    unresolved="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" \
-      --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false and (.comments.nodes[0].author.login | ascii_downcase | startswith("copilot")))]')"
+    threads="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" \
+      --jq '.data.repository.pullRequest.reviewThreads')"
+    unresolved="$(printf '%s' "$threads" | jq '[.nodes[] | select(.isResolved==false and (.comments.nodes[0].author.login | ascii_downcase | startswith("copilot")))]')"
     n="$(printf '%s' "$unresolved" | jq 'length')"
-    if [ "${n:-0}" -eq 0 ]; then echo "No unresolved Copilot threads -- clean."; return 0; fi
-    echo "Unresolved Copilot threads ($n):"
-    printf '%s' "$unresolved" | jq -r '.[] | "  \(.path):\(.line)  \(.comments.nodes[0].body | gsub("\n";" ") | .[0:90])"'
-    return 2
+    if [ "${n:-0}" -gt 0 ]; then
+      echo "Unresolved Copilot threads ($n):"
+      printf '%s' "$unresolved" | jq -r '.[] | "  \(.path):\(.line)  \(.comments.nodes[0].body | gsub("\n";" ") | .[0:90])"'
+      return 2
+    fi
+    # Only trust "clean" if we actually fetched every thread -- the query caps at 100 and does
+    # not paginate, so a PR with >100 threads could hide unresolved ones beyond the first page.
+    total="$(printf '%s' "$threads" | jq '.totalCount')"
+    if [ "${total:-0}" -gt 100 ]; then
+      echo "Inconclusive: $total review threads exceed the 100 fetched -- resolve threads or paginate before trusting 'clean'"; return 2
+    fi
+    echo "No unresolved Copilot threads -- clean."; return 0
   fi
 
   # No review for HEAD. The failure can also arrive as a PR (issue) comment -- distinguish
@@ -159,3 +168,4 @@ repeat:
 6. **Resolving without a code change + re-requesting can resurface the same comment** -- gate every new round on HEAD actually changing.
 7. **`K==1` uses singular "comment"** -- parse digits (`generated [0-9]+ comment`), not the word.
 8. **Match the canonical re-request form** -- `gh pr edit {N} --add-reviewer "@copilot"`, quoted, flag last, or the allowlist entry will not match and it will prompt.
+9. **The thread query caps at 100** -- `reviewThreads(first: 100)` is not paginated. `copilot_status` compares against `totalCount` and refuses to report "clean" when more threads exist than were fetched, so the termination guarantee holds; paginate (cursor `after:`) only if you routinely exceed 100 threads on one PR.
