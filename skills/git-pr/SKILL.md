@@ -3,8 +3,8 @@ name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
   comment handling, thread resolution, review state queries, merging, and
-  looping Copilot review rounds until clean. Use when creating PRs/MRs,
-  addressing review feedback, resolving threads, looping Copilot reviews,
+  looping GitHub Copilot review rounds until clean. Use when creating PRs/MRs,
+  addressing review feedback, resolving threads, looping GitHub Copilot reviews,
   checking approvals, querying PR data, or configuring gh/glab read-only
   allowlists. Not for git commits (git-commit), CI/CD status (git-ci), or
   general git ops
@@ -41,7 +41,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 - **Checking review state** -- approvals, pending reviewers, review decisions
 - **Querying PR/MR data** -- files changed, commits, labels, linked issues
 - **Posting comments on PRs/MRs** -- line-specific comments, thread replies
-- **Looping Copilot review rounds** -- re-request Copilot, wait for the async review, address comments, repeat until no unresolved Copilot comments remain ("loop the Copilot review", "loop 3 rounds")
+- **Looping GitHub Copilot review rounds** (GitHub only; no GitLab equivalent) -- re-request Copilot, wait for the async review, address comments, repeat until no unresolved Copilot comments remain ("loop the Copilot review", "loop 3 rounds")
 - **Configuring tool allowlists** -- auto-approval patterns for read-only commands
 
 ## Critical Rules
