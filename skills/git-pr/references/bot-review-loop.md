@@ -54,7 +54,7 @@ bot_status() {
       echo "$BOT_THREAD_PREFIX review FAILED on HEAD ${head:0:8} -- re-request needed"; return 4
     fi
     threads="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
-    unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and (.comments.nodes[0].author.login | ascii_downcase | startswith($p)))]')"
+    unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
     n="$(printf '%s' "$unresolved" | jq 'length')"
     if [ "${n:-0}" -gt 0 ]; then
       echo "Unresolved $BOT_THREAD_PREFIX threads ($n):"
