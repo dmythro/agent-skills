@@ -48,7 +48,7 @@ gh api graphql -f query='{ viewer { projectV2(number: <num>) { views(first:10){n
   --jq '{views:[.data.viewer.projectV2.views.nodes[].name], on:[.data.viewer.projectV2.workflows.nodes[]|select(.enabled)|.name]}'
 ```
 
-Expect views `["Epic","Upcoming"]` and the workflows above enabled.
+Expect views `["Epic","Upcoming"]` and the workflows above enabled. (Org-owned project: swap `viewer` for `organization(login: "ORG")` and `.data.viewer` for `.data.organization` -- see `cli-and-graphql.md`.)
 
 ## Migrating an existing repo's issues
 

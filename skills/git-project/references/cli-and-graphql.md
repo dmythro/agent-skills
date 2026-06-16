@@ -2,6 +2,8 @@
 
 Validated against `gh` 2.94. Projects are addressed by **number** under an `--owner` (`@me` or an org login). `gh project` covers projects, fields, and items; **views and workflows have no create/update API** (UI-only -- see `project-setup.md`).
 
+**Owner / org note:** the `--owner @me` examples below take an **org login** instead for org-owned projects. The GraphQL **project reads** here use `viewer { projectV2 }` (the `@me` case); for an org-owned project replace it with `organization(login: "ORG") { projectV2 }` (and `.data.viewer` -> `.data.organization` in the `--jq`). Repo-scoped reads (`repository(owner, name)`, REST `repos/{owner}/{repo}/...`) are unaffected.
+
 ## Find projects and their IDs
 
 ```bash

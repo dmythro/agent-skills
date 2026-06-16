@@ -40,7 +40,7 @@ These are the traps -- each is a place where the obvious action leaves the struc
 
 - **GitHub only** -- Projects v2 has no GitLab equivalent.
 - **`gh` with the `project` scope** -- `gh auth status` must list `project`; else `gh auth refresh -s project`.
-- Projects are addressed by **number** under an `--owner` (`@me` or an org). The repo and project may have different owners.
+- Projects are addressed by **number** under an `--owner` (`@me` or an org login). The repo and project may have different owners. For an **org-owned** project, pass the org login to `--owner`, and in GraphQL reads use `organization(login: "ORG") { projectV2 }` instead of `viewer { projectV2 }` (see `references/cli-and-graphql.md`).
 
 ## The Model
 
@@ -118,7 +118,7 @@ Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggle
 ## Read-Only vs Write Classification
 
 - **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`
-- **Write** (require approval): `gh project create/copy/edit/field-create/item-add/item-edit/item-archive`, `gh label create`, `gh issue create/edit`, sub-issue `POST`/`DELETE`, GraphQL mutations
+- **Write** (require approval): `gh project create/copy/edit/link/field-create/item-add/item-edit/item-archive/item-delete`, `gh label create`, `gh issue create/edit`, sub-issue `POST`/`DELETE`, GraphQL mutations
 
 > **Reference**: See `references/allowlist.md` for read-only `gh project` patterns and the opt-in write set.
 
