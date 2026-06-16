@@ -49,9 +49,11 @@ gh api --method POST   repos/{owner}/{repo}/issues/<newEpic>/sub_issues -F sub_i
 
 ## Find an issue's current parent
 
+The issue REST object does **not** expose its parent -- query it with GraphQL:
+
 ```bash
-gh api repos/{owner}/{repo}/issues/<child> --jq '.parent // "none" | (.number? // .)'
-# or via GraphQL: issue.parent { number }
+gh api graphql -f query='{ repository(owner:"{owner}",name:"{repo}"){ issue(number:<child>){ parent { number title } } } }' \
+  --jq '.data.repository.issue.parent.number // "none"'
 ```
 
 ## GraphQL alternative

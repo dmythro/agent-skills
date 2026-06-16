@@ -66,8 +66,9 @@ for child in <existing#> <existing#>; do
   gh api --method POST repos/{owner}/{repo}/issues/$epic/sub_issues \
     -F sub_issue_id="$(gh api repos/{owner}/{repo}/issues/$child --jq .id)"
 done
-# Put the epic on the board; children auto-add if the native "Auto-add sub-issues" workflow is on
+# Put the epic on the board; its children auto-join IF the native "Auto-add sub-issues" workflow is on
 gh project item-add <num> --owner @me --url "$(gh issue view $epic --json url --jq .url)"
+# (if that workflow is off, item-add each child's URL too)
 ```
 
 ### Add an issue to an existing epic
@@ -90,9 +91,13 @@ gh api --method POST   repos/{owner}/{repo}/issues/<newEpic>/sub_issues -F sub_i
 
 ```bash
 # Discover the item id + field/option ids once (see references/cli-and-graphql.md), then:
-gh project item-edit --id <item> --project-id <proj> --field-id <statusField>   --single-select-option-id <inProgress>   # pickup
-gh project item-edit --id <item> --project-id <proj> --field-id <statusField>   --single-select-option-id <done>          # on close
-gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>            # prioritize
+# pick up
+gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <inProgress>
+# finish -- close the issue; the native "Item closed" workflow sets Status: Done (set it here only if that workflow is off)
+gh issue close <issue>
+gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <done>
+# (re)prioritize
+gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>
 ```
 
 > **Reference**: `references/cli-and-graphql.md` -- full command set, getting `<item>`/`<proj>`/field+option ids (`field-list`/`item-list --format json`), and `updateProjectV2ItemPosition` for roadmap ordering. `references/sub-issues.md` -- the native link API, the database-id requirement, re-parenting, and the ~25/request batch limit.

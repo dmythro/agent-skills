@@ -52,9 +52,11 @@ gh project item-edit --id <itemId> --project-id <projectId> --field-id <fieldId>
 
 ### Resolve an issue's item id (one-liner)
 
+gh's `--jq` is built in (it is **not** the standalone `jq`, so no `--arg`) -- interpolate the issue number directly, or pipe to real `jq`:
+
 ```bash
 gh project item-list <num> --owner @me --format json \
-  --jq --arg n <issueNumber> '.items[] | select(.content.number==($n|tonumber)) | .id'
+  --jq '.items[] | select(.content.number==<issueNumber>) | .id'
 ```
 
 ## Roadmap ordering
