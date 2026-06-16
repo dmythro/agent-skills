@@ -9,7 +9,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh` an
 - `Bash(command:*)` -- colon-star matches command prefix with any arguments (including none). This is the current recommended syntax for both `gh` and `glab` commands.
 - `*` cannot match shell operators (`&&`, `||`, `;`, `|`) -- pipe-inclusive patterns must spell out the pipe explicitly
 - For `glab` commands piped to `jq`, use `Bash(glab ... | jq *)` because `*` cannot cross the pipe boundary
-- **Variable assignments break matching** -- any `VAR=value` line before the command (inline or separate line) makes the command string start with `VAR=...`. Use `$(...)` command substitution directly in the command arguments instead
+- **Variable assignments break matching** -- any `VAR=value` line before the command (inline or separate line) makes the command string start with `VAR=...`. Use `$(...)` command substitution directly in the command arguments instead, or gh's `{owner}/{repo}` placeholders on REST endpoints (gh fills them from the current repo, so no `owner=`/`repo=` lookup is needed)
 - **Single-line commands recommended** -- `*` may not match across newlines (undocumented). Generate commands that need allowlist matching as a single line to be safe
 
 ---
@@ -134,7 +134,7 @@ The bot review loop (`references/bot-review-loop.md`) re-requests a review each 
 - **GraphQL mutations** -- `resolveReviewThread`, `addPullRequestReviewComment`, etc. use `mutation {` which does not match the `*{ repository*` allowlist pattern
 - **REST writes** -- POST/PUT/DELETE on `/comments`, `/reviews`, `/requested_reviewers`
 - **Write subcommands** -- `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
-- **PR edits** -- `gh pr edit` (title, body, base, reviewers) stays manual, except the narrowly-scoped Copilot re-request documented above under "Copilot Re-Request (Opt-In Write)"
+- **PR edits** -- `gh pr edit` (title, body, base, reviewers) stays manual, except the narrowly-scoped bot re-requests documented above under "Bot Re-Request (Opt-In Write)"
 - **Comment operations** -- replies, line comments, review submissions
 - **Thread resolution** -- GraphQL mutations, `glab api --method PUT`
 

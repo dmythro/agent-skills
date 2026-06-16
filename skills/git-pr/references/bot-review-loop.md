@@ -39,21 +39,20 @@ The authoritative "done?" signal is **zero unresolved threads from this bot**, g
 ```bash
 # Usage: bot_status <PR_NUMBER>   (read-only; a Per-Bot Setup block must be sourced)
 # Exit: 0 clean (no unresolved threads from this bot) | 2 not clean | 3 pending | 4 failed
+# Uses gh's {owner}/{repo} placeholders + inline $(...) so each command matches the allowlist
+# patterns on its own -- no owner=/repo=/head= assignments (a VAR= prefix breaks matching).
 bot_status() {
   pr="$1"
-  owner="$(gh repo view --json owner --jq '.owner.login')"
-  repo="$(gh repo view --json name --jq '.name')"
-  head="$(gh pr view "$pr" --json headRefOid --jq '.headRefOid')"
 
-  # Latest bot review at current HEAD. --paginate applies -q/--jq PER PAGE, so use --slurp (an array
-  # of pages) | jq and flatten with .[][], to pick the overall latest (not a per-page last).
-  review="$(gh api repos/$owner/$repo/pulls/$pr/reviews --paginate --slurp | jq -c --arg login "$BOT_REVIEW_LOGIN" --arg head "$head" '[.[][] | select(.user.login==$login and .commit_id==$head)] | last')"
+  # Latest bot review whose commit_id == current HEAD. --paginate applies -q/--jq PER PAGE, so use
+  # --slurp (an array of pages) | jq and flatten with .[][] to pick the overall latest.
+  review="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -c --arg login "$BOT_REVIEW_LOGIN" --arg head "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '[.[][] | select(.user.login==$login and .commit_id==$head)] | last')"
 
   if [ -n "$review" ] && [ "$review" != "null" ]; then
     if [ -n "$BOT_FAIL_RE" ] && printf '%s' "$review" | jq -r '.body' | grep -iqE "$BOT_FAIL_RE"; then
-      echo "$BOT_THREAD_PREFIX review FAILED on HEAD ${head:0:8} -- re-request needed"; return 4
+      echo "$BOT_THREAD_PREFIX review FAILED on current HEAD -- re-request needed"; return 4
     fi
-    threads="$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$repo\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
+    threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
     unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
     n="$(printf '%s' "$unresolved" | jq 'length')"
     if [ "${n:-0}" -gt 0 ]; then
@@ -69,11 +68,10 @@ bot_status() {
   # No review at HEAD. If the bot signals failures via a PR comment (BOT_FAIL_RE set), tell "failed"
   # apart from "still pending". (A force-push that rewrites committer dates can delay this a tick.)
   if [ -n "$BOT_FAIL_RE" ]; then
-    since="$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')"
-    failed="$(gh api repos/$owner/$repo/issues/$pr/comments --paginate --slurp | jq --arg since "$since" --arg p "$BOT_THREAD_PREFIX" --arg fail "$BOT_FAIL_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and (.created_at > $since) and (.body|test($fail;"i")))] | length')"
+    failed="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg fail "$BOT_FAIL_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and (.created_at > $since) and (.body|test($fail;"i")))] | length')"
     [ "${failed:-0}" -gt 0 ] && { echo "$BOT_THREAD_PREFIX review FAILED (error notice in PR comments) -- re-request needed"; return 4; }
   fi
-  echo "No $BOT_THREAD_PREFIX review yet for HEAD ${head:0:8} (pending or not requested)"; return 3
+  echo "No $BOT_THREAD_PREFIX review yet for current HEAD (pending or not requested)"; return 3
 }
 ```
 
@@ -146,6 +144,14 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 - **GitHub only** -- these are GitHub review bots; `bot_tick` checks the remote and exits `5`.
 - **The bot must be enabled** -- Copilot code review needs a plan that includes it plus org/enterprise + repo settings (Settings > Copilot > Code review); CodeRabbit needs its GitHub App installed on the repo. No read-only "is it enabled" endpoint: a re-request that errors (exit `5`) is the signal; if requests are accepted but no review arrives, that's exit `3` (slow *or* silently unavailable).
 - **Allowlist** -- the read-only polls and the opt-in re-request have patterns in `allowlist.md`. Keep REST paths unquoted (`gh api repos/...`) and issue the re-request in the canonical form, or matching fails and it prompts.
+
+## Autonomy & allowlisting
+
+For unattended loops the commands must match the patterns in `allowlist.md`:
+
+- **Read-only detection + the opt-in re-request are allowlist-matchable.** The driver uses `gh api repos/{owner}/{repo}/...` placeholders and inline `$(...)` -- never `owner=`/`repo=`/`head=` assignments (a `VAR=` prefix stops matching) -- and keeps REST paths unquoted, so each command auto-approves under the documented patterns.
+- **The helper functions are one shell invocation.** A permission check applies to the whole `bot_status`/`bot_tick` call, not each inner command, so in prompt-mode you approve once per call. For a fully hands-off loop, run in an auto-approve permission mode (or invoke the individual commands, which match the patterns).
+- **The per-round writes are the deliberate gate.** Addressing comments -- reply, resolve thread, `git commit`/`push` -- is not auto-approved by default; that's the human checkpoint. Allow those too (or use an auto-approve mode) for end-to-end autonomy.
 
 ## Key Gotchas
 
