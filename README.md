@@ -11,6 +11,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `git-commit` | Conventional Commits format for all git commits and PR/MR titles | `bunx skills add dmythro/agent-skills --skill git-commit` <br> `npx skills add dmythro/agent-skills --skill git-commit` |
 | `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, bot review loop (GitHub: Copilot, CodeRabbit), merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
 | `git-ci` | CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab) | `bunx skills add dmythro/agent-skills --skill git-ci` <br> `npx skills add dmythro/agent-skills --skill git-ci` |
+| `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, Epic/Upcoming roadmap views | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
 
 ## Install
 
@@ -64,6 +65,7 @@ Skills with CLI commands include a `references/allowlist.md` with tiered auto-ap
 - [`bun-cli/references/allowlist.md`](skills/bun-cli/references/allowlist.md) -- `bun info`, `bun pm`, `bun run`, `bun test`, etc.
 - [`git-pr/references/allowlist.md`](skills/git-pr/references/allowlist.md) -- `gh pr view`, `gh issue list`, `glab mr view`, `glab mr list`, etc.
 - [`git-ci/references/allowlist.md`](skills/git-ci/references/allowlist.md) -- `gh pr checks`, `gh run list`, `glab ci status`, `glab ci list`, etc.
+- [`git-project/references/allowlist.md`](skills/git-project/references/allowlist.md) -- `gh project list`, `gh project field-list`, `gh project item-list`, sub-issue reads, etc.
 
 ## License
 
