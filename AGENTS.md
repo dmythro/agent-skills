@@ -58,7 +58,7 @@ description: >-
 3. **"When to Use"** section -- bullet list of triggering scenarios
 4. **"Critical Rule"** section -- bold, imperative, must-follow constraints
 5. **Major topic sections** (H2) covering the skill's API/CLI surface
-6. **Best Practices / Key Gotchas** -- numbered list at the end
+6. **Key Gotchas** / **Best Practices** -- a numbered list at the end; use either name (most skills use `## Key Gotchas`)
 7. **References** -- blockquote pointers to `references/*.md` files
 
 ### Reference Files (`references/*.md`)
