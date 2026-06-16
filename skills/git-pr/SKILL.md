@@ -2,10 +2,12 @@
 name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
-  comment handling, thread resolution, review state queries, and merging.
-  Use when creating PRs/MRs, addressing review feedback, resolving threads, checking
-  approvals, querying PR data, or configuring gh/glab read-only allowlists.
-  Not for git commits (git-commit), CI/CD status (git-ci), or general git ops
+  comment handling, thread resolution, review state queries, merging, and
+  looping bot review rounds (GitHub: Copilot, CodeRabbit) until clean. Use when creating PRs/MRs,
+  addressing review feedback, resolving threads, looping bot reviews,
+  checking approvals, querying PR data, or configuring gh/glab read-only
+  allowlists. Not for git commits (git-commit), CI/CD status (git-ci), or
+  general git ops
 ---
 
 # PR and MR Workflows
@@ -39,6 +41,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 - **Checking review state** -- approvals, pending reviewers, review decisions
 - **Querying PR/MR data** -- files changed, commits, labels, linked issues
 - **Posting comments on PRs/MRs** -- line-specific comments, thread replies
+- **Looping bot review rounds** (GitHub only; Copilot, CodeRabbit) -- re-request the bot, wait for the async review, address comments, repeat until no valid comments remain ("loop the Copilot review", "loop 3 rounds")
 - **Configuring tool allowlists** -- auto-approval patterns for read-only commands
 
 ## Critical Rules
@@ -259,6 +262,22 @@ glab api projects/{id}/merge_requests/{iid}/discussions/{disc_1} --method PUT --
 glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2}/notes --method POST --field "body=Addressed" && \
 glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --field "resolved=true"
 ```
+
+---
+
+## Bot Review Loop (GitHub)
+
+> **Reference**: See `references/bot-review-loop.md` for the full loop: per-bot config blocks (Copilot, CodeRabbit), the `bot_status`/`bot_tick` driver, polling, and termination logic.
+
+GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (~minutes per review), and never block: their review `state` is always `COMMENTED`. The loop is identical per bot; only the **identity** (which login to filter) and the **re-request trigger** differ -- a per-bot config block sets both. There's no read-only "is it enabled" endpoint, so `bot_tick` exits `5` when the remote isn't GitHub or the re-request errors; an accepted-but-unanswered request exits `3` (slow *or* silently unavailable).
+
+Iterate until no **valid** comments remain. Source a bot's config + the `bot_status`/`bot_tick` driver -- one round is:
+
+1. **Re-request + wait** -- `bot_tick {N}` re-requests the bot (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment) and polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed / `5` not applicable.
+2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
+3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); on a failed review (`exit 4` -- usually structural: oversized PR, binary files, quota; escalate); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3"); or if HEAD is unchanged since the last round.
+
+**Identity gotcha:** each bot has a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (Copilot: `copilot-pull-request-reviewer[bot]` / `copilot-pull-request-reviewer`, plus `Copilot` on REST inline comments; CodeRabbit: `coderabbitai[bot]` / `coderabbitai`). Filter the right one per surface.
 
 ---
 

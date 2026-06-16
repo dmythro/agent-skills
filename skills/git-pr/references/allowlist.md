@@ -9,7 +9,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh` an
 - `Bash(command:*)` -- colon-star matches command prefix with any arguments (including none). This is the current recommended syntax for both `gh` and `glab` commands.
 - `*` cannot match shell operators (`&&`, `||`, `;`, `|`) -- pipe-inclusive patterns must spell out the pipe explicitly
 - For `glab` commands piped to `jq`, use `Bash(glab ... | jq *)` because `*` cannot cross the pipe boundary
-- **Variable assignments break matching** -- any `VAR=value` line before the command (inline or separate line) makes the command string start with `VAR=...`. Use `$(...)` command substitution directly in the command arguments instead
+- **Variable assignments break matching** -- any `VAR=value` line before the command (inline or separate line) makes the command string start with `VAR=...`. Use `$(...)` command substitution directly in the command arguments instead, or gh's `{owner}/{repo}` placeholders on REST endpoints (gh fills them from the current repo, so no `owner=`/`repo=` lookup is needed)
 - **Single-line commands recommended** -- `*` may not match across newlines (undocumented). Generate commands that need allowlist matching as a single line to be safe
 
 ---
@@ -82,12 +82,14 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/pulls/*/reviews)",
 "Bash(gh api repos/*/pulls/*/reviews --paginate)",
 "Bash(gh api repos/*/pulls/*/reviews --jq *)",
+"Bash(gh api repos/*/pulls/*/reviews --paginate --slurp | jq *)",
 "Bash(gh api repos/*/pulls/*/files *)",
 "Bash(gh api repos/*/pulls/*/commits *)",
 "Bash(gh api repos/*/pulls/*/requested_reviewers)",
 "Bash(gh api repos/*/issues/*/comments)",
 "Bash(gh api repos/*/issues/*/comments --paginate)",
 "Bash(gh api repos/*/issues/*/comments --jq *)",
+"Bash(gh api repos/*/issues/*/comments --paginate --slurp | jq *)",
 "Bash(gh api repos/*/issues/*/labels)",
 "Bash(gh api repos/*/issues/*/labels --jq *)",
 "Bash(gh api repos/*/issues/*/timeline *)"
@@ -97,8 +99,33 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 
 - **GraphQL `*{ repository*`**: matches single-line read queries containing `{ repository`. The `{` prefix prevents matching `repositoryId` or similar strings in mutations. The command should be a single line -- `*` may not match across newlines reliably. Use `$(...)` substitution for owner/repo inline
 - **`/files` and `/commits`**: trailing `*` allows any flags -- safe because these are GET-only endpoints
-- **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate` and `--jq *` variants added separately for read-only flag support
-- **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`) is safer
+- **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate`, `--jq *`, and `--paginate --slurp | jq *` variants are added separately for read-only flag support
+- **`--paginate --slurp | jq *`** (reviews, issues comments): the bot review loop slurps all pages into one array and pipes to a separate `jq`, because `--paginate` applies `-q/--jq` per page (and `--slurp` cannot combine with `-q/--jq`). The pipe is spelled out because `*` cannot cross it
+- **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`, `--slurp | jq`) is safer
+
+---
+
+## Bot Re-Request (Opt-In Write)
+
+The bot review loop (`references/bot-review-loop.md`) re-requests a review each round. These are the **only writes** this skill suggests auto-approving -- a Copilot reviewer request, or a CodeRabbit `@coderabbitai review` comment. Neither merges or closes the PR, but both patterns key on the command *ending* (a `*` wildcard precedes it; see Caveat), so review them before trusting. The read-only polling (`gh api .../reviews`, `gh pr view --json headRefOid`, the GraphQL `reviewThreads` query) is already covered by the patterns above.
+
+### Claude Code
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr edit * --add-reviewer \"@copilot\")",
+      "Bash(gh pr comment * --body \"@coderabbitai review\")"
+    ]
+  }
+}
+```
+
+- **Issue each in its canonical form**: Copilot `gh pr edit {N} --add-reviewer "@copilot"` (quoted, flag last); CodeRabbit `gh pr comment {N} --body "@coderabbitai review"`. The loop depends on these exact forms; reordering or dropping quotes will prompt.
+- **Scope**: each matches only commands **ending** in the shown flag/body. A command where it isn't last (e.g. `--add-reviewer "@copilot" --title X`) is not matched and stays manual. The CodeRabbit pattern is scoped to the exact trigger text, so it can't auto-approve arbitrary `gh pr comment` bodies.
+- **Caveat**: because matching keys on the *ending*, extra flags placed before it (e.g. `--title`, `--body` on `gh pr edit`) would also be auto-approved and **could modify PR content**. The loop only issues the bare canonical forms; for zero latitude, omit these and approve manually.
+- Removal/cleanup commands (`gh pr edit --remove-reviewer "@copilot"`) are not allowlisted -- not part of the loop.
 
 ---
 
@@ -107,6 +134,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **GraphQL mutations** -- `resolveReviewThread`, `addPullRequestReviewComment`, etc. use `mutation {` which does not match the `*{ repository*` allowlist pattern
 - **REST writes** -- POST/PUT/DELETE on `/comments`, `/reviews`, `/requested_reviewers`
 - **Write subcommands** -- `gh pr create`, `gh pr merge`, `gh pr review`, `glab mr create`, `glab mr merge`, `glab mr approve`
+- **PR edits** -- `gh pr edit` (title, body, base, reviewers) stays manual, except the narrowly-scoped bot re-requests documented above under "Bot Re-Request (Opt-In Write)"
 - **Comment operations** -- replies, line comments, review submissions
 - **Thread resolution** -- GraphQL mutations, `glab api --method PUT`
 
