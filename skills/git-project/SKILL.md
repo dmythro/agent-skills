@@ -33,7 +33,7 @@ These are the traps -- each is a place where the obvious action leaves the struc
 1. **Epics nest by native sub-issues, NOT markdown checklists.** A `- [ ] #123` bullet is cosmetic; it does not create the parent/child link the UI and roadmap read. Use the sub-issues API (`POST .../issues/{parent}/sub_issues`). See `references/sub-issues.md`.
 2. **Moving an issue between epics = re-parent the native link.** Remove the old link and add the new one (`DELETE .../issues/{old}/sub_issue` + `POST .../issues/{new}/sub_issues`), then tidy body text. Editing bullets alone leaves it under the old epic -- the most common "looks moved but isn't" miss.
 3. **The board Status is not automatic.** Closing an issue does not set `Done` unless the native *Item closed* workflow is enabled. Set Status explicitly, or enable the native workflows once (see `references/project-setup.md`).
-4. **Single-selects (Status, Priority) are set by option ID, not name.** Look up field IDs + option IDs first (`gh project field-list --format json`), then `item-edit`. Names silently no-op.
+4. **Single-selects (Status, Priority) are set by option ID, not name.** Look up field IDs + option IDs first (`gh project field-list <num> --owner @me --format json`), then `item-edit`. Names silently no-op.
 5. **Views and workflow-enabling are one-time UI; everything else is scripted.** There is no API to create/rename a view or toggle a workflow. Do those once in the UI (or copy a template); script the rest.
 
 ## Prerequisites

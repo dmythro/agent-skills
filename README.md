@@ -23,6 +23,7 @@ bunx skills add dmythro/agent-skills --skill bun-api
 bunx skills add dmythro/agent-skills --skill git-commit
 bunx skills add dmythro/agent-skills --skill git-pr
 bunx skills add dmythro/agent-skills --skill git-ci
+bunx skills add dmythro/agent-skills --skill git-project
 
 # or with npx
 npx skills add dmythro/agent-skills --skill bun-cli
@@ -30,6 +31,7 @@ npx skills add dmythro/agent-skills --skill bun-api
 npx skills add dmythro/agent-skills --skill git-commit
 npx skills add dmythro/agent-skills --skill git-pr
 npx skills add dmythro/agent-skills --skill git-ci
+npx skills add dmythro/agent-skills --skill git-project
 ```
 
 Or install all skills at once:

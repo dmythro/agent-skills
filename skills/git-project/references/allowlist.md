@@ -24,7 +24,8 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
       "Bash(gh api repos/*/issues/*/sub_issues)",
       "Bash(gh api repos/*/issues/*/sub_issues --jq *)",
       "Bash(gh api repos/*/issues/*/sub_issues --paginate --jq *)",
-      "Bash(gh api graphql -f query=*{ viewer { projectV2*)"
+      "Bash(gh api graphql -f query=*{ viewer { projectV2*)",
+      "Bash(gh api graphql -f query=*{ organization(login*)"
     ]
   }
 }
@@ -35,7 +36,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
 - `gh project list/view/field-list/item-list` -- query-only subcommands; no flag turns them into writes. These cover ID discovery (project id, field ids, option ids, item ids).
 - `gh issue list/view`, `gh label list` -- read-only (shared with the `git-pr` skill).
 - `repos/*/issues/*/sub_issues` (bare / `--jq` / `--paginate --jq`) -- the GET reads a parent's children; POST/DELETE are excluded by enumerating only read flags.
-- `*{ viewer { projectV2*` -- matches single-line project **read** queries (views, workflows, fields). Mutations begin with `mutation` and don't match. For org-owned projects, add an `*{ organization { projectV2*` variant.
+- `*{ viewer { projectV2*` -- matches single-line project **read** queries (views, workflows, fields). Mutations begin with `mutation` and don't match. The included `*{ organization(login*` is the org-owned variant: the query is `organization(login: "ORG") { projectV2 }`, so a `{ organization { projectV2` pattern would *not* match (the `(login: ...)` argument sits in between).
 
 ## Not Included (Manual Approval Required)
 
