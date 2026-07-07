@@ -28,7 +28,7 @@ GraphQL: `issueType { name }` on `Issue`; the org's catalog is `organization(log
 
 Managing the catalog itself (create/update/delete a type) is org-admin REST: `POST/PUT/DELETE /orgs/{org}/issue-types[/{id}]`.
 
-### On the board
+### Types on the board
 
 In any project view, `Type` is available as a column, and works in **group by**, **slice by**, and filters (`type:Bug`). This is what replaces `bug`/`feature`/`task` labels: zero label noise, consistent colors, and the grouping is native. With a custom `Epic` type, even the `epic` label can go.
 
@@ -89,7 +89,7 @@ gh api --method PATCH repos/{owner}/{repo}/milestones/<N> -f state=closed
 
 If `open_issues` > 0, list the stragglers first: `gh issue list --milestone <N> --json number,title,state`. Move or close them deliberately -- never close a milestone over open issues silently.
 
-### On the board
+### Milestones on the board
 
 `Milestone` is a built-in project column: group, slice, or filter by it (`milestone:"v1.0"`). A milestone-grouped view is the release board; combined with the Epic view you get both axes without any extra project fields.
 

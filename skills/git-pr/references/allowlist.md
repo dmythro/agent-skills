@@ -86,6 +86,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/pulls/*/files *)",
 "Bash(gh api repos/*/pulls/*/commits *)",
 "Bash(gh api repos/*/pulls/*/requested_reviewers)",
+"Bash(gh api repos/*/pulls/*/requested_reviewers --jq *)",
 "Bash(gh api repos/*/issues/*/comments)",
 "Bash(gh api repos/*/issues/*/comments --paginate)",
 "Bash(gh api repos/*/issues/*/comments --jq *)",
@@ -170,7 +171,6 @@ For maximum restriction, use exact command strings. These only auto-approve the 
 ```text
 "Bash(gh pr view * --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
 "Bash(gh pr view * --json reviews,reviewRequests,latestReviews)",
-"Bash(gh pr view * --json reviewRequests --jq *)",
 "Bash(gh pr view * --json files)",
 "Bash(gh pr view * --json commits)",
 "Bash(gh pr view * --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",
