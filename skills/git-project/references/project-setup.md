@@ -69,7 +69,7 @@ For a repo with loose issues and no structure:
 1. **Survey.** `gh issue list --repo {owner}/{repo} --state open --limit 200 --json number,title,labels,milestone` and `gh project field-list`/`item-list --format json` to see what exists.
 2. **Backfill setup.** Add the `Priority` field, `epic` label, milestones for near-term scopes, and (if missing) enable the native workflows (steps 1-3).
 3. **Define epics.** Create `Epic:`-titled, `epic`-labeled issues for each theme (or relabel existing umbrella issues).
-4. **Home every issue.** Link each loose issue under exactly one epic as a native sub-issue (`references/sub-issues.md`); re-parent any that are under the wrong one.
+4. **Home every issue.** Link each loose issue under exactly one epic as a native sub-issue (`references/sub-issues.md`); re-parent any that are under the wrong one. Don't home duplicates -- close them against the original with `gh issue close <n> --duplicate-of <original>` (gh >= 2.88; creates the native duplicate link).
 5. **De-label into native metadata** (org repos). Map type-ish labels to issue types (`bug` -> `--type Bug`, `enhancement`/`feature` -> `--type Feature`, `task`/`chore` -> `--type Task`), assign milestones where scope is known, then delete the now-redundant labels.
 6. **Seed the board.** Add the epics (children auto-add if the workflow is on, else add each); set `Status` from open/closed state and `Priority` per item (`references/cli-and-graphql.md`).
 7. **Confirm** with the verify query above, then eyeball the Epic and Upcoming views.

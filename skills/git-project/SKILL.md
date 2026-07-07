@@ -125,6 +125,9 @@ gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --
 # finish -- close the issue; the native "Item closed" workflow sets Status: Done (set it here only if that workflow is off)
 gh issue close <issue>
 gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <done>
+# not doing it? close with the right reason -- duplicates get a native link to the original (gh >= 2.88)
+gh issue close <issue> --reason "not planned"
+gh issue close <issue> --duplicate-of <original>
 # (re)prioritize
 gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>
 ```

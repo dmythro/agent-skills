@@ -192,8 +192,9 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 |-------------------|--------------------------------------------------------|-----------------------------------------------------------|
 | Create draft      | `gh pr create --draft --fill`                          | `glab mr create --draft --fill`                           |
 | Create with title | `gh pr create --title "feat: ..." --body "..."`        | `glab mr create --title "feat: ..." --description "..."` |
+| Create + request Copilot review | `gh pr create --title "..." --body "..." --reviewer @copilot` (gh >= 2.88) | n/a |
 
-After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` before requesting any bot review -- repos with automatic Copilot review already have one in flight (and it will NOT show in `gh pr view --json reviewRequests`).
+After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` before requesting any bot review -- repos with automatic Copilot review already have one in flight (and it will NOT show in `gh pr view --json reviewRequests`). On a repo you know has **no** auto-review, skip the create-then-edit round-trip and request Copilot at creation with `--reviewer @copilot`; when unsure, create normally and let the detection decide.
 
 ## Merge (Write -- Manual Approval)
 

@@ -22,7 +22,8 @@ Source ONE block before the functions. Each sets the identity and a `bot_rereque
 # --- Copilot --- (gh >= 2.88; does NOT auto re-review on push, so re-request every round.
 #     Auto-review repos request it on non-draft PR creation / draft->ready: it then sits in
 #     REST requested_reviewers as login 'Copilot' until the review lands -- NOT visible in
-#     gh pr view --json reviewRequests, which omits bot reviewers.)
+#     gh pr view --json reviewRequests, which omits bot reviewers. On repos WITHOUT auto-review,
+#     round 1 can be seeded at creation: gh pr create --reviewer @copilot.)
 BOT_REVIEW_LOGIN='copilot-pull-request-reviewer[bot]'                  # REST /reviews author
 BOT_THREAD_PREFIX='copilot'                                           # GraphQL thread login starts with this
 BOT_FAIL_RE='unable to review this pull request|encountered an error'
