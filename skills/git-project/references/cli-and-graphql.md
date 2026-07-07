@@ -25,7 +25,7 @@ Create a single-select field:
 
 ```bash
 gh project field-create <num> --owner @me --name "Priority" \
-  --data-type SINGLE_SELECT --single-select-options "P0,P1,P2,P3,P4"
+  --data-type SINGLE_SELECT --single-select-options "P0,P1,P2,P3"
 ```
 
 `--data-type` is one of `TEXT | SINGLE_SELECT | DATE | NUMBER`. (A project ships with a built-in `Status` field already populated `Todo/In Progress/Done`.)

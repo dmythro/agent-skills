@@ -45,7 +45,7 @@ These are the traps -- each is a place where the obvious action leaves the struc
 ## Prerequisites
 
 - **GitHub only** -- Projects v2 has no GitLab equivalent.
-- **`gh` >= 2.94** for the native issue flags used here (`--type`, `--milestone`, `--parent`, `--add-sub-issue`, `--blocked-by`); older `gh` falls back to the REST recipes in the references.
+- **`gh` >= 2.94** for the native issue flags used here (`--type`, `--milestone`, `--parent`, `--add-sub-issue`); older `gh` falls back to the REST recipes in the references.
 - **Token scopes gate what works.** `gh auth status` shows them. `gh project` commands and any `projectV2` GraphQL need the `project` scope (`gh auth refresh -s project`); `read:project` alone is enough for read-only queries. Without the scope these fail with auth/permission errors even though everything `repo`-scoped works -- the classic "project features seem missing" trap. Issues, sub-issues, types, and milestones ride on the ordinary `repo` scope; org-owned project access also relies on `read:org`.
 - Projects are addressed by **number** under an `--owner` (`@me` or an org login). The repo and project may have different owners. For an **org-owned** project, pass the org login to `--owner`, and in GraphQL reads use `organization(login: "ORG") { projectV2 }` instead of `viewer { projectV2 }` (see `references/cli-and-graphql.md`).
 
@@ -138,7 +138,7 @@ Quick shape:
 ```bash
 gh project create --owner @me --title "Roadmap"
 gh project field-create <num> --owner @me --name "Priority" --data-type SINGLE_SELECT \
-  --single-select-options "P0,P1,P2,P3,P4"
+  --single-select-options "P0,P1,P2,P3"
 gh label create epic --color B60205 --description "Roadmap epic"
 ```
 Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggles (these have no API).
