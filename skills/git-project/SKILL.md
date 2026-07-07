@@ -122,12 +122,12 @@ gh api --method PATCH repos/{owner}/{repo}/milestones/<N> -f state=closed
 # Discover the item id + field/option ids once (see references/cli-and-graphql.md), then:
 # pick up
 gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <inProgress>
-# finish -- close the issue; the native "Item closed" workflow sets Status: Done (set it here only if that workflow is off)
-gh issue close <issue>
+# finish -- close the issue (pick ONE close form; the plain one means "completed"):
+gh issue close <issue>                              # done as planned
+gh issue close <issue> --reason "not planned"       # abandoned
+gh issue close <issue> --duplicate-of <original>    # duplicate; links it natively to the original (gh >= 2.88)
+# the native "Item closed" workflow then sets Status: Done (set it here only if that workflow is off)
 gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <done>
-# not doing it? close with the right reason -- duplicates get a native link to the original (gh >= 2.88)
-gh issue close <issue> --reason "not planned"
-gh issue close <issue> --duplicate-of <original>
 # (re)prioritize
 gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>
 ```
