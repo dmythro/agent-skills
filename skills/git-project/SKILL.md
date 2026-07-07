@@ -126,7 +126,8 @@ gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --
 gh issue close <issue>                              # done as planned
 gh issue close <issue> --reason "not planned"       # abandoned
 gh issue close <issue> --duplicate-of <original>    # duplicate; links it natively to the original (gh >= 2.88)
-# the native "Item closed" workflow then sets Status: Done (set it here only if that workflow is off)
+# closing normally advances the board via the native "Item closed" workflow -- nothing more to do.
+# ONLY IF that workflow is off, set Status manually:
 gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <done>
 # (re)prioritize
 gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>
