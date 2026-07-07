@@ -42,6 +42,15 @@ bunx skills add dmythro/agent-skills
 npx skills add dmythro/agent-skills
 ```
 
+Or use the GitHub CLI (`gh` >= 2.90, `gh skill` is in public preview and may change):
+
+```bash
+gh skill install dmythro/agent-skills git-pr
+# alias: gh skills add dmythro/agent-skills git-pr
+```
+
+`gh skill install` auto-detects the agent host (Claude Code, Copilot, Cursor, OpenCode, and others) and supports `--agent` and `--scope` to target one explicitly.
+
 ## Update
 
 ```bash
