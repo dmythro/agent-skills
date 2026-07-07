@@ -2,9 +2,11 @@
 
 **Iterate a code-review bot's rounds on a PR until no *valid* comments remain.** The loop is identical for any GitHub review bot (Copilot, CodeRabbit, ...); only a few things differ per bot, all set in a config block -- the **identity** (which login to filter), the **re-request trigger**, and whether the bot posts a detectable **failure** review (`BOT_FAIL_RE`; Copilot does, CodeRabbit doesn't). These bots are GitHub-only, asynchronous (~minutes per review), and non-blocking (reviews are `COMMENTED`), so treat their output as advisory. Per-comment evaluate/fix/reply/resolve mechanics live in `pr-comment-workflow.md`.
 
+**Auto-review changes round 1 -- where it exists.** Automatic Copilot code review is an **optional per-repo/org setting** (repo/org settings or rulesets), so whether it fires varies between accounts, orgs, and individual repos -- never assume it's on *or* off; detect the actual state. When enabled, Copilot is requested automatically on every **non-draft** PR at creation and when a draft is marked ready. CodeRabbit similarly auto-reviews new PRs and pushes once its app is installed. The driver handles both worlds without configuration: `bot_status` reports outstanding comments before anything else, and `bot_tick` never re-requests while the bot already has a pending review request (`bot_requested`, REST `requested_reviewers`) -- so on auto-review repos the first round typically issues **no request at all** (it waits for or finds the automatic one), and on repos without it the same tick falls through to a normal single re-request.
+
 ## Run It
 
-Source ONE bot's config block (below) together with the two functions, then drive rounds:
+Source ONE bot's config block (below) together with the three functions (`bot_status`, `bot_requested`, `bot_tick`), then drive rounds:
 
 ```bash
 bot_tick <PR>    # re-request if needed + poll once
@@ -17,7 +19,10 @@ Branch on the exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4
 Source ONE block before the functions. Each sets the identity and a `bot_rerequest` command.
 
 ```bash
-# --- Copilot --- (gh >= 2.88; does NOT auto re-review on push, so re-request every round)
+# --- Copilot --- (gh >= 2.88; does NOT auto re-review on push, so re-request every round.
+#     Auto-review repos request it on non-draft PR creation / draft->ready: it then sits in
+#     REST requested_reviewers as login 'Copilot' until the review lands -- NOT visible in
+#     gh pr view --json reviewRequests, which omits bot reviewers.)
 BOT_REVIEW_LOGIN='copilot-pull-request-reviewer[bot]'                  # REST /reviews author
 BOT_THREAD_PREFIX='copilot'                                           # GraphQL thread login starts with this
 BOT_FAIL_RE='unable to review this pull request|encountered an error'
@@ -30,11 +35,11 @@ BOT_FAIL_RE=''                                                        # no disti
 bot_rerequest() { gh pr comment "$1" --body "@coderabbitai review"; }
 ```
 
-Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (Copilot: `copilot-pull-request-reviewer[bot]` / `copilot-pull-request-reviewer`; CodeRabbit: `coderabbitai[bot]` / `coderabbitai`). Copilot's REST inline comments use a third form (`Copilot`), but the loop keys on review submissions and threads, so the two vars above suffice.
+Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (Copilot: `copilot-pull-request-reviewer[bot]` / `copilot-pull-request-reviewer`; CodeRabbit: `coderabbitai[bot]` / `coderabbitai`). Copilot uses a third form -- plain `Copilot` -- on REST inline comments **and** in `requested_reviewers` (the surface `bot_requested` reads); the lowercase `BOT_THREAD_PREFIX` prefix match covers all three, so the two vars above suffice.
 
 ## bot_status (read-only detector)
 
-The authoritative "done?" signal is **zero unresolved threads from this bot**, gated on the bot having reviewed the current HEAD. The thread query is PR-wide (not commit-filtered); only the review-presence check is matched to HEAD.
+The authoritative "done?" signal is **zero unresolved threads from this bot**, gated on the bot having reviewed the current HEAD. Order matters: **outstanding comments are checked first, PR-wide** -- if any exist, the verdict is "not clean" no matter which commit they were made on. Re-requesting over them would only produce a duplicate round (the auto-review collision); only the clean-verdict check is matched to HEAD.
 
 ```bash
 # Usage: bot_status <PR_NUMBER>   (read-only; a Per-Bot Setup block must be sourced)
@@ -44,43 +49,64 @@ The authoritative "done?" signal is **zero unresolved threads from this bot**, g
 bot_status() {
   pr="$1"
 
-  # Latest bot review whose commit_id == current HEAD. --paginate applies -q/--jq PER PAGE, so use
-  # --slurp (an array of pages) | jq and flatten with .[][] to pick the overall latest.
-  review="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -c --arg login "$BOT_REVIEW_LOGIN" --arg head "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '[.[][] | select(.user.login==$login and .commit_id==$head)] | last')"
+  # 1) Unresolved bot threads, PR-wide: outstanding comments always win. Handle them before
+  #    any re-request -- a new review on top of them just duplicates the points.
+  threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
+  unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
+  n="$(printf '%s' "$unresolved" | jq 'length')"
+  if [ "${n:-0}" -gt 0 ]; then
+    echo "Unresolved $BOT_THREAD_PREFIX threads ($n):"
+    printf '%s' "$unresolved" | jq -r '.[] | "  \(.path):\(.line)  \(.comments.nodes[0].body | gsub("\n";" ") | .[0:90])"'
+    return 2
+  fi
+  # Zero unresolved is trustworthy only if we saw every thread: reviewThreads(first: 100) does
+  # not paginate, and threads 101+ could hide outstanding comments (which must block a re-request).
+  [ "$(printf '%s' "$threads" | jq '.totalCount')" -gt 100 ] && { echo "Inconclusive: >100 threads exceed the 100 fetched"; return 2; }
 
+  # 2) No outstanding comments -- trust "clean" only from a review of the current HEAD.
+  #    --paginate applies -q/--jq PER PAGE, so use --slurp (an array of pages) | jq and
+  #    flatten with .[][] to pick the overall latest.
+  review="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -c --arg login "$BOT_REVIEW_LOGIN" --arg head "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '[.[][] | select(.user.login==$login and .commit_id==$head)] | last')"
   if [ -n "$review" ] && [ "$review" != "null" ]; then
     if [ -n "$BOT_FAIL_RE" ] && printf '%s' "$review" | jq -r '.body' | grep -iqE "$BOT_FAIL_RE"; then
       echo "$BOT_THREAD_PREFIX review FAILED on current HEAD -- re-request needed"; return 4
     fi
-    threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
-    unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
-    n="$(printf '%s' "$unresolved" | jq 'length')"
-    if [ "${n:-0}" -gt 0 ]; then
-      echo "Unresolved $BOT_THREAD_PREFIX threads ($n):"
-      printf '%s' "$unresolved" | jq -r '.[] | "  \(.path):\(.line)  \(.comments.nodes[0].body | gsub("\n";" ") | .[0:90])"'
-      return 2
-    fi
-    # Trust "clean" only if we saw every thread: reviewThreads(first: 100) does not paginate.
-    [ "$(printf '%s' "$threads" | jq '.totalCount')" -gt 100 ] && { echo "Inconclusive: >100 threads exceed the 100 fetched"; return 2; }
     echo "No unresolved $BOT_THREAD_PREFIX threads -- clean."; return 0
   fi
 
-  # No review at HEAD. If the bot signals failures via a PR comment (BOT_FAIL_RE set), tell "failed"
-  # apart from "still pending". (A force-push that rewrites committer dates can delay this a tick.)
+  # 3) No review at HEAD. If the bot signals failures via a PR comment (BOT_FAIL_RE set), tell
+  #    "failed" apart from "still pending". (A force-push that rewrites committer dates can delay
+  #    this a tick.)
   if [ -n "$BOT_FAIL_RE" ]; then
     failed="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg fail "$BOT_FAIL_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and (.created_at > $since) and (.body|test($fail;"i")))] | length')"
     [ "${failed:-0}" -gt 0 ] && { echo "$BOT_THREAD_PREFIX review FAILED (error notice in PR comments) -- re-request needed"; return 4; }
   fi
-  echo "No $BOT_THREAD_PREFIX review yet for current HEAD (pending or not requested)"; return 3
+  if bot_requested "$pr"; then
+    echo "$BOT_THREAD_PREFIX review already requested (auto-review or an earlier request) -- waiting, no re-request needed"
+  else
+    echo "No $BOT_THREAD_PREFIX review yet for current HEAD (not requested)"
+  fi
+  return 3
 }
 ```
 
-## bot_tick (re-request + one bounded poll)
+## bot_requested (pending-request check)
 
-If there's already an outcome at HEAD, return it; otherwise re-request once and poll until the review lands or a 5-minute deadline. **One re-request, one bounded poll, no internal retry loop** -- so a single invocation stays well under the 10-minute Bash cap; the agent's loop owns retries and escalation.
+Auto-review (and any earlier request) leaves the bot as a pending requested reviewer until its review lands. Re-requesting on top of that is the collision to avoid. **The pending entry is only visible on the REST endpoint** -- `gh pr view --json reviewRequests` omits bot reviewers entirely (verified: it stays `[]` while REST shows the request), so never use it for this check:
 
 ```bash
-# Usage: bot_tick <PR_NUMBER>   (one re-request + one bounded poll; needs the config block + bot_rerequest)
+# Usage: bot_requested <PR_NUMBER>   (read-only; exit 0 = a request for this bot is pending)
+bot_requested() { [ "$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" = "true" ]; }
+```
+
+(Copilot appears there as login `Copilot` -- yet another identity form; the lowercase prefix match covers it. CodeRabbit is comment-triggered and never appears as a requested reviewer -- for it this check is simply always false, which is correct.)
+
+## bot_tick (re-request only if needed + one bounded poll)
+
+If there's already an outcome, return it; if a request is already pending (auto-review, or a previous tick's request), skip straight to polling; otherwise re-request once and poll until the review lands or a 5-minute deadline. **At most one re-request, one bounded poll, no internal retry loop** -- so a single invocation stays well under the 10-minute Bash cap; the agent's loop owns retries and escalation.
+
+```bash
+# Usage: bot_tick <PR_NUMBER>   (needs the config block + bot_rerequest + bot_requested)
 # Exit: 0 clean | 2 not clean | 3 pending/timed out | 4 failed | 5 unavailable (non-GitHub or re-request failed)
 bot_tick() {
   pr="$1"
@@ -91,8 +117,12 @@ bot_tick() {
   bot_status "$pr"; rc=$?
   [ "$rc" -ne 3 ] && return "$rc"            # already have an outcome (0 / 2 / 4)
 
-  if ! bot_rerequest "$pr" >/dev/null 2>&1; then
-    echo "Re-request failed -- bot not enabled here, or wrong command (see Per-Bot Setup)"; return 5
+  # Re-request only when no request is pending -- auto-review (non-draft PR creation,
+  # draft->ready) or an earlier tick may already have one in flight.
+  if ! bot_requested "$pr"; then
+    if ! bot_rerequest "$pr" >/dev/null 2>&1; then
+      echo "Re-request failed -- bot not enabled here, or wrong command (see Per-Bot Setup)"; return 5
+    fi
   fi
   deadline=$(( $(date +%s) + 300 ))          # 5 min; one invocation stays well under the 10-min Bash cap
   while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -125,7 +155,9 @@ repeat:
            valid   -> fix
            invalid -> reply with the rationale + resolve (no code change)
          if NONE were valid (nothing to fix): STOP "zero valid comments -- re-requesting would only resurface them"
-         else: commit + push (advances HEAD; auto-review bots re-review on the push); re-request this bot; continue
+         else: commit + push (advances HEAD), then continue: push-triggered bots (CodeRabbit)
+               re-review on their own; Copilot does not -- the next bot_tick issues the
+               re-request, and only if nothing is already pending (no duplicate requests)
 ```
 
 **It always terminates.** A round continues only when a *valid* comment was fixed (advancing HEAD); an all-rejected round stops at the zero-valid exit (the `head == prev_head` guard is a backstop). Failure and unavailability stop immediately, and `MAX_ROUNDS` caps the whole thing -- so it converges on substance.
@@ -136,13 +168,14 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 
 - **State is always `COMMENTED`** -- these bots never approve, request changes, block a merge, or satisfy a required-approval rule. Don't use `reviewDecision` to detect them.
 - **Identity differs by surface and by bot** -- a `[bot]`-suffixed login on REST, unsuffixed on GraphQL threads (see Per-Bot Setup). Filter the wrong one and detection silently returns nothing.
+- **A pending request is only visible via REST** -- while requested (auto-review or manual), Copilot appears as login `Copilot` in `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers`; the entry disappears when the review is submitted. `gh pr view --json reviewRequests` omits bot reviewers entirely (it shows humans/teams only), so it always looks "not requested" -- the wrong surface. That pending window is when a manual re-request collides -- `bot_requested` guards it.
 - **Copilot specifics** -- requires gh >= 2.88; does **not** auto re-review on push (re-request every round; repo auto-review covers only round 1); a failed review reads `Copilot encountered an error and was unable to review this pull request` (detect via `BOT_FAIL_RE`, never treat as clean); the summary says `... generated K comments` (singular at `K==1`).
 - **CodeRabbit specifics** -- auto-reviews on each push, so a push usually re-triggers it; re-request on demand with a `@coderabbitai review` PR comment. Resolve its threads like any other (or use its `@coderabbitai resolve` command).
 
 ## Preconditions
 
 - **GitHub only** -- these are GitHub review bots; `bot_tick` checks the remote and exits `5`.
-- **The bot must be enabled** -- Copilot code review needs a plan that includes it plus org/enterprise + repo settings (Settings > Copilot > Code review); CodeRabbit needs its GitHub App installed on the repo. No read-only "is it enabled" endpoint: a re-request that errors (exit `5`) is the signal; if requests are accepted but no review arrives, that's exit `3` (slow *or* silently unavailable).
+- **The bot must be enabled** -- Copilot code review needs a plan that includes it plus org/enterprise + repo settings (Settings > Copilot > Code review); CodeRabbit needs its GitHub App installed on the repo. No read-only "is it enabled" endpoint: a re-request that errors (exit `5`) is the signal; if requests are accepted but no review arrives, that's exit `3` (slow *or* silently unavailable). Conversely a bot may be **auto-requested** (automatic Copilot review via repo/org settings or rulesets) -- a pending REST `requested_reviewers` entry or an unrequested bot review on a fresh PR is the tell; never issue a redundant request there.
 - **Allowlist** -- the read-only polls and the opt-in re-request have patterns in `allowlist.md`. Keep REST paths unquoted (`gh api repos/...`) and issue the re-request in the canonical form, or matching fails and it prompts.
 
 ## Autonomy & allowlisting
@@ -158,3 +191,5 @@ For unattended loops the commands must match the patterns in `allowlist.md`:
 1. **Identity differs by surface and bot** (Per-Bot Setup) -- the most common detection bug; filter the right login.
 2. **A failed review looks like "no comments"** (Copilot) -- detect the error phrase and re-request; never treat it as clean.
 3. **Stop on zero *valid* comments, not zero comments** -- reject out-of-context/outdated points with a rationale + resolve; don't blind-fix to silence a bot, and don't chase one that resurfaces rejected points.
+4. **Never request a review over outstanding work** -- unresolved bot comments mean *handle them*; a pending request (auto-review) means *wait*. `bot_status` (threads first) and `bot_requested` encode both; requesting anyway yields a duplicate round of the same points.
+5. **Pending bot requests hide from `gh pr view --json reviewRequests`** -- that field omits bot reviewers, so it reads `[]` while a Copilot request is in flight. Only REST `requested_reviewers` (login `Copilot`) tells the truth; checking the wrong surface re-introduces the duplicate-request collision.

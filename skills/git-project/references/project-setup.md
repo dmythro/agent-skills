@@ -6,9 +6,12 @@ What's scriptable (`gh`/GraphQL) vs. the small one-time UI step (views + workflo
 
 ```bash
 gh project create --owner @me --title "Roadmap"            # note the new number
-# Status already exists (Todo / In Progress / Done). Add Priority:
+# Check which FIELDS the new project already has before adding any -- Status ships built in
+# (Todo / In Progress / Done), and some templates/orgs already include Priority:
+gh project field-list <num> --owner @me --format json --jq '[.fields[].name]'
+# Add Priority only if missing:
 gh project field-create <num> --owner @me --name "Priority" --data-type SINGLE_SELECT \
-  --single-select-options "P0,P1,P2,P3,P4"
+  --single-select-options "P0,P1,P2,P3"
 # Optional: a coarse phase/stage field
 gh project field-create <num> --owner @me --name "Stage" --data-type SINGLE_SELECT \
   --single-select-options "Now,Next,Later,Backlog"
@@ -17,6 +20,12 @@ gh project link <num> --owner @me --repo {owner}/{repo}    # surface it in the r
 ```
 
 `gh project link` only surfaces the project on the repo -- it does **not** auto-add issues; that's a workflow (step 3).
+
+Do **not** create `Type` or `Milestone` project fields -- both are built-in mirrors of issue metadata (`references/types-and-milestones.md`). For an **org**, confirm issue types once (`gh api orgs/{org}/issue-types`; defaults Task/Bug/Feature, manageable in org Settings -> Planning -> Issue types) and use `--type` instead of type labels. Seed a milestone per near-term deliverable:
+
+```bash
+gh api --method POST repos/{owner}/{repo}/milestones -f title="v1.0" -f due_on="2026-08-01T00:00:00Z" -f description="<scope>"
+```
 
 ## 2. The two views (one-time UI -- no API)
 
@@ -29,12 +38,15 @@ Views can't be created, renamed, or laid out via the API. In the project, open t
 
 ## 3. Native workflows (one-time UI toggles -- no API)
 
-Project -> Settings -> **Workflows**. Enable (all ship disabled):
+Project -> Settings -> **Workflows**. Enable (all ship disabled). The first block makes board Status and issue state sync **both ways** -- that's what makes the board feel fluid instead of hand-driven:
 
 - **Item added to project** -> Set `Status: Todo` -- new items start in Todo.
-- **Auto-add sub-issues to project** -- when an epic is on the board, its native children join automatically (pairs with the epic model so you only add the epic).
+- **Item reopened** -> Set `Status: Todo` -- reopened work returns to the queue.
 - **Item closed** -> Set `Status: Done` -- closing an issue advances the board (rule 3; without this, closing does nothing to Status).
-- *(optional)* **Pull request merged** -> Set `Status: Done`.
+- **Auto-close issue** -- setting `Status: Done` on the board closes the issue (the reverse direction of *Item closed*).
+- **Auto-add sub-issues to project** -- when an epic is on the board, its native children join automatically (pairs with the epic model so you only add the epic).
+- **Pull request merged** -> Set `Status: Done` -- merging the linked PR finishes the item.
+- *(optional)* **Pull request linked to issue** -> Set `Status: In Progress` -- opening a PR that references the issue moves it on the board.
 - *(optional)* **Auto-add to project** -- watch `{owner}/{repo}` and add every new matching issue, so you never `item-add` by hand.
 
 These can be listed via the API (`workflows` connection) but only toggled in the UI -- do it once.
@@ -54,11 +66,12 @@ Expect views `["Epic","Upcoming"]` and the workflows above enabled. (Org-owned p
 
 For a repo with loose issues and no structure:
 
-1. **Survey.** `gh issue list --repo {owner}/{repo} --state open --limit 200 --json number,title,labels` and `gh project field-list`/`item-list --format json` to see what exists.
-2. **Backfill setup.** Add the `Priority` field, `epic` label, and (if missing) enable the native workflows (steps 1-3).
+1. **Survey.** `gh issue list --repo {owner}/{repo} --state open --limit 200 --json number,title,labels,milestone` and `gh project field-list`/`item-list --format json` to see what exists.
+2. **Backfill setup.** Add the `Priority` field, `epic` label, milestones for near-term scopes, and (if missing) enable the native workflows (steps 1-3).
 3. **Define epics.** Create `Epic:`-titled, `epic`-labeled issues for each theme (or relabel existing umbrella issues).
 4. **Home every issue.** Link each loose issue under exactly one epic as a native sub-issue (`references/sub-issues.md`); re-parent any that are under the wrong one.
-5. **Seed the board.** Add the epics (children auto-add if the workflow is on, else add each); set `Status` from open/closed state and `Priority` per item (`references/cli-and-graphql.md`).
-6. **Confirm** with the verify query above, then eyeball the Epic and Upcoming views.
+5. **De-label into native metadata** (org repos). Map type-ish labels to issue types (`bug` -> `--type Bug`, `enhancement`/`feature` -> `--type Feature`, `task`/`chore` -> `--type Task`), assign milestones where scope is known, then delete the now-redundant labels.
+6. **Seed the board.** Add the epics (children auto-add if the workflow is on, else add each); set `Status` from open/closed state and `Priority` per item (`references/cli-and-graphql.md`).
+7. **Confirm** with the verify query above, then eyeball the Epic and Upcoming views.
 
 Do the sub-issue links in chunks of ~25 (the batch limit).

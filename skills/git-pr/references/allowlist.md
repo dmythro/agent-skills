@@ -86,6 +86,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/pulls/*/files *)",
 "Bash(gh api repos/*/pulls/*/commits *)",
 "Bash(gh api repos/*/pulls/*/requested_reviewers)",
+"Bash(gh api repos/*/pulls/*/requested_reviewers --jq *)",
 "Bash(gh api repos/*/issues/*/comments)",
 "Bash(gh api repos/*/issues/*/comments --paginate)",
 "Bash(gh api repos/*/issues/*/comments --jq *)",

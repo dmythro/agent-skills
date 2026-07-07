@@ -6,6 +6,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
 
 - `Bash(command:*)` -- colon-star matches the command prefix with any arguments.
 - `*` cannot cross shell operators (`&&`, `|`, `;`) or, reliably, newlines -- keep allowlisted commands single-line.
+- `?` in URL query strings is ambiguous (a matcher may treat it as a single-char wildcard) -- anchor literal text right after it (`milestones?state=*`, never `milestones?*`).
 - Avoid `VAR=...` prefixes (they break matching); use `$(...)` inline, or gh's `{owner}/{repo}` placeholders on REST endpoints.
 
 ## Recommended: Broad Patterns (Read-Only)
@@ -24,6 +25,12 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
       "Bash(gh api repos/*/issues/*/sub_issues)",
       "Bash(gh api repos/*/issues/*/sub_issues --jq *)",
       "Bash(gh api repos/*/issues/*/sub_issues --paginate --jq *)",
+      "Bash(gh api repos/*/milestones)",
+      "Bash(gh api repos/*/milestones --jq *)",
+      "Bash(gh api repos/*/milestones?state=* --jq *)",
+      "Bash(gh api repos/*/milestones/* --jq *)",
+      "Bash(gh api orgs/*/issue-types)",
+      "Bash(gh api orgs/*/issue-types --jq *)",
       "Bash(gh api graphql -f query=*{ viewer { projectV2*)",
       "Bash(gh api graphql -f query=*{ organization(login*)"
     ]
@@ -36,15 +43,19 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
 - `gh project list/view/field-list/item-list` -- query-only subcommands; no flag turns them into writes. These cover ID discovery (project id, field ids, option ids, item ids).
 - `gh issue list/view`, `gh label list` -- read-only (shared with the `git-pr` skill).
 - `repos/*/issues/*/sub_issues` (bare / `--jq` / `--paginate --jq`) -- the GET reads a parent's children; POST/DELETE are excluded by enumerating only read flags.
-- `*{ viewer { projectV2*` -- matches single-line project **read** queries (views, workflows, fields). Mutations begin with `mutation` and don't match. The included `*{ organization(login*` is the org-owned variant: the query is `organization(login: "ORG") { projectV2 }`, so a `{ organization { projectV2` pattern would *not* match (the `(login: ...)` argument sits in between).
+- `repos/*/milestones` (bare / `--jq` / `?state=* --jq` / by-number `--jq`) -- GET-only forms for listing, the current-milestone recipe, and by-number lookups. The query-string variant anchors `state=` right after the `?` so it can't degrade into a broad match. Creation/close (`--method POST/PATCH` or bare `-f` fields) don't match the enumerated shapes.
+- `orgs/*/issue-types` -- GET lists the org's issue-type catalog; managing it (POST/PUT/DELETE) doesn't match.
+- `*{ viewer { projectV2*` -- matches single-line project **read** queries (views, workflows, fields, items with issue metadata). Mutations begin with `mutation` and don't match. The included `*{ organization(login*` is the org-owned variant: the query is `organization(login: "ORG") { projectV2 }`, so a `{ organization { projectV2` pattern would *not* match (the `(login: ...)` argument sits in between). It also covers the org `issueTypes` GraphQL read.
 
 ## Not Included (Manual Approval Required)
 
 Every project write -- they change boards, fields, issues, or links:
 
 - **Project/field/item writes** -- `gh project create`, `copy`, `edit`, `link`, `field-create`, `item-add`, `item-edit`, `item-archive`, `item-delete`
-- **Issue/label writes** -- `gh issue create`/`edit`, `gh label create`
+- **Issue/label writes** -- `gh issue create`/`edit` (incl. `--type`, `--milestone`, `--parent`, `--add-sub-issue`), `gh label create`
 - **Sub-issue links** -- `POST`/`DELETE` on `.../sub_issues` (`--method POST|DELETE`)
+- **Milestone writes** -- `POST`/`PATCH`/`DELETE` on `repos/*/milestones[/*]` (create, edit, close, delete)
+- **Issue-type management** -- `POST`/`PUT`/`DELETE` on `orgs/*/issue-types[/*]` (org-admin catalog changes)
 - **GraphQL mutations** -- `updateProjectV2ItemFieldValue`, `updateProjectV2ItemPosition`, `addSubIssue`, etc. (`mutation {`)
 
 ### Opt-in: the status-flow edit

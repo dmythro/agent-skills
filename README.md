@@ -11,7 +11,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `git-commit` | Conventional Commits format for all git commits and PR/MR titles | `bunx skills add dmythro/agent-skills --skill git-commit` <br> `npx skills add dmythro/agent-skills --skill git-commit` |
 | `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, bot review loop (GitHub: Copilot, CodeRabbit), merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
 | `git-ci` | CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab) | `bunx skills add dmythro/agent-skills --skill git-ci` <br> `npx skills add dmythro/agent-skills --skill git-ci` |
-| `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, Epic/Upcoming roadmap views | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
+| `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, native issue Types, milestone scoping, Epic/Upcoming roadmap views | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
 
 ## Install
 

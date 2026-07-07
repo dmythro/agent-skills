@@ -27,11 +27,15 @@ gh pr view --json number,state,reviewDecision,reviewRequests,title 2>/dev/null
 |--------------------------------------------|------------------------------------------------------------|
 | PR exists, `CHANGES_REQUESTED`             | Fetch unresolved threads (see Review Comment Handling)      |
 | PR exists, `REVIEW_REQUIRED` or has pending `reviewRequests` | Check review state or wait for reviewers  |
+| PR exists, a bot pending in REST `requested_reviewers` (Copilot shows as `Copilot`) | Auto-review in flight -- wait for it (Bot Review Loop); do NOT re-request |
+| PR exists, unresolved review comments      | Address the comments first (Review Comment Handling); never request a new review over outstanding ones |
 | PR exists, `APPROVED`                      | Check CI status or proceed with merge                      |
 | PR exists, no review decision yet          | Check CI status, review state, or push more changes        |
 | No PR for current branch                   | Create a PR (see PR/MR Creation)                           |
 
 This avoids offering to create a PR when one already exists, and immediately surfaces pending review work. The `reviewDecision` field reliably indicates whether a reviewer has requested changes without needing to fetch individual threads.
+
+**Auto-review is an optional setting -- never assume it either way (GitHub):** automatic Copilot code review is a per-repo/org opt-in (repo/org settings or rulesets), so its presence varies between accounts, orgs, and even repos of the same owner. When enabled it requests Copilot on every **non-draft** PR at creation (and when a draft is marked ready for review), so a freshly created PR may already have a pending bot request or bot comments minutes later -- and on other repos nothing fires at all. There is no read-only "is it enabled" endpoint: **detect, don't assume** -- check for a pending request or an existing bot review first, and only request one if neither shows up; otherwise you get a duplicate round. **Gotcha:** the pending bot request is only visible via `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` (login `Copilot`) -- `gh pr view --json reviewRequests` omits bot reviewers and stays empty.
 
 ## When to Use
 
@@ -189,6 +193,8 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 | Create draft      | `gh pr create --draft --fill`                          | `glab mr create --draft --fill`                           |
 | Create with title | `gh pr create --title "feat: ..." --body "..."`        | `glab mr create --title "feat: ..." --description "..."` |
 
+After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` before requesting any bot review -- repos with automatic Copilot review already have one in flight (and it will NOT show in `gh pr view --json reviewRequests`).
+
 ## Merge (Write -- Manual Approval)
 
 | Action       | GitHub                                | GitLab                                        |
@@ -273,7 +279,7 @@ GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (
 
 Iterate until no **valid** comments remain. Source a bot's config + the `bot_status`/`bot_tick` driver -- one round is:
 
-1. **Re-request + wait** -- `bot_tick {N}` re-requests the bot (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment) and polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed / `5` not applicable.
+1. **Re-request only when needed + wait** -- `bot_tick {N}` first checks for unresolved bot threads (handle those, never re-request over them), then a review at HEAD, then a pending request in REST `requested_reviewers` (auto-review on non-draft PR creation usually means round 1 needs no re-request at all). Only if none of those apply does it re-request (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment), then polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed / `5` not applicable.
 2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
 3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); on a failed review (`exit 4` -- usually structural: oversized PR, binary files, quota; escalate); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3"); or if HEAD is unchanged since the last round.
 
