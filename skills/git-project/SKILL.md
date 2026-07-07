@@ -73,7 +73,8 @@ epic=$(gh issue create --title "Epic: <name>" --label epic --body "<goal>"); epi
 # Link existing issues as NATIVE sub-issues (flag repeats; on a partial GraphQL failure re-run -- it's a
 # transient sub-issue burst limit, and already-linked children are unaffected)
 gh issue edit $epic --add-sub-issue <existing#> --add-sub-issue <existing#>
-# New work goes straight under the epic, typed and scoped at creation (org repos: --type; skip on personal)
+# New work goes straight under the epic, typed and scoped at creation
+# (--type is org-only: DROP it on personal repos or the whole command fails with 'type not found')
 gh issue create --title "<task>" --type Task --milestone "<title>" --parent $epic --body "<detail>"
 # Put the epic on the board; its children auto-join IF the native "Auto-add sub-issues" workflow is on
 gh project item-add <num> --owner @me --url "$(gh issue view $epic --json url --jq .url)"
@@ -145,7 +146,7 @@ Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggle
 
 ## Read-Only vs Write Classification
 
-- **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`, milestone reads (`gh api repos/{o}/{r}/milestones`), issue-type reads (`gh api orgs/{org}/issue-types`)
+- **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`, milestone reads (`gh api repos/{owner}/{repo}/milestones`), issue-type reads (`gh api orgs/{org}/issue-types`)
 - **Write** (require approval): `gh project create/copy/edit/link/field-create/item-add/item-edit/item-archive/item-delete`, `gh label create`, `gh issue create/edit` (incl. `--type/--milestone/--parent/--add-sub-issue`), milestone `POST`/`PATCH`/`DELETE`, sub-issue `POST`/`DELETE`, GraphQL mutations
 
 > **Reference**: See `references/allowlist.md` for read-only `gh project` patterns and the opt-in write set.

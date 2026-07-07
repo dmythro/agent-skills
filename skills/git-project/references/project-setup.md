@@ -6,8 +6,8 @@ What's scriptable (`gh`/GraphQL) vs. the small one-time UI step (views + workflo
 
 ```bash
 gh project create --owner @me --title "Roadmap"            # note the new number
-# Check what already exists BEFORE creating -- Status ships built in (Todo / In Progress / Done),
-# and some templates/orgs already include Priority:
+# Check which FIELDS the new project already has before adding any -- Status ships built in
+# (Todo / In Progress / Done), and some templates/orgs already include Priority:
 gh project field-list <num> --owner @me --format json --jq '[.fields[].name]'
 # Add Priority only if missing:
 gh project field-create <num> --owner @me --name "Priority" --data-type SINGLE_SELECT \
