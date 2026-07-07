@@ -170,6 +170,7 @@ For maximum restriction, use exact command strings. These only auto-approve the 
 ```text
 "Bash(gh pr view * --json number,title,state,isDraft,reviewDecision,mergeable,baseRefName,headRefName)",
 "Bash(gh pr view * --json reviews,reviewRequests,latestReviews)",
+"Bash(gh pr view * --json reviewRequests --jq *)",
 "Bash(gh pr view * --json files)",
 "Bash(gh pr view * --json commits)",
 "Bash(gh pr view * --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",

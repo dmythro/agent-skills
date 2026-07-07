@@ -1,6 +1,6 @@
 # gh project + GraphQL Reference
 
-Validated against `gh` 2.94. Projects are addressed by **number** under an `--owner` (`@me` or an org login). `gh project` covers projects, fields, and items; **views and workflows have no create/update API** (UI-only -- see `project-setup.md`).
+Validated against `gh` 2.96. Projects are addressed by **number** under an `--owner` (`@me` or an org login). `gh project` covers projects, fields, and items; **views and workflows have no create/update API** (UI-only -- see `project-setup.md`). Issue-side metadata (types, milestones, sub-issue links) is set with `gh issue` flags, not `gh project` -- see `types-and-milestones.md` and `sub-issues.md`.
 
 **Owner / org note:** the `--owner @me` examples below take an **org login** instead for org-owned projects. The GraphQL **project reads** here use `viewer { projectV2 }` (the `@me` case); for an org-owned project replace it with `organization(login: "ORG") { projectV2 }` (and `.data.viewer` -> `.data.organization` in the `--jq`). Repo-scoped reads (`repository(owner, name)`, REST `repos/{owner}/{repo}/...`) are unaffected.
 
@@ -60,6 +60,17 @@ gh's `--jq` is built in (it is **not** the standalone `jq`, so no `--arg`) -- in
 gh project item-list <num> --owner @me --format json \
   --jq '.items[] | select(.content.number==<issueNumber>) | .id'
 ```
+
+### Read items with their issue metadata (Type, Milestone, parent)
+
+`item-list` doesn't expose issue types or milestones -- read them through the items' content in GraphQL (org-owned: swap `viewer` per the note above):
+
+```bash
+gh api graphql -f query='{ viewer { projectV2(number: <num>) { items(first: 50) { nodes { id content { ... on Issue { number title state issueType { name } milestone { title number dueOn } parent { number } } } } } } } }' \
+  --jq '[.data.viewer.projectV2.items.nodes[] | {item: .id, issue: .content.number, type: .content.issueType.name, milestone: .content.milestone.title, epic: .content.parent.number}]'
+```
+
+`issueType` is null on personal-repo issues (types are org-only), `milestone`/`parent` are null when unset. These are **not** project fields: `item-edit` cannot set them (set them on the issue -- `types-and-milestones.md`).
 
 ## Roadmap ordering
 
