@@ -127,7 +127,7 @@ bot_requested() { [ "$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers 
 
 ## bot_tick (re-request only if needed + one bounded poll)
 
-If there's already an outcome, return it; if a request is already pending (auto-review, or a previous tick's request), skip straight to polling; otherwise re-request once and poll until the review lands or a 5-minute deadline. On a **failed** review (Copilot's "encountered an error ... re-requesting a review" -- transient, and re-requesting usually succeeds) it cools down 5 minutes for safety, issues the single re-request, and returns `4` so the caller can count consecutive failures; the *next* tick polls the retry (`bot_status` reports `3` while it's pending). **At most one re-request, one bounded poll, no internal retry loop** -- so a single invocation stays well under the 10-minute Bash cap; the agent's loop owns retries and escalation.
+If there's already an outcome, return it; if a request is already pending (auto-review, or a previous tick's request), skip straight to polling; otherwise re-request once and poll until the review lands or a 5-minute deadline. On a **failed** review (Copilot's "encountered an error ... re-requesting a review" -- transient, and re-requesting usually succeeds) it cools down 5 minutes for safety, issues the single re-request (skipped if one appeared during the cooldown), and returns `4` so the caller can count consecutive failures; the *next* tick polls the retry (`bot_status` reports `3` while it's pending). **At most one re-request, one bounded poll, no internal retry loop** -- so a single invocation stays well under the 10-minute Bash cap; the agent's loop owns retries and escalation.
 
 ```bash
 # Usage: bot_tick <PR_NUMBER>   (needs the config block + bot_rerequest + bot_requested)
@@ -144,10 +144,11 @@ bot_tick() {
     # Transient bot failure: cool down 5 min so the fault clears, then one re-request. The next
     # bot_tick polls it -- returning 4 here lets the caller count failures and cap the retries.
     sleep 300
-    if ! bot_rerequest "$pr" >/dev/null 2>&1; then
+    # A request may have appeared during the cooldown (a human, draft->ready) -- never double-request.
+    if ! bot_requested "$pr" && ! bot_rerequest "$pr" >/dev/null 2>&1; then
       echo "Re-request after failed review did not go through"; return 5
     fi
-    echo "Re-requested after failed review -- re-run bot_tick to poll the retry"; return 4
+    echo "Retry requested after failed review -- re-run bot_tick to poll it"; return 4
   fi
   [ "$rc" -ne 3 ] && return "$rc"            # already have an outcome (0 / 2 / 6)
 
@@ -182,7 +183,9 @@ repeat:
   bot_tick N:
     0 -> STOP "clean -- this bot has no unresolved comments"
     5 -> STOP "not applicable -- non-GitHub remote, or the bot isn't enabled here"
-    3 -> re-run bot_tick (still pending); after a couple of timeouts STOP "timed out / maybe unavailable"
+    3 -> still pending: re-run bot_tick within the same round -- do NOT re-enter the round header,
+         so the unchanged-HEAD guard never aborts a wait (it applies only after a processed review
+         outcome); after a couple of timeouts STOP "timed out / maybe unavailable"
     4 -> transient failure (e.g. "Copilot encountered an error"). bot_tick already cooled down ~5 min
          and re-requested; fails += 1. If fails >= 3: STOP "keeps failing -- likely structural:
          oversized PR, binary/minified files, quota; fix the cause". Else re-run bot_tick (polls the
@@ -202,7 +205,7 @@ repeat:
                re-request, and only if nothing is already pending (no duplicate requests)
 ```
 
-**It always terminates.** A round continues only when a *valid* comment was fixed (advancing HEAD); an all-rejected round stops at the zero-valid exit (the `head == prev_head` guard is a backstop). Transient failures retry at most twice (cooldown + re-request, then escalate), rate limits wait a bounded window or defer to another bot, unavailability stops immediately, and `MAX_ROUNDS` caps the whole thing -- so it converges on substance.
+**It always terminates.** A round continues only when a *valid* comment was fixed (advancing HEAD); an all-rejected round stops at the zero-valid exit (the `head == prev_head` guard is a backstop). Transient failures are retried with a cooldown + re-request but stop after 3 consecutive failed reviews, rate limits wait a bounded window or defer to another bot, unavailability stops immediately, and `MAX_ROUNDS` caps the whole thing -- so it converges on substance.
 
 To clear *every* reviewer in one pass, run the loop once per active bot (and address human threads via `pr-comment-workflow.md`); each bot's `bot_status` only counts its own threads.
 
