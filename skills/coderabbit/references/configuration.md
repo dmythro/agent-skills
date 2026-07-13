@@ -8,9 +8,12 @@ From most to least authoritative:
 
 1. **Global overrides** (org admins, CodeRabbit dashboard) -- enforced everywhere
 2. **Repository `.coderabbit.yaml`** -- the copy on the **feature branch under review**; when present it replaces repo UI settings entirely (no per-key merge)
-3. **Repository UI settings** (app.coderabbit.ai)
-4. **Organization settings / central configuration**
-5. Built-in defaults
+3. **Central configuration** -- `.coderabbit.yaml` in the organization's `coderabbit` repository
+4. **Repository UI settings** (app.coderabbit.ai)
+5. **Organization settings**
+6. Built-in defaults
+
+By default the highest-priority source wins whole (no merging); with `inheritance: true` parent-layer settings merge in -- global overrides still win either way.
 
 Dump the fully resolved config (with per-setting source annotations) by commenting on any PR:
 

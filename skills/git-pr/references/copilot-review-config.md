@@ -8,26 +8,26 @@ Two coexisting models -- which one applies changes the cost calculus:
 
 | Model | Who | Cost per review |
 |-------|-----|-----------------|
-| **Legacy premium requests** | Annual Pro/Pro+ plans from before 2026-06-01, until expiration | **13 premium requests** flat (Pro: 300/month = ~23 reviews); overage $0.04/request = $0.52/review if a premium-request budget is active |
+| **Legacy premium requests** | Annual Pro/Pro+ plans from before 2026-06-01, until expiration | **13 premium requests** flat (Pro: 300/month = up to ~23 reviews; the pool is shared with all premium features); overage $0.04/request = $0.52/review if a premium-request budget is active |
 | **AI credits** (current) | Everyone else | Token-metered (no fixed price; Medium effort costs more) + **Actions minutes** on private repos |
 
 Notes:
 
 - Counters reset the **1st of each month 00:00 UTC**, not on the subscription anniversary.
 - **Every re-request bills the same as a first review** -- no incremental discount. This is why review rounds are budgeted (see `bot-review-loop.md`).
-- Copilot Free has no code review at all. Legacy annual plans drop to Free at expiration.
+- Copilot Free includes no *personal* code review (org-enabled review can still cover unlicensed members, billed to the org). Legacy annual plans drop to Free at expiration.
 - Legacy overage pitfall: the budgets UI now creates "Copilot AI credits" budgets; those may not gate legacy premium-request overage. A budget on the premium-request SKU (or "All Premium Request SKUs") is the one that unblocks legacy overage, and entitlement sync can lag 24-48h after budget changes.
 
-**Check usage via API** (requires the `user` scope: `gh auth refresh -h github.com -s user`):
+**Check usage via API** (requires the `user` scope: `gh auth refresh -h github.com -s user`). Note `gh api` only auto-fills `{owner}`/`{repo}`/`{branch}` -- the username must be substituted explicitly:
 
 ```bash
-# Legacy: premium request usage (empty if migrated to AI credits)
-gh api "/users/{username}/settings/billing/premium_request/usage?year=2026&month=7"
-# Current: AI credit usage
-gh api "/users/{username}/settings/billing/ai_credit/usage?year=2026&month=7"
+# Legacy: premium request usage (rows here = legacy billing)
+gh api "/users/$(gh api user --jq .login)/settings/billing/premium_request/usage?year=$(date +%Y)&month=$(date +%-m)"
+# Current: AI credit usage (rows here = AI credits billing)
+gh api "/users/$(gh api user --jq .login)/settings/billing/ai_credit/usage?year=$(date +%Y)&month=$(date +%-m)"
 ```
 
-Responses report consumption (`discountQuantity` = used from included allowance, `netQuantity` = billed overage), not remaining -- compute remaining against the plan allowance. Whichever endpoint returns rows tells you which billing model the account is on.
+Responses report consumption (`discountQuantity` = used from included allowance, `netQuantity` = billed overage), not remaining -- compute remaining against the plan allowance. Whichever endpoint returns rows tells you which billing model the account is on -- but only for **personally billed** usage: org-paid seats bill the org, so empty responses on both endpoints mean org-managed billing (query the org endpoints), not proof of either model.
 
 ## Automatic Review: Detect, Then Configure
 

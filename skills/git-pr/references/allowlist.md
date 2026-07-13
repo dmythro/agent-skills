@@ -94,13 +94,9 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/issues/*/labels)",
 "Bash(gh api repos/*/issues/*/labels --jq *)",
 "Bash(gh api repos/*/issues/*/timeline *)",
-"Bash(gh api repos/*/rules/branches/* --jq *)",
 "Bash(gh api repos/*/rules/branches/*)",
-"Bash(gh api repos/*/rulesets)",
-"Bash(gh api repos/*/rulesets --jq *)",
-"Bash(gh api repos/*/rulesets?includes_parents=true --jq *)",
-"Bash(gh api /users/*/settings/billing/premium_request/usage*)",
-"Bash(gh api /users/*/settings/billing/ai_credit/usage*)"
+"Bash(gh api repos/*/rules/branches/* --jq *)",
+"Bash(gh api repos/*/rulesets)"
 ```
 
 **Pattern details:**
@@ -110,8 +106,8 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate`, `--jq *`, and `--paginate --slurp | jq *` variants are added separately for read-only flag support
 - **`--paginate --slurp | jq *`** (reviews, issues comments): the bot review loop slurps all pages into one array and pipes to a separate `jq`, because `--paginate` applies `-q/--jq` per page (and `--slurp` cannot combine with `-q/--jq`). The pipe is spelled out because `*` cannot cross it
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`, `--slurp | jq`) is safer
-- **`/rules/branches/` and `/rulesets`**: read-only detection of the Copilot auto-review rule (`copilot_code_review`, see `copilot-review-config.md`). Bare `/rulesets` pattern (no trailing `*`) blocks the ruleset-creating POST; ruleset writes stay manual
-- **Billing usage endpoints**: GET-only (trailing `*` allows `?year=...&month=...` query params and `--jq`); needs the `user` scope on the gh token. Reports Copilot premium-request / AI-credit consumption for review budgeting
+- **`/rules/branches/` and `/rulesets`**: read-only detection of the Copilot auto-review rule (`copilot_code_review`, see `copilot-review-config.md`). `/rules/branches/` is a GET-only route, so its trailing wildcards are safe; `/rulesets` accepts POST (creates rulesets), so only the **bare** pattern is listed -- no `--jq *` variant, because a trailing `*` after `--jq` could absorb `-X POST -f ...`. Filter ruleset JSON with a separate `| jq` or approve the flagged call manually; ruleset writes stay manual
+- **Billing usage endpoints are not allowlisted**: the quota-check commands in `copilot-review-config.md` use `$(...)` username substitution inside a quoted URL (query params contain `&`), which does not match simple patterns -- they are occasional diagnostics, approve manually
 
 ---
 
