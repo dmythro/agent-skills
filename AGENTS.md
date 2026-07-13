@@ -21,7 +21,7 @@ skills/
       allowlist.md        # Tool permission patterns (optional)
 ```
 
-Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`.
+Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`, `git-project`, `coderabbit`.
 
 ## Build / Lint / Test Commands
 
@@ -56,7 +56,7 @@ description: >-
 1. **H1 heading** immediately after frontmatter -- matches the skill's subject
 2. **Opening paragraph** -- bold, concise, establishes context and scope
 3. **"When to Use"** section -- bullet list of triggering scenarios
-4. **"Critical Rule"** section -- bold, imperative, must-follow constraints
+4. **"Critical Rule"** or **"Critical Rules"** section -- bold, imperative, must-follow constraints
 5. **Major topic sections** (H2) covering the skill's API/CLI surface
 6. **Key Gotchas** / **Best Practices** -- a numbered list at the end; use either name (most skills use `## Key Gotchas`)
 7. **References** -- blockquote pointers to `references/*.md` files

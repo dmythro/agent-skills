@@ -9,7 +9,8 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `bun-cli` | Bun CLI: package management, scripts, testing, bundling, compilation | `bunx skills add dmythro/agent-skills --skill bun-cli` <br> `npx skills add dmythro/agent-skills --skill bun-cli` |
 | `bun-api` | Bun runtime API: file I/O, shell, SQLite, SQL client (PostgreSQL/MySQL), S3 storage, Redis, hashing, compression, utilities | `bunx skills add dmythro/agent-skills --skill bun-api` <br> `npx skills add dmythro/agent-skills --skill bun-api` |
 | `git-commit` | Conventional Commits format for all git commits and PR/MR titles | `bunx skills add dmythro/agent-skills --skill git-commit` <br> `npx skills add dmythro/agent-skills --skill git-commit` |
-| `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, bot review loop (GitHub: Copilot, CodeRabbit), merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
+| `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, cost-aware bot review loop (GitHub: Copilot, CodeRabbit), Copilot review configuration, merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
+| `coderabbit` | CodeRabbit CLI local reviews (pre-commit/pre-push/pre-PR) + `.coderabbit.yaml` low-noise configuration | `bunx skills add dmythro/agent-skills --skill coderabbit` <br> `npx skills add dmythro/agent-skills --skill coderabbit` |
 | `git-ci` | CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab) | `bunx skills add dmythro/agent-skills --skill git-ci` <br> `npx skills add dmythro/agent-skills --skill git-ci` |
 | `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, native issue Types, milestone scoping, Epic/Upcoming roadmap views | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
 
@@ -24,6 +25,7 @@ bunx skills add dmythro/agent-skills --skill git-commit
 bunx skills add dmythro/agent-skills --skill git-pr
 bunx skills add dmythro/agent-skills --skill git-ci
 bunx skills add dmythro/agent-skills --skill git-project
+bunx skills add dmythro/agent-skills --skill coderabbit
 
 # or with npx
 npx skills add dmythro/agent-skills --skill bun-cli
@@ -32,6 +34,7 @@ npx skills add dmythro/agent-skills --skill git-commit
 npx skills add dmythro/agent-skills --skill git-pr
 npx skills add dmythro/agent-skills --skill git-ci
 npx skills add dmythro/agent-skills --skill git-project
+npx skills add dmythro/agent-skills --skill coderabbit
 ```
 
 Or install all skills at once:
@@ -77,6 +80,7 @@ Skills with CLI commands include a `references/allowlist.md` with tiered auto-ap
 - [`git-pr/references/allowlist.md`](skills/git-pr/references/allowlist.md) -- `gh pr view`, `gh issue list`, `glab mr view`, `glab mr list`, etc.
 - [`git-ci/references/allowlist.md`](skills/git-ci/references/allowlist.md) -- `gh pr checks`, `gh run list`, `glab ci status`, `glab ci list`, etc.
 - [`git-project/references/allowlist.md`](skills/git-project/references/allowlist.md) -- `gh project list`, `gh project field-list`, `gh project item-list`, sub-issue reads, etc.
+- [`coderabbit/references/allowlist.md`](skills/coderabbit/references/allowlist.md) -- `coderabbit auth status`, `coderabbit doctor`, `coderabbit stats`, cached findings replay, etc.
 
 ## License
 
