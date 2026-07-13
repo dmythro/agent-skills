@@ -2,12 +2,14 @@
 name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
-  comment handling, thread resolution, review state queries, merging, and
-  looping bot review rounds (GitHub: Copilot, CodeRabbit) until clean. Use when creating PRs/MRs,
-  addressing review feedback, resolving threads, looping bot reviews,
-  checking approvals, querying PR data, or configuring gh/glab read-only
-  allowlists. Not for git commits (git-commit), CI/CD status (git-ci), or
-  general git ops
+  comment handling, thread resolution, review state queries, merging,
+  cost-aware bot review rounds (GitHub: Copilot, CodeRabbit), and Copilot
+  code review configuration (rulesets, custom instructions, billing). Use
+  when creating PRs/MRs, addressing review feedback, resolving threads,
+  looping bot reviews, checking approvals, querying PR data, configuring
+  Copilot reviews, or configuring gh/glab read-only allowlists. Not for
+  git commits (git-commit), CI/CD status (git-ci), local pre-push
+  CodeRabbit CLI reviews (coderabbit), or general git ops
 ---
 
 # PR and MR Workflows
@@ -35,7 +37,9 @@ gh pr view --json number,state,reviewDecision,reviewRequests,title 2>/dev/null
 
 This avoids offering to create a PR when one already exists, and immediately surfaces pending review work. The `reviewDecision` field reliably indicates whether a reviewer has requested changes without needing to fetch individual threads.
 
-**Auto-review is an optional setting -- never assume it either way (GitHub):** automatic Copilot code review is a per-repo/org opt-in (repo/org settings or rulesets), so its presence varies between accounts, orgs, and even repos of the same owner. When enabled it requests Copilot on every **non-draft** PR at creation (and when a draft is marked ready for review), so a freshly created PR may already have a pending bot request or bot comments minutes later -- and on other repos nothing fires at all. There is no read-only "is it enabled" endpoint: **detect, don't assume** -- check for a pending request or an existing bot review first, and only request one if neither shows up; otherwise you get a duplicate round. **Gotcha:** the pending bot request is only visible via `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` (login `Copilot`) -- `gh pr view --json reviewRequests` omits bot reviewers and stays empty.
+**Auto-review is an optional setting -- never assume it either way (GitHub):** automatic Copilot code review comes from either a repo/org **ruleset** or the author's **personal** Copilot setting, so its presence varies between accounts, orgs, and even repos of the same owner. When enabled it requests Copilot on every **non-draft** PR at creation (and when a draft is marked ready for review), so a freshly created PR may already have a pending bot request or bot comments minutes later -- and on other repos nothing fires at all. The ruleset source is detectable read-only (the `copilot_code_review` rule via `gh api repos/{owner}/{repo}/rules/branches/{branch}`; see `references/copilot-review-config.md`), but the personal setting has no API -- so an empty ruleset check still means **detect, don't assume**: check for a pending request or an existing bot review first, and only request one if neither shows up; otherwise you get a duplicate round. **Gotcha:** the pending bot request is only visible via `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` (login `Copilot`) -- `gh pr view --json reviewRequests` omits bot reviewers and stays empty.
+
+**Bot reviews cost money (Copilot) or quota (CodeRabbit) -- budget rounds deliberately.** Every Copilot review, including each re-request, bills fully: 13 premium requests on legacy annual plans (~23 reviews/month on Pro), or token-metered AI credits + Actions minutes on current plans. CodeRabbit PR reviews draw from an hourly per-plan bucket. Check the project's **Code Review Policy** (below) before requesting anything billable; prefer local CodeRabbit CLI reviews (see the `coderabbit` skill) to iterate cheaply before the PR-side review.
 
 ## When to Use
 
@@ -46,6 +50,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 - **Querying PR/MR data** -- files changed, commits, labels, linked issues
 - **Posting comments on PRs/MRs** -- line-specific comments, thread replies
 - **Looping bot review rounds** (GitHub only; Copilot, CodeRabbit) -- re-request the bot, wait for the async review, address comments, repeat until no valid comments remain ("loop the Copilot review", "loop 3 rounds")
+- **Configuring Copilot code review** -- auto-review rulesets, review effort, custom instructions, billing/quota checks
 - **Configuring tool allowlists** -- auto-approval patterns for read-only commands
 
 ## Critical Rules
@@ -272,9 +277,29 @@ glab api projects/{id}/merge_requests/{iid}/discussions/{disc_2} --method PUT --
 
 ---
 
+## Code Review Policy (Convention)
+
+Review preferences are declared in a `Code Review Policy` section of an agent instructions file -- check for one before requesting any review. Two scopes, most specific wins:
+
+1. **Repo policy** -- the project's AGENTS.md or CLAUDE.md. AGENTS.md is the preferred home: Copilot code review itself reads the root AGENTS.md, so one file steers both the agent and the reviewer.
+2. **User-global policy** -- the user's global agent instructions (Claude Code: `~/.claude/CLAUDE.md`) as the default flow across repos.
+
+**Both reviewers are optional.** Detect what is actually available (CodeRabbit app installed / CLI authenticated, Copilot ruleset or observed auto-review) and never assume a reviewer exists, is paid for, or should be added. `Reviewer: none` is a valid policy -- human review only. Example:
+
+```markdown
+## Code Review Policy
+- Reviewer: coderabbit            # coderabbit | copilot | both | none
+- Copilot billing: legacy         # legacy (premium requests) | credits
+- Local review: coderabbit --type committed   # run before every push
+- PR review rounds: ask           # ask | loop <= N
+```
+
+**When no policy exists (either scope), default conservative:** if an auto-review fired, process that round; then ask before any billable re-request -- and inform the recommendation with the quality of the round's findings (mostly valid substantive issues -> another round likely pays off; mostly noise -> stop). Never initiate billable reviews unprompted on repos without auto-review; loop only when explicitly asked.
+
 ## Bot Review Loop (GitHub)
 
 > **Reference**: See `references/bot-review-loop.md` for the full loop: per-bot config blocks (Copilot, CodeRabbit), the `bot_status`/`bot_tick` driver, polling, and termination logic.
+> **Reference**: See `references/copilot-review-config.md` for Copilot review configuration: billing models and quota checks, auto-review ruleset detection/management, custom instructions, and the Copilot CLI local review option.
 
 GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (~minutes per review), and never block: their review `state` is always `COMMENTED`. The loop is identical per bot; only the **identity** (which login to filter), the **re-request trigger**, and the detectable **failure/rate-limit notices** differ -- a per-bot config block sets them. There's no read-only "is it enabled" endpoint, so `bot_tick` exits `5` when the remote isn't GitHub or the re-request errors; an accepted-but-unanswered request exits `3` (slow *or* silently unavailable).
 
@@ -282,7 +307,9 @@ Iterate until no **valid** comments remain. Source a bot's config + the `bot_sta
 
 1. **Re-request only when needed + wait** -- `bot_tick {N}` first checks for unresolved bot threads (handle those, never re-request over them), then a review at HEAD, then a pending request in REST `requested_reviewers` (auto-review on non-draft PR creation usually means round 1 needs no re-request at all). Only if none of those apply does it re-request (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment), then polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed (already cooled down ~5 min + re-requested -- re-run to poll) / `5` not applicable / `6` rate-limited.
 2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
-3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); after ~3 consecutive failed reviews (`exit 4` is transient -- e.g. "Copilot encountered an error" -- and `bot_tick` retries it with a ~5-min cooldown + re-request; only *repeated* failure is structural: oversized PR, binary files, quota; escalate); on a rate limit (`exit 6`, CodeRabbit free tier -- wait the printed "next review available" window, or skip the bot when Copilot also covers the repo); on unavailability (`exit 5`); after the round cap (default 20, or "loop 3"); or if HEAD is unchanged since the last round.
+3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); after ~3 consecutive failed reviews (`exit 4` is transient -- e.g. "Copilot encountered an error" -- and `bot_tick` retries it with a ~5-min cooldown + re-request; only *repeated* failure is structural: oversized PR, binary files, quota; escalate); on a rate limit (`exit 6`, CodeRabbit free tier -- wait the printed "next review available" window, or skip the bot when Copilot also covers the repo); on unavailability (`exit 5`); after the round cap (default 5, or "loop 3"); or if HEAD is unchanged since the last round.
+
+**Rounds are billable** -- each Copilot round bills a full review; each CodeRabbit round spends hourly quota. Without an explicit loop instruction or a permissive Code Review Policy: process the auto-review round if one fired, then **ask before re-requesting** (recommend based on finding quality). Autonomous looping is for when the user asked for it.
 
 **Identity gotcha:** each bot has a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (Copilot: `copilot-pull-request-reviewer[bot]` / `copilot-pull-request-reviewer`, plus `Copilot` on REST inline comments; CodeRabbit: `coderabbitai[bot]` / `coderabbitai`). Filter the right one per surface.
 

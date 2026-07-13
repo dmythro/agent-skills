@@ -21,7 +21,7 @@ skills/
       allowlist.md        # Tool permission patterns (optional)
 ```
 
-Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`.
+Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`, `git-project`, `coderabbit`.
 
 ## Build / Lint / Test Commands
 
