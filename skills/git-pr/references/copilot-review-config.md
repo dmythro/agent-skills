@@ -39,8 +39,9 @@ Auto-review can come from **two independent sources**:
 ### Read the Ruleset (Read-Only Detection)
 
 ```bash
-# All rules active on the default branch (merges repo + org rulesets):
-gh api "repos/{owner}/{repo}/rules/branches/$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)" --jq '[.[] | select(.type=="copilot_code_review")]'
+# All rules active on the default branch (merges repo + org rulesets).
+# Keep the REST path unquoted so it matches the allowlist patterns:
+gh api repos/{owner}/{repo}/rules/branches/$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name) --jq '[.[] | select(.type=="copilot_code_review")]'
 ```
 
 Result semantics:

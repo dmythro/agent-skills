@@ -181,14 +181,18 @@ The agent drives rounds; `bot_tick` is one mechanical round. **Validate every co
 ```text
 INPUT: PR N; a Per-Bot Setup block sourced; MAX_ROUNDS = integer from the request ("loop 3" -> 3),
        else from the Code Review Policy, else 5
-GATE:  autonomous rounds past the first processed review require an explicit loop instruction or
-       a permissive policy -- otherwise ask before each billable re-request (see intro)
+GATE:  billable review requests require an explicit loop instruction or a permissive policy --
+       otherwise ASK before ANY tick that would issue one: after each processed round, and on
+       round 1 when nothing is pending or reviewed yet (repos without auto-review; see intro)
 prev_head = ""; round = 0; fails = 0; processed = 0
 repeat:
   round += 1;  if round > MAX_ROUNDS: STOP "hit round cap -- escalate"
-  if processed >= 1 and no explicit loop instruction and no permissive policy:
-    ASK "next round bills a full review -- proceed?" (recommend from the last round's finding quality)
-    on no answer / decline: STOP "awaiting approval for the next billable round"
+  if no explicit loop instruction and no permissive policy:
+    if processed >= 1 or (no pending bot request and no bot review at HEAD):
+      # this tick would issue a billable request; auto-review rounds arrive without one
+      # (read-only preflight: bot_requested + the review-at-HEAD check in bot_status)
+      ASK "next review request bills fully -- proceed?" (recommend from the last round's finding quality)
+      on no answer / decline: STOP "awaiting approval for the billable review request"
   head = gh pr view N --json headRefOid --jq .headRefOid
   if round > 1 and head == prev_head: STOP "no code change -- re-review would resurface the same points"
   prev_head = head
