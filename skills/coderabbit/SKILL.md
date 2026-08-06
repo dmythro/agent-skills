@@ -64,8 +64,8 @@ Defaults (CLI v0.7): all tracked changes, base = repository default branch, plai
 ## Output Modes
 
 - Default (no mode flag) -- detailed plain-text feedback with fix suggestions, non-interactive.
-- `--agent` -- JSON-lines: one object per line. Finding objects carry `type: "finding"`, `severity` (`critical|major|minor|trivial|info`), `fileName`, `comment`, `suggestions`, and `codegenInstructions` (written for coding agents -- follow them when fixing). Heartbeat events appear during long reviews; a final `complete` event carries `status` (`"review_skipped"` with `findings: 0` when the scope has no changes).
-- `coderabbit review findings` -- replay the cached findings from the last review with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end.
+- `--agent` -- JSON-lines: one object per line. Finding objects carry `type: "finding"`, `severity` (`critical|major|minor|trivial|info`), `fileName`, `suggestions`, and `codegenInstructions` (written for coding agents -- follow them when fixing); a `comment` field appears when `codegenInstructions` is empty. Heartbeat events appear during long reviews; a final `complete` event carries `status` (`"review_skipped"` with `findings: 0` when the scope has no changes).
+- `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end.
 - `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review.
 - `coderabbit stats` -- review statistics (`--rebuild` rescans review history).
 
@@ -101,7 +101,7 @@ The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are curren
 ## Key Gotchas
 
 1. **`--committed` needs commits, `--uncommitted` needs a dirty tree** -- reviewing the wrong scope silently reviews nothing (`review_skipped`); match the scope to the checkpoint.
-2. **`coderabbit review findings` replays, it does not re-review** -- after fixing, cached findings still show; only a fresh review verifies fixes.
+2. **`coderabbit review findings` replays, it does not re-review** -- after fixing, cached findings still show; only a fresh review verifies fixes. It also skips clean sessions: even after a clean verify run, it replays the older findings, which is not a regression.
 3. **The quota is per-hour, not per-day** -- a "limit reached" message means wait for the window, not stop for the day. Plan verify runs so the final pass fits the bucket.
 4. **CLI reviews and PR reviews draw from separate buckets** -- burning CLI reviews locally does not reduce the PR-side allowance, which is the point of the local-first flow.
 5. **Org context needs matching access** -- on a repo not linked to your CodeRabbit org, reviews run in limited free mode (no learnings/org context); results differ from PR-side reviews on the same code.
