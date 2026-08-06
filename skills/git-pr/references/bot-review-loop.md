@@ -33,12 +33,15 @@ BOT_LIMIT_RE=''                                                       # posts no
 bot_rerequest() { gh pr edit "$1" --add-reviewer "@copilot"; }
 # The failure notice is generic and can mask a HARD RATE LIMIT (weekly model cap, separate
 # from the premium-request/credit budget -- which it doesn't even consult). Each review runs
-# as Actions workflow "Copilot" on the PR's head branch; only that run's log names the real
-# cause ("SessionModelError: You've reached your weekly rate limit. Please wait for your
-# limit to reset on <date> ...", errorType rate_limit, HTTP 429) -- and the run concludes
-# "success" even when the review failed (the error is reported in-session, not to the runner).
-# Don't grep bare "429": log timestamps contain it. bot_status calls this before any retry.
-bot_fail_diag() { gh run view "$(gh run list --workflow Copilot --branch "$(gh pr view "$1" --json headRefName --jq .headRefName)" --limit 1 --json databaseId --jq '.[0].databaseId')" --log 2>/dev/null | grep -m1 -oE "reached your [a-z]+ rate limit\.[^.]*\."; }
+# as Actions workflow "Copilot" recording the PR head at review time as its headSha, so
+# --commit pins the current round's run; only that run's log names the real cause ("[SessionModelError]:
+# You've reached your weekly rate limit. Please wait for your limit to reset on <date> ...",
+# errorType rate_limit, HTTP 429) -- and the run concludes "success" even when the review
+# failed (the error is reported in-session, not to the runner). Don't grep bare "429": log
+# timestamps contain it. bot_status calls this before any retry. No match / unreadable log
+# falls through to the transient retry path -- deliberate fail-open: the loop keeps moving
+# and the 3-consecutive-failure cap bounds the waste.
+bot_fail_diag() { gh run view "$(gh run list --workflow Copilot --commit "$(gh pr view "$1" --json headRefOid --jq .headRefOid)" --limit 1 --json databaseId --jq '.[0].databaseId')" --log 2>/dev/null | grep -m1 -oE "SessionModelError.{0,20}reached your [a-z]+ rate limit\.[^.]*\."; }
 
 # --- CodeRabbit --- (auto-reviews on push -- incrementally, new changes only; re-request on
 #     demand via a PR comment. "@coderabbitai review" = incremental; "@coderabbitai full review"
@@ -240,7 +243,8 @@ repeat:
          else: commit + push (advances HEAD; message = the change itself, never the bot/round),
                then continue: push-triggered bots (CodeRabbit) re-review on their own unless
                auto-paused (silent after 5 reviewed commits -- see CodeRabbit specifics);
-               Copilot never re-reviews on push. Either way the next bot_tick covers it --
+               Copilot re-reviews on push only if the ruleset sets review_on_push (off by
+               default). Either way the next bot_tick covers it --
                it re-requests only when no review at HEAD and nothing pending (no duplicate
                requests; an explicit @coderabbitai review works even while auto-paused)
 ```

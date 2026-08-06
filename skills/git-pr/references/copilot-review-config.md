@@ -130,4 +130,4 @@ copilot -p "Review the diff vs origin/main: logic errors, edge cases, security. 
 4. **`review_on_push` multiplies cost** -- every push re-bills a full review. Off = one auto review per PR, further rounds by deliberate re-request.
 5. **Budgets may not unblock legacy overage** -- an AI-credits budget does not obviously gate premium-request overage, and entitlement sync lags; exhausted-quota reviews fail with the same opaque "Copilot encountered an error" comment as transient failures.
 6. **The generic failure comment can mask a hard weekly rate limit** -- a model-level cap independent of budgets and remaining allowance. Only the review run's Actions log names it (with the reset date); re-requesting before the reset burns Actions minutes for a guaranteed failure. Check the log first (`bot_fail_diag`, `bot-review-loop.md`) and report the reset date.
-6. **Effort level and runner type are UI-only** -- do not look for an API; tell the user where the setting lives.
+7. **Effort level and runner type are UI-only** -- do not look for an API; tell the user where the setting lives.
