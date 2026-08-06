@@ -17,6 +17,7 @@ Notes:
 - **Every re-request bills the same as a first review** -- no incremental discount. This is why review rounds are budgeted (see `bot-review-loop.md`).
 - Copilot Free includes no *personal* code review (org-enabled review can still cover unlicensed members, billed to the org). Legacy annual plans drop to Free at expiration.
 - Legacy overage pitfall: the budgets UI now creates "Copilot AI credits" budgets; those may not gate legacy premium-request overage. A budget on the premium-request SKU (or "All Premium Request SKUs") is the one that unblocks legacy overage, and entitlement sync can lag 24-48h after budget changes.
+- **Hard model rate limits are a separate axis from spend** ([docs](https://docs.github.com/copilot/concepts/rate-limits)): heavy use can hit a weekly per-model cap that fails reviews without consulting the budget or remaining allowance at all. The PR shows only the generic "Copilot encountered an error" comment; the review run's Actions log (workflow `Copilot`) carries the real error -- `SessionModelError ... You've reached your weekly rate limit. Please wait for your limit to reset on <date>` (errorType `rate_limit`, HTTP 429). Every re-request before that reset fails identically and still burns Actions minutes; diagnosis recipe: `bot_fail_diag` in `bot-review-loop.md`.
 
 **Check usage via API** (requires the `user` scope: `gh auth refresh -h github.com -s user`). Note `gh api` only auto-fills `{owner}`/`{repo}`/`{branch}` -- the username must be substituted explicitly:
 
@@ -128,4 +129,5 @@ copilot -p "Review the diff vs origin/main: logic errors, edge cases, security. 
 3. **A ruleset rule overrides a personal disable** -- users cannot opt out of ruleset-mandated reviews from their own settings.
 4. **`review_on_push` multiplies cost** -- every push re-bills a full review. Off = one auto review per PR, further rounds by deliberate re-request.
 5. **Budgets may not unblock legacy overage** -- an AI-credits budget does not obviously gate premium-request overage, and entitlement sync lags; exhausted-quota reviews fail with the same opaque "Copilot encountered an error" comment as transient failures.
+6. **The generic failure comment can mask a hard weekly rate limit** -- a model-level cap independent of budgets and remaining allowance. Only the review run's Actions log names it (with the reset date); re-requesting before the reset burns Actions minutes for a guaranteed failure. Check the log first (`bot_fail_diag`, `bot-review-loop.md`) and report the reset date.
 6. **Effort level and runner type are UI-only** -- do not look for an API; tell the user where the setting lives.
