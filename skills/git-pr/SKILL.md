@@ -292,7 +292,7 @@ Review preferences are declared in a `Code Review Policy` section of an agent in
 ## Code Review Policy
 - Reviewer: coderabbit            # coderabbit | copilot | both | none
 - Copilot billing: legacy         # legacy (premium requests) | credits
-- Local review: coderabbit --type committed   # run before every push
+- Local review: coderabbit review --committed   # run before every push
 - PR review rounds: ask           # ask | loop <= N
 ```
 
