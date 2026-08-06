@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+tone_instructions: >-
+  Be brief and direct. Comment only on factual errors, wrong commands or
+  flags, broken cross-references, and contradictions between skills. Skip
+  style, formatting, grammar, and wording preferences.
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: false
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  changed_files_summary: false
+  suggested_labels: false
+  suggested_reviewers: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  estimate_code_review_effort: false
+
+  path_instructions:
+    - path: "skills/**/*.md"
+      instructions: >-
+        Documentation for AI coding agents, not humans. Verify commands,
+        flags, and API/CLI facts; flag internal contradictions and broken
+        references/*.md links. Do not comment on heading style, prose
+        taste, or Markdown formatting.
+
+  tools:
+    markdownlint: {enabled: false}
+    languagetool: {enabled: false}
+    # gitleaks, semgrep, actionlint stay enabled (default true)
+
+  finishing_touches:
+    docstrings: {enabled: false}
+    unit_tests: {enabled: false}
