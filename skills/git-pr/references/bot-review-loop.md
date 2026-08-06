@@ -217,9 +217,11 @@ repeat:
            invalid -> reply with the rationale + resolve (no code change)
          if NONE were valid (nothing to fix): STOP "zero valid comments -- re-requesting would only resurface them"
          else: commit + push (advances HEAD; message = the change itself, never the bot/round),
-               then continue: push-triggered bots (CodeRabbit)
-               re-review on their own; Copilot does not -- the next bot_tick issues the
-               re-request, and only if nothing is already pending (no duplicate requests)
+               then continue: push-triggered bots (CodeRabbit) re-review on their own unless
+               auto-paused (silent after 5 reviewed commits -- see CodeRabbit specifics);
+               Copilot never re-reviews on push. Either way the next bot_tick covers it --
+               it re-requests only when no review at HEAD and nothing pending (no duplicate
+               requests; an explicit @coderabbitai review works even while auto-paused)
 ```
 
 **It always terminates.** A round continues only when a *valid* comment was fixed (advancing HEAD); an all-rejected round stops at the zero-valid exit (the `head == prev_head` guard is a backstop). Transient failures are retried with a cooldown + re-request but stop after 3 consecutive failed reviews, rate limits wait a bounded window or defer to another bot, unavailability stops immediately, and `MAX_ROUNDS` caps the whole thing -- so it converges on substance.
