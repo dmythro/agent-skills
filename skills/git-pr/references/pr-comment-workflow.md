@@ -77,8 +77,8 @@ The goal is 100% confidence in your verdict before acting. If you're unsure, cla
 
 After evaluating all comments, make all code fixes before any GitHub API writes:
 
-1. Fix all "valid and unaddressed" comments in code
-2. Commit the fixes using Conventional Commits format (e.g., `fix: address PR review feedback`)
+1. Fix all "valid and unaddressed" comments in code. Do not add code comments that narrate the fix or restate what the code already reads -- comment only non-obvious constraints.
+2. Commit the fixes using Conventional Commits format. The message describes the change itself (e.g., `fix: handle null token refresh`), never the review process -- no "address review feedback", bot names, or round numbers; the PR threads already record why (see the `git-commit` skill).
 3. Push the commit
 
 Only proceed to Phase 2 after the push succeeds. This ensures reviewers see the actual fixes when they read your replies.
@@ -115,6 +115,7 @@ mutation {
 - Add one aliased operation (`t1`, `t2`, ...) per thread to resolve
 - Do NOT include "Needs discussion" threads in the resolve mutation -- leave those for the reviewer
 - All replies come before the resolve mutation so reviewers see context before resolution
+- Keep replies to one or two sentences: verdict + evidence. No filler
 
 ### Reply Content by Classification
 

@@ -216,7 +216,8 @@ repeat:
            valid   -> fix
            invalid -> reply with the rationale + resolve (no code change)
          if NONE were valid (nothing to fix): STOP "zero valid comments -- re-requesting would only resurface them"
-         else: commit + push (advances HEAD), then continue: push-triggered bots (CodeRabbit)
+         else: commit + push (advances HEAD; message = the change itself, never the bot/round),
+               then continue: push-triggered bots (CodeRabbit)
                re-review on their own; Copilot does not -- the next bot_tick issues the
                re-request, and only if nothing is already pending (no duplicate requests)
 ```

@@ -75,6 +75,8 @@ Note: `--prompt-only` is a deprecated alias of `--agent`; generate `--agent`.
 4. Re-run the same review command to verify fixes. Stop when no valid `critical`/`major` findings remain, or the hourly bucket is exhausted (the CLI reports the limit -- wait or stop, never hammer).
 5. Then push / create the PR; the PR-side review (if any) should come back clean or near-clean.
 
+Commit fixes by what they change, never by what prompted them -- `fix: validate empty page cursor`, not `fix: coderabbit fixes` or `fix: review round 2` (see the `git-commit` skill). Fixes must not add code comments that restate what the code already reads.
+
 Two passes (review, fix, verify) is the normal shape. More than three passes means findings are being treated as noise -- re-evaluate validity or tune config (see `references/configuration.md`).
 
 ## Rate Limits (Per Developer, Per Hour)
