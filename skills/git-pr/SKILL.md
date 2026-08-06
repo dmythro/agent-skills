@@ -199,6 +199,8 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 | Create with title | `gh pr create --title "feat: ..." --body "..."`        | `glab mr create --title "feat: ..." --description "..."` |
 | Create + request Copilot review | `gh pr create --title "..." --body "..." --reviewer @copilot` (gh >= 2.88) | n/a |
 
+**Keep bodies lean.** The title follows Conventional Commits (`git-commit` skill); the body is a few sentences or tight bullets on what changes and why -- no restating the diff, no boilerplate sections beyond what the repo's PR template requires.
+
 After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` before requesting any bot review -- repos with automatic Copilot review already have one in flight (and it will NOT show in `gh pr view --json reviewRequests`). On a repo you know has **no** auto-review, skip the create-then-edit round-trip and request Copilot at creation with `--reviewer @copilot`; when unsure, create normally and let the detection decide.
 
 ## Merge (Write -- Manual Approval)
@@ -220,8 +222,8 @@ The workflow has two distinct phases -- never mix them:
 1. Fetch all unresolved review threads in a single GraphQL query with inline `--jq` filter
 2. For each thread: read the file at the referenced path+line, check if the comment is valid by researching the codebase (patterns, conventions, CLAUDE.md, git log)
 3. Be critical -- validate each comment against actual code before accepting. Reviewers can be wrong.
-4. Make all necessary code fixes
-5. Commit and push the fixes
+4. Make all necessary code fixes -- without adding code comments that narrate the fix or restate what the code already reads
+5. Commit and push the fixes -- the message describes the change itself, never the review process (no "address review feedback", bot names, or round numbers; see the `git-commit` skill)
 
 **Phase 2: Reply and Resolve (one batched command, one approval)**
 6. Combine all replies and all resolves into a single `&&`-chained command
@@ -306,8 +308,8 @@ GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (
 Iterate until no **valid** comments remain. Source a bot's config + the `bot_status`/`bot_tick` driver -- one round is:
 
 1. **Re-request only when needed + wait** -- `bot_tick {N}` first checks for unresolved bot threads (handle those, never re-request over them), then a review at HEAD, then a pending request in REST `requested_reviewers` (auto-review on non-draft PR creation usually means round 1 needs no re-request at all). Only if none of those apply does it re-request (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment), then polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed (already cooled down ~5 min + re-requested -- re-run to poll) / `5` not applicable / `6` rate-limited.
-2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
-3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); after ~3 consecutive failed reviews (`exit 4` is transient -- e.g. "Copilot encountered an error" -- and `bot_tick` retries it with a ~5-min cooldown + re-request; only *repeated* failure is structural: oversized PR, binary files, quota; escalate); on a rate limit (`exit 6`, CodeRabbit free tier -- wait the printed "next review available" window, or skip the bot when Copilot also covers the repo); on unavailability (`exit 5`); after the round cap (default 5, or "loop 3"); or if HEAD is unchanged since the last round.
+2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push; the message names the change, never the bot or round), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
+3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); after ~3 consecutive failed reviews (`exit 4` is transient -- e.g. "Copilot encountered an error" -- and `bot_tick` retries it with a ~5-min cooldown + re-request; only *repeated* failure is structural: oversized PR, binary files, quota; escalate); on a rate limit (`exit 6`: CodeRabbit -- wait the printed "next review available" window, or skip the bot when Copilot also covers the repo; Copilot -- a hard weekly limit diagnosed from the review run's CI log behind the generic "encountered an error" comment: never re-request before the logged reset date, report cause + date to the user); on unavailability (`exit 5`); after the round cap (default 5, or "loop 3"); or if HEAD is unchanged since the last round.
 
 **Rounds are billable** -- each Copilot round bills a full review; each CodeRabbit round spends hourly quota. Without an explicit loop instruction or a permissive Code Review Policy: process the auto-review round if one fired, then **ask before re-requesting** (recommend based on finding quality). Autonomous looping is for when the user asked for it.
 

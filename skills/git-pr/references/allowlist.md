@@ -29,6 +29,8 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
       "Bash(gh pr checks:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh pr status:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
       "Bash(gh issue view:*)",
       "Bash(gh issue list:*)",
       "Bash(gh issue status:*)",
@@ -108,6 +110,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`, `--slurp | jq`) is safer
 - **`/rules/branches/` and `/rulesets`**: read-only detection of the Copilot auto-review rule (`copilot_code_review`, see `copilot-review-config.md`). `/rules/branches/` is a GET-only route, so its trailing wildcards are safe; `/rulesets` accepts POST (creates rulesets), so only the **bare** pattern is listed -- no `--jq *` variant, because a trailing `*` after `--jq` could absorb `-X POST -f ...`. Filter ruleset JSON with a separate `| jq` or approve the flagged call manually; ruleset writes stay manual
 - **Billing usage endpoints are not allowlisted**: the quota-check commands in `copilot-review-config.md` use `$(...)` username substitution inside a quoted URL (query params contain `&`), which does not match simple patterns -- they are occasional diagnostics, approve manually
+- **`gh run list` / `gh run view`**: read-only subcommands powering the Copilot failure diagnosis (`bot_fail_diag` in `bot-review-loop.md`); broader CI patterns live in the `git-ci` skill
 
 ---
 

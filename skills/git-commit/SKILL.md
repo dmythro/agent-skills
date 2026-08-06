@@ -25,6 +25,8 @@ description: >-
 2. **Type is required** -- never commit without a type prefix
 3. **Description is lowercase**, imperative mood, no period: `fix: handle null response` not `Fix: Handled null response.`
 4. **No `Co-Authored-By` trailer** -- never add it to commit messages
+5. **Describe the change, not the process** -- never write review provenance (`fix: coderabbit round 2 fixes`, `fix: address review feedback`) as the message; state what the commit changes. The trigger for the change already lives in the PR and its threads.
+6. **No filler** -- the description alone is usually the whole message; add a body only for information the description and diff cannot carry (breaking change details, migration steps, non-obvious constraints). Never narrate the diff.
 
 ---
 
@@ -78,6 +80,8 @@ If ambiguous or both present, ask the user.
 4. **Breaking changes** use `!` after type/scope: `feat(api)!: remove v1 endpoints`
 5. **PR/MR titles follow the same format** -- squash merges use the PR/MR title as the commit message
 6. **No `Co-Authored-By` trailer** -- never add it to commit messages
+7. **Describe the change, not the process** -- state what changed, never why a reviewer asked for it (see Review-Fix Commits below)
+8. **Body is optional and rare** -- add one only for what the description and diff cannot carry; never restate the diff or pad with narrative
 
 ## Commit Examples
 
@@ -88,6 +92,18 @@ git commit -m "docs: update API reference for v2 endpoints"
 git commit -m "refactor(db): extract connection pooling logic"
 git commit -m "feat(api)!: change response format for /users"
 ```
+
+## Review-Fix Commits
+
+Commits that address review feedback (human or bot) follow the same rule as any other commit: the message states what changed. The trigger -- reviewer, bot, round number -- is process context that already lives in the PR threads and is noise in `git log`.
+
+| Noise (never)                     | Signal                                        |
+|-----------------------------------|-----------------------------------------------|
+| `fix: coderabbit round 2 fixes`   | `fix: guard nil user in session refresh`      |
+| `fix: address PR review feedback` | `fix: close file handle on early return`      |
+| `chore: apply copilot suggestions`| `refactor: dedupe retry logic across fetchers`|
+
+One review round can produce commits of different types -- split by change, not by round.
 
 ## PR/MR Title Examples
 
