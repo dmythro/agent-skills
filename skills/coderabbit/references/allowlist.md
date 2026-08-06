@@ -60,10 +60,12 @@ Running a review uploads the diff to CodeRabbit's service and consumes an hourly
 
 Keying on an explicit scope flag in first position (`--committed`, `--uncommitted`, or `--base` for full-branch reviews) keeps the canonical invocations (`coderabbit review --committed --base main --agent`, etc.) auto-approved while a bare `coderabbit review` still prompts -- the same deliberate-scope nudge the pre-0.7 `--type` prefix patterns provided.
 
+**Caveat**: `:*` matches all remaining arguments, so a review command that appends `--api-key <key>` would also auto-approve -- prefix patterns cannot exclude a later flag (the pre-0.7 `--type` patterns had the same limitation; compare the re-request Caveat in the `git-pr` allowlist). Stored auth (`coderabbit auth login`) makes inline keys unnecessary on a developer machine; in environments where inline keys actually appear (headless/CI), omit these patterns and approve review runs manually.
+
 ## Not Included (Manual Approval Required)
 
 - **`coderabbit auth login` / `logout` / `auth org`** -- credential and org-context changes
 - **`coderabbit update`** -- self-modifying binary update
 - **`coderabbit skills`** -- installs/updates CodeRabbit's agent skills (writes outside the repo)
-- **`coderabbit review --api-key ...`** -- inline credentials should never be auto-approved
+- **`coderabbit review --api-key ...`** -- inline credentials: never add a pattern targeting them, and note the opt-in review prefixes above cannot *exclude* them (see their Caveat); skip those patterns where inline keys are a real risk
 - **Bare `coderabbit` / `cr`** -- runs an unscoped review of all changes; make scope explicit instead
