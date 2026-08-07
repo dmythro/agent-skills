@@ -295,10 +295,10 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 
 The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Pro: 5, Pro+: 10 -- full table in the `coderabbit` skill); trials and adaptive throttling can shrink the effective rate to roughly **one review per ~25-30 minutes**, at which point several PRs in flight is a scheduling problem, not N independent loops:
 
-1. **Drafts are the queue control.** Draft PRs are excluded from auto-review by default (`auto_review.drafts: false`) and cost nothing until manually triggered; **marking one ready IS the auto-review request** -- promote one PR at a time, when it is that PR's turn for the window.
+1. **Drafts are the queue control.** Draft PRs are excluded from auto-review by default (`auto_review.drafts: false`) and cost nothing until manually triggered; with auto-review enabled, **marking one ready IS the auto-review request** (auto-review off or gated: post `@coderabbitai review` after promoting) -- promote one PR at a time, when it is that PR's turn for the window.
 2. **One window, one PR, one trigger.** Give the next window to the PR closest to merge. Parallel triggers race for the remaining allowance -- on a depleted bucket, a single slot -- and the losers bounce with the rate-limit ack; a bounced request is never queued (Per-Bot Setup), so it must be re-posted in a later window.
-3. **Prep waiting drafts with the CLI lane meanwhile.** Local CodeRabbit CLI reviews (`coderabbit` skill) draw from a separate hourly bucket, so a draft arrives at its PR-side round already CLI-clean and typically needs only one confirming window.
-4. **Merge as soon as clean.** A merged PR stops contending -- merging immediately frees the next window for the queue.
+3. **Prep waiting drafts with the CLI lane meanwhile.** Local CodeRabbit CLI reviews (`coderabbit` skill) draw from a separate hourly bucket (included allowances only -- usage-based overage credits are one shared org pool), so a draft arrives at its PR-side round already CLI-clean and typically needs only one confirming window.
+4. **Merge as soon as clean.** Bot-clean is not the merge bar by itself: the repo's merge requirements (CI, required human approvals -- bot reviews satisfy none of them) still apply. Once they pass, merge immediately -- a merged PR stops contending and frees the next window for the queue.
 
 ## How Bot Reviews Appear
 
