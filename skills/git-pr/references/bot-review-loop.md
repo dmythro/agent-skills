@@ -106,8 +106,10 @@ bot_status() {
 
   # 2) No outstanding comments -- trust "clean" only from a review of the current HEAD.
   #    --paginate applies -q/--jq PER PAGE, so use --slurp (an array of pages) | jq and
-  #    flatten with .[][] to pick the overall latest.
-  review="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -c --arg login "$BOT_REVIEW_LOGIN" --arg head "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '[.[][] | select(.user.login==$login and .commit_id==$head)] | last')"
+  #    flatten with .[][] to pick the overall latest. Empty-body review objects are reply
+  #    containers, not reviews: every inline reply (the bot's or yours) submits one at the
+  #    current HEAD, so without the body-length filter a reply shell reads as "reviewed HEAD".
+  review="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -c --arg login "$BOT_REVIEW_LOGIN" --arg head "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '[.[][] | select(.user.login==$login and .commit_id==$head and ((.body|length) > 0))] | last')"
   if [ -n "$review" ] && [ "$review" != "null" ]; then
     if [ -n "$BOT_FAIL_RE" ] && printf '%s' "$review" | jq -r '.body' | grep -iqE "$BOT_FAIL_RE"; then
       # The failure notice is generic -- consult the review run's CI log before treating it as
@@ -334,3 +336,4 @@ For unattended loops the commands must match the patterns in `allowlist.md`:
 8. **A CodeRabbit PR that "stopped being reviewed" is usually paused, not broken** -- the default `auto_pause_after_reviewed_commits: 5` halts auto-reviews on long PRs; `@coderabbitai resume` restarts them, while extra review requests just burn quota.
 9. **A clean CodeRabbit review looks like no review at all** -- zero actionable comments means **no review object** on `/pulls/{n}/reviews`; the clean walkthrough comment is the only evidence (edited in place on re-reviews, so match `updated_at`, not `created_at`), and the "Review finished." ack after a re-request means HEAD is already covered -- terminal "done", not a failure or rate limit. Without the `BOT_CLEAN_RE` check the loop waits forever, then re-requests a review that already happened and misreads the ack.
 10. **The CodeRabbit PR bucket is per developer, not per PR -- schedule PRs, don't race them** -- all of a developer's open PRs contend for the same windows, and parallel triggers race for the remaining allowance (the losers bounce, unqueued). Keep waiting PRs as drafts (excluded from auto-review; marking ready is the request), give each window to the PR closest to merge, and prep drafts with the CLI lane meanwhile (separate bucket) -- see Scheduling Several PRs Through One Bucket.
+11. **A review object at HEAD is not proof the bot reviewed HEAD** -- every inline reply (the bot's or yours) is wrapped in an empty-body `COMMENTED` review submitted at the current HEAD, so a reply-container shell can sit at a commit the bot never reviewed (e.g. while its incremental re-review bounced on quota). Filter empty bodies when keying "clean" off a HEAD review (`bot_status` does).
