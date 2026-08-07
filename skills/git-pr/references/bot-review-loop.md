@@ -135,11 +135,13 @@ bot_status() {
   #    in the actual comment, "**Next review available in:** **N minutes**", so the parse must
   #    tolerate markdown asterisks). The notice is not always a fresh comment: CodeRabbit can
   #    EDIT it into the existing walkthrough comment, whose created_at then predates the last
-  #    commit -- so both the match and the deadline go by updated_at. The notice only binds
+  #    commit -- so both the match and the deadline go by updated_at, and the newest match is
+  #    picked by timestamp (max_by), not list position: the REST list is ID-ordered, which
+  #    edits decouple from recency. The notice only binds
   #    until its stated window elapses -- compute the deadline from that timestamp + parsed
   #    minutes (default 30 if unparsable, +60s buffer) so a stale notice never blocks a retry.
   if [ -n "$BOT_LIMIT_RE" ]; then
-    lim_until="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq -r --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg lim "$BOT_LIMIT_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and ((.updated_at // .created_at) > $since) and (.body|test($lim;"i")))] | last | if . == null then empty else (((.updated_at // .created_at)|fromdateiso8601) + ((.body|capture("available in:?[ *]*(?<m>[0-9]+) *minute";"i")? // {m:"30"}).m|tonumber)*60 + 60) end')"
+    lim_until="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq -r --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg lim "$BOT_LIMIT_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and ((.updated_at // .created_at) > $since) and (.body|test($lim;"i")))] | max_by(.updated_at // .created_at) | if . == null then empty else (((.updated_at // .created_at)|fromdateiso8601) + ((.body|capture("available in:?[ *]*(?<m>[0-9]+) *minute";"i")? // {m:"30"}).m|tonumber)*60 + 60) end')"
     if [ -n "$lim_until" ] && [ "$(date +%s)" -lt "${lim_until%.*}" ]; then
       echo "$BOT_THREAD_PREFIX rate-limited -- next review available in ~$(( (${lim_until%.*} - $(date +%s)) / 60 + 1 )) min"
       return 6
