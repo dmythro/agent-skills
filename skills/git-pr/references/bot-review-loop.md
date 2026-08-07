@@ -122,11 +122,13 @@ bot_status() {
   fi
 
   # 4) Rate limit (BOT_LIMIT_RE set): the bot answers with a quota notice instead of a review
-  #    ("Review limit reached ... Next review available in: N minutes"). The notice only binds
-  #    until its stated window elapses -- compute the deadline from its own timestamp + parsed
-  #    minutes (default 30 if unparsable, +60s buffer) so a stale notice never blocks a retry.
+  #    ("Review limit reached ... Next review available in: N minutes" -- the window is bolded
+  #    in the actual comment, "**Next review available in:** **N minutes**", so the parse must
+  #    tolerate markdown asterisks). The notice only binds until its stated window elapses --
+  #    compute the deadline from its own timestamp + parsed minutes (default 30 if unparsable,
+  #    +60s buffer) so a stale notice never blocks a retry.
   if [ -n "$BOT_LIMIT_RE" ]; then
-    lim_until="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq -r --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg lim "$BOT_LIMIT_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and (.created_at > $since) and (.body|test($lim;"i")))] | last | if . == null then empty else ((.created_at|fromdateiso8601) + ((.body|capture("available in:? (?<m>[0-9]+) *minute";"i")? // {m:"30"}).m|tonumber)*60 + 60) end')"
+    lim_until="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq -r --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg lim "$BOT_LIMIT_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and (.created_at > $since) and (.body|test($lim;"i")))] | last | if . == null then empty else ((.created_at|fromdateiso8601) + ((.body|capture("available in:?[ *]*(?<m>[0-9]+) *minute";"i")? // {m:"30"}).m|tonumber)*60 + 60) end')"
     if [ -n "$lim_until" ] && [ "$(date +%s)" -lt "${lim_until%.*}" ]; then
       echo "$BOT_THREAD_PREFIX rate-limited -- next review available in ~$(( (${lim_until%.*} - $(date +%s)) / 60 + 1 )) min"
       return 6
