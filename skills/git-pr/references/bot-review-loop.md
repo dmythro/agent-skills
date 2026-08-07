@@ -1,6 +1,6 @@
 # Bot Review Loop
 
-**Iterate a code-review bot's rounds on a PR until no *valid* comments remain.** The loop is identical for any GitHub review bot (Copilot, CodeRabbit, ...); only a few things differ per bot, all set in a config block -- the **identity** (which login to filter), the **re-request trigger**, and which non-review outcomes it can post: a **failure** notice (`BOT_FAIL_RE`; Copilot does, CodeRabbit doesn't) or a **rate-limit** notice (`BOT_LIMIT_RE`; CodeRabbit does, Copilot doesn't -- Copilot's rate limits hide behind its generic failure notice, and only the review run's CI log tells them apart: `bot_fail_diag` below). These bots are GitHub-only, asynchronous (~minutes per review), and non-blocking (reviews are `COMMENTED`), so treat their output as advisory. Per-comment evaluate/fix/reply/resolve mechanics live in `pr-comment-workflow.md`.
+**Iterate a code-review bot's rounds on a PR until no *valid* comments remain.** The loop is identical for any GitHub review bot (Copilot, CodeRabbit, ...); only a few things differ per bot, all set in a config block -- the **identity** (which login to filter), the **re-request trigger**, and which non-review outcomes it can post: a **failure** notice (`BOT_FAIL_RE`; Copilot does, CodeRabbit doesn't), a **rate-limit** notice (`BOT_LIMIT_RE`; CodeRabbit does, Copilot doesn't -- Copilot's rate limits hide behind its generic failure notice, and only the review run's CI log tells them apart: `bot_fail_diag` below), or a **clean-review** notice (`BOT_CLEAN_RE`; CodeRabbit does -- a clean CodeRabbit review submits **no review object at all**, only comments; Copilot always submits one). These bots are GitHub-only, asynchronous (~minutes per review), and non-blocking (reviews are `COMMENTED`), so treat their output as advisory. Per-comment evaluate/fix/reply/resolve mechanics live in `pr-comment-workflow.md`.
 
 **Every round costs something -- the loop is a budget, not a free retry.** Each Copilot review (including every re-request) bills fully: 13 premium requests on legacy annual plans (Pro: 300/month = up to ~23 reviews, shared with all other premium features), or token-metered AI credits plus GitHub Actions minutes on current plans (see `copilot-review-config.md` for the models and quota checks). Each CodeRabbit review spends an hourly per-plan bucket. Default posture without an explicit loop instruction or permissive Code Review Policy (SKILL.md): process the auto-review round if one fired, then **ask before any billable re-request**, recommending based on the round's finding quality -- mostly valid substantive findings suggests another round pays off; mostly rejected noise suggests stopping. Cheap iteration belongs *before* the PR: local CodeRabbit CLI reviews (`coderabbit` skill) draw from a separate hourly bucket than PR reviews (though usage-based *overage* credits, where enabled, are a shared pool).
 
@@ -30,6 +30,7 @@ BOT_REVIEW_LOGIN='copilot-pull-request-reviewer[bot]'                  # REST /r
 BOT_THREAD_PREFIX='copilot'                                           # GraphQL thread login starts with this
 BOT_FAIL_RE='unable to review this pull request|encountered an error'
 BOT_LIMIT_RE=''                                                       # posts no rate-limit notice
+BOT_CLEAN_RE=''                                                       # a clean review still submits a review object
 bot_rerequest() { gh pr edit "$1" --add-reviewer "@copilot"; }
 # The failure notice is generic and can mask a HARD RATE LIMIT (weekly model cap, separate
 # from the premium-request/credit budget -- which it doesn't even consult). Each review runs
@@ -54,6 +55,13 @@ BOT_REVIEW_LOGIN='coderabbitai[bot]'
 BOT_THREAD_PREFIX='coderabbit'
 BOT_FAIL_RE=''                                                        # no distinct failure-review phrase
 BOT_LIMIT_RE='review limit reached|rate limit exceeded'
+# A clean CodeRabbit review submits NO review object -- the only evidence is a comment: the
+# walkthrough saying "No actionable comments were generated in the recent review", or -- after
+# a redundant re-request -- the "✅ Action performed / Review finished." ack, which means the
+# incremental system already covered HEAD and no new review will ever come. Terminal "done",
+# NOT a failure or rate limit. ("Actionable comments posted: 0" is the review-body variant of
+# the same signal, kept as a hedge; asterisk-tolerant since the count is bolded.)
+BOT_CLEAN_RE='no actionable comments were generated|actionable comments posted:[ *]*0|review finished'
 bot_rerequest() { gh pr comment "$1" --body "@coderabbitai review"; }
 ```
 
@@ -61,11 +69,12 @@ Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL 
 
 ## bot_status (read-only detector)
 
-The authoritative "done?" signal is **zero unresolved threads from this bot**, gated on the bot having reviewed the current HEAD. Order matters: **outstanding comments are checked first, PR-wide** -- if any exist, the verdict is "not clean" no matter which commit they were made on. Re-requesting over them would only produce a duplicate round (the auto-review collision); only the clean-verdict check is matched to HEAD.
+The authoritative "done?" signal is **zero unresolved threads from this bot**, gated on the bot having reviewed the current HEAD. Order matters: **outstanding comments are checked first, PR-wide** -- if any exist, the verdict is "not clean" no matter which commit they were made on. Re-requesting over them would only produce a duplicate round (the auto-review collision); only the clean-verdict check is matched to HEAD. The HEAD-review evidence differs per bot: Copilot always submits a review object, but a clean CodeRabbit review submits **none** -- its evidence is a comment (`BOT_CLEAN_RE`): the walkthrough's "no actionable comments" text (edited in place on re-reviews, so matched on `updated_at`, not `created_at`) or the "Review finished." ack.
 
 ```bash
 # Usage: bot_status <PR_NUMBER>   (read-only; a Per-Bot Setup block must be sourced)
-# Exit: 0 clean (no unresolved threads from this bot) | 2 not clean | 3 pending
+# Exit: 0 clean (no unresolved threads; HEAD covered by a review object or, where BOT_CLEAN_RE
+#       is set, by a clean-review notice) | 2 not clean | 3 pending
 #       4 failed, no retry pending | 6 rate-limited (CodeRabbit: notice still within its
 #       stated window; Copilot: hard limit found in the review run's CI log -- never retry)
 # Uses gh's {owner}/{repo} placeholders + inline $(...) so each command matches the allowlist
@@ -124,15 +133,30 @@ bot_status() {
   # 4) Rate limit (BOT_LIMIT_RE set): the bot answers with a quota notice instead of a review
   #    ("Review limit reached ... Next review available in: N minutes" -- the window is bolded
   #    in the actual comment, "**Next review available in:** **N minutes**", so the parse must
-  #    tolerate markdown asterisks). The notice only binds until its stated window elapses --
-  #    compute the deadline from its own timestamp + parsed minutes (default 30 if unparsable,
-  #    +60s buffer) so a stale notice never blocks a retry.
+  #    tolerate markdown asterisks). The notice is not always a fresh comment: CodeRabbit can
+  #    EDIT it into the existing walkthrough comment, whose created_at then predates the last
+  #    commit -- so both the match and the deadline go by updated_at. The notice only binds
+  #    until its stated window elapses -- compute the deadline from that timestamp + parsed
+  #    minutes (default 30 if unparsable, +60s buffer) so a stale notice never blocks a retry.
   if [ -n "$BOT_LIMIT_RE" ]; then
-    lim_until="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq -r --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg lim "$BOT_LIMIT_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and (.created_at > $since) and (.body|test($lim;"i")))] | last | if . == null then empty else ((.created_at|fromdateiso8601) + ((.body|capture("available in:?[ *]*(?<m>[0-9]+) *minute";"i")? // {m:"30"}).m|tonumber)*60 + 60) end')"
+    lim_until="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq -r --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg lim "$BOT_LIMIT_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and ((.updated_at // .created_at) > $since) and (.body|test($lim;"i")))] | last | if . == null then empty else (((.updated_at // .created_at)|fromdateiso8601) + ((.body|capture("available in:?[ *]*(?<m>[0-9]+) *minute";"i")? // {m:"30"}).m|tonumber)*60 + 60) end')"
     if [ -n "$lim_until" ] && [ "$(date +%s)" -lt "${lim_until%.*}" ]; then
       echo "$BOT_THREAD_PREFIX rate-limited -- next review available in ~$(( (${lim_until%.*} - $(date +%s)) / 60 + 1 )) min"
       return 6
     fi
+  fi
+
+  # 5) Clean-review notice (BOT_CLEAN_RE set): no review object is coming -- a clean CodeRabbit
+  #    review never creates one. The walkthrough's clean text or the "Review finished." ack
+  #    (incremental system: HEAD already covered, a re-request changes nothing) is the terminal
+  #    "done". The walkthrough is edited in place on re-reviews (created_at never moves), so
+  #    gate on updated_at. Checked AFTER the rate limit on purpose: a blocked re-review edits
+  #    the limit warning into the same walkthrough whose stale clean text still describes the
+  #    previous round -- while the limit binds, it wins. Without this check a clean round looks
+  #    pending forever and the tick re-requests a review that already happened.
+  if [ -n "$BOT_CLEAN_RE" ]; then
+    clean="$(gh api repos/{owner}/{repo}/issues/$pr/comments --paginate --slurp | jq --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" --arg p "$BOT_THREAD_PREFIX" --arg clean "$BOT_CLEAN_RE" '[.[][] | select((.user.login|ascii_downcase|startswith($p)) and ((.updated_at // .created_at) > $since) and (.body|test($clean;"i")))] | length')"
+    [ "${clean:-0}" -gt 0 ] && { echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (clean-review notice covers HEAD; no review object expected)."; return 0; }
   fi
   if bot_requested "$pr"; then
     echo "$BOT_THREAD_PREFIX review already requested (auto-review or an earlier request) -- waiting, no re-request needed"
@@ -211,9 +235,9 @@ prev_head = ""; round = 0; fails = 0; processed = 0
 repeat:
   round += 1;  if round > MAX_ROUNDS: STOP "hit round cap -- escalate"
   if no explicit loop instruction and no permissive policy:
-    if processed >= 1 or (no pending bot request and no bot review at HEAD):
+    if processed >= 1 or (no pending bot request and no bot review or clean-review notice at HEAD):
       # this tick would issue a billable request; auto-review rounds arrive without one
-      # (read-only preflight: bot_requested + the review-at-HEAD check in bot_status)
+      # (read-only preflight: bot_requested + the review-at-HEAD and BOT_CLEAN_RE checks in bot_status)
       ASK "next review request bills fully -- proceed?" (recommend from the last round's finding quality)
       on no answer / decline: STOP "awaiting approval for the billable review request"
   head = gh pr view N --json headRefOid --jq .headRefOid
@@ -261,7 +285,7 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 - **Identity differs by surface and by bot** -- a `[bot]`-suffixed login on REST, unsuffixed on GraphQL threads (see Per-Bot Setup). Filter the wrong one and detection silently returns nothing.
 - **A pending request is only visible via REST** -- while requested (auto-review or manual), Copilot appears as login `Copilot` in `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers`; the entry disappears when the review is submitted. `gh pr view --json reviewRequests` omits bot reviewers entirely (it shows humans/teams only), so it always looks "not requested" -- the wrong surface. That pending window is when a manual re-request collides -- `bot_requested` guards it.
 - **Copilot specifics** -- requires gh >= 2.88; does **not** auto re-review on push unless the ruleset's `review_on_push` is set (otherwise re-request every round; repo auto-review covers only round 1); **every review bills fully** -- 13 premium requests (legacy annual plans) or AI credits + Actions minutes (current plans; see `copilot-review-config.md`), with no re-request discount. An exhausted quota **and a hard weekly rate limit** both fail the review with the same opaque error comment as a transient failure: `Copilot encountered an error and was unable to review this pull request. You can try again by re-requesting a review.` (detect via `BOT_FAIL_RE`, never treat as clean). The comment is misleading -- the review run's **Actions log is the ground truth**: each review runs as workflow `Copilot` (event `dynamic`, job `copilot-pull-request-reviewer`), so `bot_fail_diag` greps the latest run's log on the head branch. A `SessionModelError ... You've reached your weekly rate limit. Please wait for your limit to reset on <date> ...` (errorType `rate_limit`, HTTP 429) is a hard model cap separate from the premium-request/credit budget -- never re-request before the logged reset; report the date instead. With no such log line the failure is usually **transient**, and a re-request after a short cooldown typically succeeds (`bot_tick` automates the ~5-min wait + re-request); when retries keep failing near end-of-month, check the quota before blaming PR size. The summary says `... generated K comments` (singular at `K==1`).
-- **CodeRabbit specifics** -- auto-reviews on each push (**incremental**: new changes only), so a push usually re-triggers it; re-request on demand with a `@coderabbitai review` PR comment (also incremental), or `@coderabbitai full review` for a from-scratch pass over all files (after big rebases/refactors, or when early reviews predate significant context). Auto-reviews **silently pause after 5 reviewed commits** by default (`auto_pause_after_reviewed_commits`) -- a long-running PR that "stopped getting reviews" needs `@coderabbitai resume`, not more requests. Resolve its threads like any other (or use its `@coderabbitai resolve` command). **All plans are quota-limited** (refilling per-hour review buckets; Free: 1 PR review/hour, summary only) -- instead of reviewing it posts `Review limit reached` with `Next review available in: N minutes` (detect via `BOT_LIMIT_RE`; `bot_status` parses the window and returns `6` only while it's still binding). Re-requesting inside the window is pointless; wait it out -- or, when Copilot is also active on the repo, just rely on Copilot and skip CodeRabbit for that round. `.coderabbit.yaml` tuning and the local CLI flow live in the `coderabbit` skill.
+- **CodeRabbit specifics** -- auto-reviews on each push (**incremental**: new changes only), so a push usually re-triggers it; re-request on demand with a `@coderabbitai review` PR comment (also incremental), or `@coderabbitai full review` for a from-scratch pass over all files (after big rebases/refactors, or when early reviews predate significant context). Auto-reviews **silently pause after 5 reviewed commits** by default (`auto_pause_after_reviewed_commits`) -- a long-running PR that "stopped getting reviews" needs `@coderabbitai resume`, not more requests. Resolve its threads like any other (or use its `@coderabbitai resolve` command). **A clean review is invisible on the reviews API**: with zero actionable comments CodeRabbit submits no review object -- the walkthrough comment ("No actionable comments were generated in the recent review" / "Actionable comments posted: 0", edited in place on later reviews) is the only evidence, and re-requesting anyway just gets the "✅ Action performed / Review finished." ack: the incremental system has already covered these commits and no new review will come. That ack is a terminal "done" -- never read it as a failure or rate limit (`bot_status` detects all of this via `BOT_CLEAN_RE`). **All plans are quota-limited** (refilling per-hour review buckets; Free: 1 PR review/hour, summary only; Pro tiers add adaptive limits under sustained volume) -- instead of reviewing it posts `Review limit reached` with `Next review available in: N minutes`, sometimes **edited into the existing walkthrough comment** rather than posted fresh (detect via `BOT_LIMIT_RE`; `bot_status` matches and dates it by `updated_at` and returns `6` only while the window is still binding). Re-requesting inside the window is pointless; wait it out -- or, when Copilot is also active on the repo, just rely on Copilot and skip CodeRabbit for that round. `.coderabbit.yaml` tuning and the local CLI flow live in the `coderabbit` skill.
 
 ## Preconditions
 
@@ -281,9 +305,10 @@ For unattended loops the commands must match the patterns in `allowlist.md`:
 
 1. **Identity differs by surface and bot** (Per-Bot Setup) -- the most common detection bug; filter the right login.
 2. **A failed review looks like "no comments"** (Copilot) -- detect the error phrase; never treat it as clean. The generic comment masks three distinct causes; the review run's CI log tells them apart (`bot_fail_diag`, run automatically by `bot_status` before any retry). A logged `rate_limit`/429 `SessionModelError` is a **hard weekly limit**: never re-request before the reset date the log states -- each attempt fails identically while still burning a round + Actions minutes; report the date to the user. No log hit -- usually transient: cool down ~5 min, re-request (`bot_tick` does both), escalate only after repeated failures. **Exhausted quota also fails with the identical error**: on repeated failures, check billing usage (`copilot-review-config.md`) before more retries.
-3. **A rate-limited bot looks stuck, not broken** (CodeRabbit free tier) -- the `Review limit reached` notice states when the quota refills (`Next review available in: N minutes`); hammering `@coderabbitai review` inside that window burns requests for nothing. Wait it out, or prefer Copilot when both bots are installed.
+3. **A rate-limited bot looks stuck, not broken** (CodeRabbit, any plan) -- the `Review limit reached` notice states when the quota refills (`Next review available in: N minutes`), and may arrive as an **edit to the existing walkthrough comment** (its `created_at` never moves -- filter and date the window by `updated_at`); hammering `@coderabbitai review` inside that window burns requests for nothing. Wait it out, or prefer Copilot when both bots are installed.
 4. **Stop on zero *valid* comments, not zero comments** -- reject out-of-context/outdated points with a rationale + resolve; don't blind-fix to silence a bot, and don't chase one that resurfaces rejected points.
 5. **Never request a review over outstanding work** -- unresolved bot comments mean *handle them*; a pending request (auto-review) means *wait*. `bot_status` (threads first) and `bot_requested` encode both; requesting anyway yields a duplicate round of the same points.
 6. **Pending bot requests hide from `gh pr view --json reviewRequests`** -- that field omits bot reviewers, so it reads `[]` while a Copilot request is in flight. Only REST `requested_reviewers` (login `Copilot`) tells the truth; checking the wrong surface re-introduces the duplicate-request collision.
 7. **Each round is billed -- treat re-requests as spending, not retrying** -- a Copilot re-request costs the same as the first review (13 premium requests legacy / credits + Actions minutes); without an explicit loop instruction or permissive policy, ask after the first processed round instead of looping. Iterate locally first (CodeRabbit CLI, `coderabbit` skill) so PR rounds only confirm.
 8. **A CodeRabbit PR that "stopped being reviewed" is usually paused, not broken** -- the default `auto_pause_after_reviewed_commits: 5` halts auto-reviews on long PRs; `@coderabbitai resume` restarts them, while extra review requests just burn quota.
+9. **A clean CodeRabbit review looks like no review at all** -- zero actionable comments means **no review object** on `/pulls/{n}/reviews`; the clean walkthrough comment is the only evidence (edited in place on re-reviews, so match `updated_at`, not `created_at`), and the "Review finished." ack after a re-request means HEAD is already covered -- terminal "done", not a failure or rate limit. Without the `BOT_CLEAN_RE` check the loop waits forever, then re-requests a review that already happened and misreads the ack.
