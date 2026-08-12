@@ -220,7 +220,7 @@ After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pul
 
 The workflow has two distinct phases -- never mix them:
 
-**Phase 1: Analyze and Fix (local work, no GitHub API writes, zero approvals)**
+**Phase 1: Analyze and Fix (local work, no GitHub API writes)** -- the fetches are zero-approval; `git commit`/`git push` are writes and stay a human checkpoint
 1. Fetch all unresolved review threads in a single GraphQL query with inline `--jq` filter, then the bot's review **bodies** -- threads are not the whole review (see below)
 2. For each thread: read the file at the referenced path+line, check if the comment is valid by researching the codebase (patterns, conventions, CLAUDE.md, git log)
 3. Be critical -- validate each comment against actual code before accepting. Reviewers can be wrong.
@@ -241,7 +241,7 @@ This ordering matters: pushing fixes first ensures reviewers see the changes whe
 **GitHub** -- one command with `$(...)` substitution. **Generate as a single line** and do NOT prepend variable assignments (`OWNER=...`, `REPO=...`) -- both break allowlist matching:
 
 ```bash
-gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { id isResolved isOutdated path line startLine comments(first: 20) { nodes { id databaseId body author { login } } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads | {total: .totalCount, nextCursor: (if .pageInfo.hasNextPage then .pageInfo.endCursor else null end), unresolved: [.nodes[] | select(.isResolved==false)]}'
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { id isResolved isOutdated path line startLine comments(first: 20) { nodes { id fullDatabaseId body author { login } } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads | {total: .totalCount, nextCursor: (if .pageInfo.hasNextPage then .pageInfo.endCursor else null end), unresolved: [.nodes[] | select(.isResolved==false)]}'
 ```
 
 Returns the unresolved threads plus the two numbers that prove the fetch was complete. **`reviewThreads` does not paginate on its own** -- a non-null `nextCursor` means threads 101+ exist and may hold unresolved comments; re-run with `reviewThreads(first: 100, after: \"{nextCursor}\")` and merge before deciding anything is handled.
@@ -251,7 +251,7 @@ Returns the unresolved threads plus the two numbers that prove the fetch was com
 | Field              | Format                  | Use for                      |
 |--------------------|-------------------------|------------------------------|
 | thread `.id`       | `PRRT_...` (node ID)    | `resolveReviewThread` mutation |
-| comment `.databaseId` | `2949637341` (numeric)  | REST reply endpoint          |
+| comment `.fullDatabaseId` | `"2949637341"` (string) | REST reply endpoint          |
 | comment `.id`      | `PRRC_...` (node ID)    | Not typically needed          |
 
 **GitLab (REST):**
@@ -261,7 +261,7 @@ glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate | jq 
 
 ### Reply and Resolve (One Batched Command)
 
-**GitHub** -- combine all REST replies and a batch GraphQL resolve mutation into one `&&`-chained command. Reply uses `databaseId` (numeric), resolve uses thread `id` (PRRT_ node ID):
+**GitHub** -- combine all REST replies and a batch GraphQL resolve mutation into one `&&`-chained command. Reply uses `fullDatabaseId` (a string; `databaseId` is deprecated), resolve uses thread `id` (PRRT_ node ID):
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \

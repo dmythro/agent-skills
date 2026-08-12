@@ -22,7 +22,7 @@ One command, zero approvals. This single call returns all threads, comments, and
 **Generate as a single line.** Allowlist `*` patterns may not match across newlines (undocumented behavior). GraphQL ignores whitespace, so a one-liner works fine. Use `$(...)` substitution for owner, repo, and PR number inline.
 
 ```bash
-gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { id isResolved isOutdated path line startLine diffSide comments(first: 20) { nodes { id databaseId body author { login } createdAt outdated replyTo { id } } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads | {total: .totalCount, nextCursor: (if .pageInfo.hasNextPage then .pageInfo.endCursor else null end), unresolved: [.nodes[] | select(.isResolved==false)]}'
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { id isResolved isOutdated path line startLine diffSide comments(first: 20) { nodes { id fullDatabaseId body author { login } createdAt outdated replyTo { id } } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads | {total: .totalCount, nextCursor: (if .pageInfo.hasNextPage then .pageInfo.endCursor else null end), unresolved: [.nodes[] | select(.isResolved==false)]}'
 ```
 
 Returns the unresolved threads, plus the evidence that the fetch was complete. **`reviewThreads` does not paginate on its own**: a non-null `nextCursor` means threads 101+ were never fetched and may hold unresolved comments -- re-run with `reviewThreads(first: 100, after: \"{nextCursor}\")` and merge. `comments(first: 20)` truncates the same way on very long threads.
@@ -39,7 +39,7 @@ Returns the unresolved threads, plus the evidence that the fetch was complete. *
 | Field              | Format                  | Use for                      |
 |--------------------|-------------------------|------------------------------|
 | thread `.id`       | `PRRT_...` (node ID)    | `resolveReviewThread` mutation |
-| comment `.databaseId` | `2949637341` (numeric)  | REST reply endpoint          |
+| comment `.fullDatabaseId` | `"2949637341"` (string) | REST reply endpoint          |
 | comment `.id`      | `PRRC_...` (node ID)    | Not typically needed          |
 
 ### GitLab: Single REST Call
@@ -120,7 +120,7 @@ mutation {
 
 **Rules:**
 
-- Use comment `databaseId` (numeric) for reply endpoints, NOT the node `id`
+- Use comment `fullDatabaseId` for reply endpoints, NOT the node `id` (`databaseId` is deprecated -- it cannot hold 64-bit ids; `fullDatabaseId` returns the same digits as a string)
 - Use thread `.id` (starts with `PRRT_`) for resolveReviewThread, NOT the comment ID
 - Add one aliased operation (`t1`, `t2`, ...) per thread to resolve
 - Do NOT include "Needs discussion" threads in the resolve mutation -- leave those for the reviewer
