@@ -89,7 +89,7 @@ gh api graphql -f query='
         nodes {
           id, isResolved, isOutdated, path, line
           comments(first: 10) {
-            nodes { id, databaseId, body, author { login }, createdAt }
+            nodes { id, fullDatabaseId, body, author { login }, createdAt }
           }
         }
       }
