@@ -100,10 +100,10 @@ Only proceed to Phase 2 after the push succeeds. This ensures reviewers see the 
 ### GitHub: Batched Replies + Resolves
 
 ```bash
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_2}/replies -f body="Addressed in {sha} -- {description}" && \
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_3}/replies -f body="Intentional -- {evidence}" && \
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_4}/replies -f body="Good point. {analysis}. Leaving for your call." && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_2}/replies -f body="Addressed in {sha} -- {description}" && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_3}/replies -f body="Intentional -- {evidence}" && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_4}/replies -f body="Good point. {analysis}. Leaving for your call." && \
 gh api graphql -f query="
 mutation {
   t1: resolveReviewThread(input: {threadId: \"PRRT_thread1\"}) {

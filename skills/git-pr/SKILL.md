@@ -264,8 +264,8 @@ glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate | jq 
 **GitHub** -- combine all REST replies and a batch GraphQL resolve mutation into one `&&`-chained command. Reply uses `fullDatabaseId` (a string; `databaseId` is deprecated), resolve uses thread `id` (PRRT_ node ID):
 
 ```bash
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
-gh api repos/{owner}/{repo}/pulls/{pr}/comments/{databaseId_2}/replies -f body="Addressed in {sha}" && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
+gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_2}/replies -f body="Addressed in {sha}" && \
 gh api graphql -f query="
 mutation {
   t1: resolveReviewThread(input: {threadId: \"PRRT_thread1\"}) { thread { isResolved } }
