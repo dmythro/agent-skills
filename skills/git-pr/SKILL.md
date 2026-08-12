@@ -59,6 +59,8 @@ This avoids offering to create a PR when one already exists, and immediately sur
 2. **Use `--json field1,field2` with `gh` to filter output.** This IS the efficiency mechanism -- no `--jq` needed for basic queries. Only request fields you actually need.
 3. **`glab` has no `--json field1,field2` equivalent.** Use `-F json | jq '{fields}'` to filter output for token efficiency.
 4. **Use commands exactly as shown in this skill.** The commands below are designed to match auto-approval allowlist patterns. Improvising flag order or adding unexpected flags may trigger permission prompts.
+5. **One push per round.** Commit as often as the change needs, but push once, after every fix in the round is committed -- on a repo with auto-review each push triggers another bot review from a per-developer hourly bucket, so pushing per commit spends several reviews on unfinished work. Keep a PR in draft while the change is still moving (drafts are not auto-reviewed); marking it ready is the review request.
+6. **A review is not handled until its body-only findings are.** Bot findings that never become threads (CodeRabbit nitpick, outside-diff-range, duplicate and failed-to-post buckets) live in the review body and are invisible to thread queries -- triage them too, and reconcile the claimed comment count before declaring a round done.
 
 ---
 
@@ -219,11 +221,13 @@ After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pul
 The workflow has two distinct phases -- never mix them:
 
 **Phase 1: Analyze and Fix (local work, no GitHub API writes, zero approvals)**
-1. Fetch all unresolved review threads in a single GraphQL query with inline `--jq` filter
+1. Fetch all unresolved review threads in a single GraphQL query with inline `--jq` filter, then the bot's review **bodies** -- threads are not the whole review (see below)
 2. For each thread: read the file at the referenced path+line, check if the comment is valid by researching the codebase (patterns, conventions, CLAUDE.md, git log)
 3. Be critical -- validate each comment against actual code before accepting. Reviewers can be wrong.
 4. Make all necessary code fixes -- without adding code comments that narrate the fix or restate what the code already reads
-5. Commit and push the fixes -- the message describes the change itself, never the review process (no "address review feedback", bot names, or round numbers; see the `git-commit` skill)
+5. Commit the fixes (as many commits as the change needs) and push **once** for the whole round -- the message describes the change itself, never the review process (no "address review feedback", bot names, or round numbers; see the `git-commit` skill)
+
+**Not every finding is a thread (CodeRabbit).** Nitpicks (under `profile: chill`), outside-diff-range findings, duplicates and failed-to-post comments exist only in the review *body*; `reviewThreads` never returns them, which is the usual reason a review looks handled but isn't. Fetch the bot's review bodies, triage those items too, and reconcile the top-level bot threads against the `Actionable comments posted: N` the reviews claim -- commands in `references/bot-review-loop.md`.
 
 **Phase 2: Reply and Resolve (one batched command, one approval)**
 6. Combine all replies and all resolves into a single `&&`-chained command
@@ -237,10 +241,10 @@ This ordering matters: pushing fixes first ensures reviewers see the changes whe
 **GitHub** -- one command with `$(...)` substitution. **Generate as a single line** and do NOT prepend variable assignments (`OWNER=...`, `REPO=...`) -- both break allowlist matching:
 
 ```bash
-gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path line startLine comments(first: 20) { nodes { id databaseId body author { login } } } } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { id isResolved isOutdated path line startLine comments(first: 20) { nodes { id databaseId body author { login } } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads | {total: .totalCount, nextCursor: (if .pageInfo.hasNextPage then .pageInfo.endCursor else null end), unresolved: [.nodes[] | select(.isResolved==false)]}'
 ```
 
-Returns only unresolved threads directly.
+Returns the unresolved threads plus the two numbers that prove the fetch was complete. **`reviewThreads` does not paginate on its own** -- a non-null `nextCursor` means threads 101+ exist and may hold unresolved comments; re-run with `reviewThreads(first: 100, after: \"{nextCursor}\")` and merge before deciding anything is handled.
 
 **Response field mapping (critical -- using wrong ID causes silent failures):**
 
@@ -308,10 +312,10 @@ GitHub review bots (Copilot, CodeRabbit) are **GitHub-only**, **asynchronous** (
 Iterate until no **valid** comments remain. Source a bot's config + the `bot_status`/`bot_tick` driver -- one round is:
 
 1. **Re-request only when needed + wait** -- `bot_tick {N}` first checks for unresolved bot threads (handle those, never re-request over them), then a review at HEAD (a clean CodeRabbit review posts **no review object** -- its "no actionable comments" walkthrough text or a "Review finished." ack is the clean signal, never a failure or rate limit), then a pending request in REST `requested_reviewers` (auto-review on non-draft PR creation usually means round 1 needs no re-request at all). Only if none of those apply does it re-request (Copilot: `gh pr edit {N} --add-reviewer "@copilot"`, gh >= 2.88, no auto re-review on push; CodeRabbit: a `@coderabbitai review` comment), then polls for the async review. Returns `0` clean / `2` not clean / `3` retry / `4` failed (already cooled down ~5 min + re-requested -- re-run to poll) / `5` not applicable / `6` rate-limited.
-2. **Validate, don't blind-fix** -- evaluate each unresolved comment (Research Checklist); bots can be out of context or outdated. Fix valid ones (commit + push; the message names the change, never the bot or round), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
+2. **Validate, don't blind-fix** -- evaluate each unresolved comment *and* every body-only bucket of the review (nitpick, outside-diff-range, duplicate, failed-to-post; Research Checklist); bots can be out of context or outdated. Fix valid ones (commit each, then one push per round; the message names the change, never the bot or round), reply with a rationale + resolve invalid ones. To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
 3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); after ~3 consecutive failed reviews (`exit 4` is transient -- e.g. "Copilot encountered an error" -- and `bot_tick` retries it with a ~5-min cooldown + re-request; only *repeated* failure is structural: oversized PR, binary files, quota; escalate); on a rate limit (`exit 6`: CodeRabbit -- wait the printed "next review available" window, or skip the bot when Copilot also covers the repo; Copilot -- a hard weekly limit diagnosed from the review run's CI log behind the generic "encountered an error" comment: never re-request before the logged reset date, report cause + date to the user); on unavailability (`exit 5`); after the round cap (default 5, or "loop 3"); or if HEAD is unchanged since the last round.
 
-**Rounds are billable** -- each Copilot round bills a full review; each CodeRabbit round spends hourly quota that is **per developer, not per PR**: all your open PRs contend for the same review windows, so with several PRs in flight keep the waiting ones as drafts (excluded from auto-review; marking ready is the request) and promote one at a time -- see the reference's Scheduling Several PRs Through One Bucket. Without an explicit loop instruction or a permissive Code Review Policy: process the auto-review round if one fired, then **ask before re-requesting** (recommend based on finding quality). Autonomous looping is for when the user asked for it.
+**Rounds are billable, and on auto-review repos a push is a round** -- each Copilot round bills a full review; each CodeRabbit round spends hourly quota that is **per developer, not per PR**: all your open PRs contend for the same review windows, so with several PRs in flight keep the waiting ones as drafts (excluded from auto-review; marking ready is the request) and promote one at a time -- see the reference's Scheduling Several PRs Through One Bucket and One Push Per Round. Without an explicit loop instruction or a permissive Code Review Policy: process the auto-review round if one fired, then **ask before re-requesting** (recommend based on finding quality). Autonomous looping is for when the user asked for it.
 
 **Identity gotcha:** each bot has a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL threads (Copilot: `copilot-pull-request-reviewer[bot]` / `copilot-pull-request-reviewer`, plus `Copilot` on REST inline comments; CodeRabbit: `coderabbitai[bot]` / `coderabbitai`). Filter the right one per surface.
 

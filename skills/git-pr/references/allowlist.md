@@ -81,6 +81,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/pulls/*/comments --paginate)",
 "Bash(gh api repos/*/pulls/*/comments --jq *)",
 "Bash(gh api repos/*/pulls/*/comments --paginate --jq *)",
+"Bash(gh api repos/*/pulls/*/comments --paginate --slurp | jq *)",
 "Bash(gh api repos/*/pulls/*/reviews)",
 "Bash(gh api repos/*/pulls/*/reviews --paginate)",
 "Bash(gh api repos/*/pulls/*/reviews --jq *)",
@@ -106,7 +107,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **GraphQL `*{ repository*`**: matches single-line read queries containing `{ repository`. The `{` prefix prevents matching `repositoryId` or similar strings in mutations. The command should be a single line -- `*` may not match across newlines reliably. Use `$(...)` substitution for owner/repo inline
 - **`/files` and `/commits`**: trailing `*` allows any flags -- safe because these are GET-only endpoints
 - **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate`, `--jq *`, and `--paginate --slurp | jq *` variants are added separately for read-only flag support
-- **`--paginate --slurp | jq *`** (reviews, issues comments): the bot review loop slurps all pages into one array and pipes to a separate `jq`, because `--paginate` applies `-q/--jq` per page (and `--slurp` cannot combine with `-q/--jq`). The pipe is spelled out because `*` cannot cross it
+- **`--paginate --slurp | jq *`** (reviews, PR comments, issue comments): the bot review loop slurps all pages into one array and pipes to a separate `jq`, because `--paginate` applies `-q/--jq` per page (and `--slurp` cannot combine with `-q/--jq`). The pipe is spelled out because `*` cannot cross it. The PR-comments variant also serves the finding-count reconciliation in `bot-review-loop.md`, which counts top-level bot threads across all pages
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`, `--slurp | jq`) is safer
 - **`/rules/branches/` and `/rulesets`**: read-only detection of the Copilot auto-review rule (`copilot_code_review`, see `copilot-review-config.md`). `/rules/branches/` is a GET-only route, so its trailing wildcards are safe; `/rulesets` accepts POST (creates rulesets), so only the **bare** pattern is listed -- no `--jq *` variant, because a trailing `*` after `--jq` could absorb `-X POST -f ...`. Filter ruleset JSON with a separate `| jq` or approve the flagged call manually; ruleset writes stay manual
 - **Billing usage endpoints are not allowlisted**: the quota-check commands in `copilot-review-config.md` use `$(...)` username substitution inside a quoted URL (query params contain `&`), which does not match simple patterns -- they are occasional diagnostics, approve manually

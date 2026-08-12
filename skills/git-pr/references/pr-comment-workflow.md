@@ -22,10 +22,10 @@ One command, zero approvals. This single call returns all threads, comments, and
 **Generate as a single line.** Allowlist `*` patterns may not match across newlines (undocumented behavior). GraphQL ignores whitespace, so a one-liner works fine. Use `$(...)` substitution for owner, repo, and PR number inline.
 
 ```bash
-gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { nodes { id isResolved isOutdated path line startLine diffSide comments(first: 20) { nodes { id databaseId body author { login } createdAt outdated replyTo { id } } } } } } } }" --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)]'
+gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq '.owner.login')\", name: \"$(gh repo view --json name --jq '.name')\") { pullRequest(number: $(gh pr view --json number --jq '.number')) { reviewThreads(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { id isResolved isOutdated path line startLine diffSide comments(first: 20) { nodes { id databaseId body author { login } createdAt outdated replyTo { id } } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads | {total: .totalCount, nextCursor: (if .pageInfo.hasNextPage then .pageInfo.endCursor else null end), unresolved: [.nodes[] | select(.isResolved==false)]}'
 ```
 
-Returns only unresolved threads directly.
+Returns the unresolved threads, plus the evidence that the fetch was complete. **`reviewThreads` does not paginate on its own**: a non-null `nextCursor` means threads 101+ were never fetched and may hold unresolved comments -- re-run with `reviewThreads(first: 100, after: \"{nextCursor}\")` and merge. `comments(first: 20)` truncates the same way on very long threads.
 
 **Critical rules:**
 
@@ -47,6 +47,16 @@ Returns only unresolved threads directly.
 ```bash
 glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate | jq '[.[] | select(.notes[0].resolvable==true and .notes[0].resolved==false) | {id:.id,path:.notes[0].position.new_path,line:.notes[0].position.new_line,body:.notes[0].body,author:.notes[0].author.username}]'
 ```
+
+### Bot Findings That Are Not Threads (GitHub)
+
+**Threads are not the whole review.** CodeRabbit posts only its *actionable* findings inline; nitpicks (under `profile: chill`), findings outside the diff range, duplicates of earlier findings, and comments that failed to post are written into the **review body**, where the query above cannot see them. Skipping them is the usual reason a review looks handled and the reviewer has to ask again. Add one call per round:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr}/reviews --paginate --slurp | jq -r --arg p coderabbit '.[][] | select((.user.login|ascii_downcase|startswith($p)) and ((.body|length)>0)) | (.body|ascii_downcase) as $b | "\(.submitted_at) \(.commit_id[0:7]) inline=\(($b|capture("actionable comments posted:[ *]*(?<n>[0-9]+)")? // {n:"?"}).n) body-only=[\([$b|scan("(nitpick comments|outside diff range comments|duplicate comments|comments failed to post) *\\(([0-9]+)\\)")|join(" ")]|join("; "))]"'
+```
+
+Read the full body of any review with a non-zero bucket and triage each item like a thread. They cannot be resolved (no thread exists), so state the verdicts in a reply on a related thread or in one PR comment. The inline set itself is complete only when the top-level bot threads equal the sum of `Actionable comments posted: N`; see `bot-review-loop.md` for the reconciliation command.
 
 ## 2. Evaluate Each Comment (Phase 1)
 
@@ -77,9 +87,9 @@ The goal is 100% confidence in your verdict before acting. If you're unsure, cla
 
 After evaluating all comments, make all code fixes before any GitHub API writes:
 
-1. Fix all "valid and unaddressed" comments in code. Do not add code comments that narrate the fix or restate what the code already reads -- comment only non-obvious constraints.
-2. Commit the fixes using Conventional Commits format. The message describes the change itself (e.g., `fix: handle null token refresh`), never the review process -- no "address review feedback", bot names, or round numbers; the PR threads already record why (see the `git-commit` skill).
-3. Push the commit
+1. Fix all "valid and unaddressed" comments in code -- threads and body-only findings alike. Do not add code comments that narrate the fix or restate what the code already reads -- comment only non-obvious constraints.
+2. Commit the fixes using Conventional Commits format, as many commits as the change needs. The message describes the change itself (e.g., `fix: handle null token refresh`), never the review process -- no "address review feedback", bot names, or round numbers; the PR threads already record why (see the `git-commit` skill).
+3. **Push once, after the last commit of the round.** On a repo with auto-review every push triggers another incremental bot review from a per-developer hourly bucket, so pushing per commit spends several reviews on unfinished work. If the change is still moving, keep the PR a draft -- drafts are not auto-reviewed, so pushes to them are free.
 
 Only proceed to Phase 2 after the push succeeds. This ensures reviewers see the actual fixes when they read your replies.
 
@@ -160,8 +170,11 @@ glab api projects/{project_id}/merge_requests/{iid}/discussions/{discussion_id} 
 After both phases are complete:
 
 - All comments evaluated with full context (file, surrounding code, git log, conventions)
+- Body-only bot findings (nitpicks, outside diff range, failed to post) triaged too, with verdicts stated somewhere on the PR
+- Top-level bot threads reconcile with the `Actionable comments posted: N` the reviews claim
 - All valid feedback addressed with code fixes
-- Fixes committed and pushed before any replies
+- Fixes committed and pushed before any replies, in a single push for the whole round
 - All replies and resolves batched into one command (one approval)
 - "Needs discussion" threads replied to but left unresolved
 - No reply says "Fixed" without a corresponding pushed commit
+- Unresolved threads re-fetched after the final push -- the push triggers another incremental review, which lands minutes later and is the round you are most likely to abandon half-read
