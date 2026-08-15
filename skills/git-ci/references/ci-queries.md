@@ -4,14 +4,33 @@ Advanced CI/CD query patterns for GitHub Actions and GitLab CI.
 
 ## GitHub: Failing Checks
 
+`gh pr checks` has **no `conclusion` field** (unknown fields abort the command); its verdict fields are `state` and the coarser `bucket`.
+
 ```bash
 # Names of failing checks
-gh pr checks {number} --json name,conclusion --jq '
-  .[] | select(.conclusion == "FAILURE") | .name'
+gh pr checks {number} --json name,bucket --jq '
+  .[] | select(.bucket == "fail") | .name'
 
-# All checks with status
-gh pr checks {number} --json name,state,conclusion,startedAt,completedAt
+# All checks with status and each app's own summary line
+gh pr checks {number} --json name,state,bucket,description,startedAt,completedAt
 ```
+
+## GitHub: Review-Bot Check Verdict
+
+A passing check can still mean "did nothing" -- `description` is the only field that says so (CodeRabbit reports `Review rate limited` as `SUCCESS`).
+
+```bash
+# From the checks list
+gh pr checks {number} --json name,state,description --jq '
+  .[] | select(.name|ascii_downcase|startswith("coderabbit"))'
+
+# From the commit status API, pinned to the PR head (check-runs does NOT contain it)
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/status --jq '
+  [.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at)
+  | if . == null then empty else {state, description, updated_at} end'
+```
+
+The `gh api` form is **not** covered by this skill's allowlist, which keeps every `gh api` call manual (`references/allowlist.md`); the `git-pr` skill allowlists it as a GET-only pattern (`repos/*/commits/*/status`). The `gh pr checks` form above needs no exception.
 
 ## GitHub: Required Checks Status
 
@@ -86,7 +105,7 @@ gh pr list --json number,title,statusCheckRollup --jq '
 # Current branch pipeline
 glab ci status
 
-# JSON output
+# Full pipeline detail
 glab ci get
 
 # Live watch

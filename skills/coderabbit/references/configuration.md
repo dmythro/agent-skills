@@ -119,6 +119,8 @@ Key `reviews.auto_review` knobs:
 
 The `auto_pause_after_reviewed_commits` default is a common "CodeRabbit stopped reviewing" cause on long-running PRs -- it is a quota guard, not a failure. Resume with `@coderabbitai resume` or raise/zero the setting.
 
+**With `enabled: true` + `auto_incremental_review: true` (the defaults), `git push` is a review request.** Each push spends one PR review from the hourly per-developer bucket on whatever the branch holds at that moment, so pushes must carry finished work: complete every task, run the local checks, commit everything, then push once. Iterate behind `drafts: false` (drafts are not auto-reviewed, so pushes to them are free) and mark ready when the change is done -- that promotion is itself the review request.
+
 ## PR-Side Commands
 
 Posted as PR comments (except `ignore`):
