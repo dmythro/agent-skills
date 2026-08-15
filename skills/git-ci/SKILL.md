@@ -44,6 +44,8 @@ git remote get-url origin
 
 If ambiguous or both present, ask the user.
 
+**The `glab` recipes follow GitLab's documentation and are not exercised against a live instance** -- the GitHub ones are. Confirm flags with `glab <command> --help` before depending on one unattended.
+
 ---
 
 ## CI Status (Current Branch)

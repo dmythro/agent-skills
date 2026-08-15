@@ -78,6 +78,8 @@ git remote get-url origin
 
 If ambiguous or both present, ask the user.
 
+**The `glab` recipes follow GitLab's documentation and are not exercised against a live instance** -- the GitHub ones are. Treat flags and JSON shapes on the GitLab side as documented-but-unverified: check `glab <command> --help` before relying on one in an unattended flow, and prefer `-F json | jq` over assuming a field exists.
+
 ---
 
 ## Read-Only vs Write Classification
@@ -296,10 +298,13 @@ Review preferences are declared in a `Code Review Policy` section of an agent in
 ```markdown
 ## Code Review Policy
 - Reviewer: coderabbit            # coderabbit | copilot | both | none
+- CodeRabbit plan: pro+ until 2026-08-20, then pro   # free | pro | pro+ | enterprise
 - Copilot billing: legacy         # legacy (premium requests) | credits
 - Local review: coderabbit review --committed   # run before every push
 - PR review rounds: ask           # ask | loop <= N
 ```
+
+**Declare the CodeRabbit plan -- nothing reports it.** `coderabbit usage` gives the billing period, not the tier, and the API never mentions it, so an agent that isn't told will either over-schedule PRs into a bucket that cannot serve them or idle a bucket that could. The plan sets the hourly allowance (Free 1 / Pro 5 / Pro+ 10 PR reviews per developer -- table in the `coderabbit` skill), which in turn sets how many PRs can be non-draft at once and how much iteration belongs in the local CLI lane. Note a trial's end date the same way: the queue that works on Pro+ stalls on Pro the morning the trial lapses. **Undeclared**, infer a floor instead of guessing -- `bot_bucket` (`references/bot-review-loop.md`) lists recent rounds across every open PR, and the completions in the trailing hour are a lower bound on the real allowance.
 
 **When no policy exists (either scope), default conservative:** if an auto-review fired, process that round; then ask before any billable re-request -- and inform the recommendation with the quality of the round's findings (mostly valid substantive issues -> another round likely pays off; mostly noise -> stop). Never initiate billable reviews unprompted on repos without auto-review; loop only when explicitly asked.
 

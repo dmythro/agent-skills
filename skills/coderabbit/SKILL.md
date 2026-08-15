@@ -91,7 +91,9 @@ Two passes (review, fix, verify) is the normal shape. More than three passes mea
 | Pro+ | 10 | 10 | 300 |
 | Enterprise | 12 | 12 | 300 |
 
-The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are current. Beyond the hourly allowance, the usage-based add-on bills $0.25 per reviewed file (Pro and up). Open-source public repos get free reviews with popularity-based limits.
+The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are current. Beyond the hourly allowance, the usage-based add-on bills $0.25 per reviewed file (Pro and up). Open-source public repos get free reviews with popularity-based limits. Trials and adaptive throttling under sustained volume push the effective rate **below** these numbers.
+
+**Which row applies is something you must be told.** Nothing exposes the tier: `coderabbit usage` reports the billing period (org, overage on/off, review count, reset date) and the PR-side API never mentions a plan. Declare it in the **Code Review Policy** (`git-pr` skill) -- `CodeRabbit plan: pro+ until 2026-08-20, then pro` -- in the repo's AGENTS.md/CLAUDE.md, or globally for every repo. It decides real behaviour: how many PRs can be non-draft at once, how many rounds to budget, and how much iteration belongs in the CLI lane instead. Re-plan when a trial lapses; a queue tuned for 10 reviews/hour stalls at 5. Undeclared, take the floor from observed behaviour (`bot_bucket`) rather than assuming the best case.
 
 ### Where a Bounce Shows Up
 
