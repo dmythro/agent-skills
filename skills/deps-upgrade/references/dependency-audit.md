@@ -62,11 +62,13 @@ Cheaper still, when the manager offers it: `pnpm peers check` lists every unmet 
 
 A hit means the package is mandatory regardless of how the application code looks. Peer dependencies are the contract between a plugin and its host: the host declares the peer, the application must supply it, and the plugin never bundles it. Zero imports in application code is the *expected* state, not evidence of redundancy.
 
-Check `peerDependenciesMeta` before deciding -- a peer marked `"optional": true` is genuinely droppable if the feature it enables is unused:
+Check `peerDependenciesMeta` before deciding -- a peer marked `"optional": true` is genuinely droppable if the feature it enables is unused. Read it from the installed manifest, for the same reason as above:
 
 ```bash
-npm view <host-pkg> peerDependenciesMeta --json
+jq '.peerDependenciesMeta' node_modules/<host-pkg>/package.json
 ```
+
+Only reach for the registry when asking what a *different* version declares, and pin that version when you do: `bun info <host-pkg>@<version> peerDependenciesMeta` (or `npm view <host-pkg>@<version> peerDependenciesMeta --json`). An unpinned registry read answers a question about `latest`, which is rarely the question being asked.
 
 ### Step 3: Is it referenced anywhere an import grep would miss
 

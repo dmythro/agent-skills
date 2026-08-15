@@ -75,13 +75,15 @@ Two further `bun info` behaviors worth knowing before scripting it:
 Fields worth requesting:
 
 ```bash
-npm view <pkg> repository.url homepage --json     # where the release notes live
-npm view <pkg> dist-tags.latest                   # never dist-tags -- canary tags pollute it
-npm view <pkg> engines peerDependencies --json    # upgrade blockers
-npm view <pkg>@<version> deprecated               # empty output means not deprecated
-npm view <pkg> time --json                        # publish date per version
-npm view '<pkg>@>=16.8.0 <17' version             # every version in a range, one per line
+npm view <pkg> repository.url homepage --json          # where the release notes live
+npm view <pkg> dist-tags.latest                        # never dist-tags -- canary tags pollute it
+npm view <pkg>@<version> engines peerDependencies --json   # upgrade blockers -- pin the version
+npm view <pkg>@<version> deprecated                    # empty output means not deprecated
+npm view <pkg> time --json                             # publish date per version
+npm view '<pkg>@>=16.8.0 <17' version                  # every version in a range, one per line
 ```
+
+**Pin the version on any field that varies between releases** -- `engines`, `peerDependencies`, `peerDependenciesMeta`, `deprecated`. Unversioned, they describe the `latest` release, which is neither what is installed nor necessarily what you are upgrading to, and the wrong range yields a confidently wrong verdict. For what is *installed*, skip the registry entirely and read `node_modules/<pkg>/package.json`. Version-independent fields (`repository`, `homepage`, `time`) are safe unpinned.
 
 The range form is how Phase 2 enumerates the versions crossed. Quote it -- the shell will otherwise eat the comparison operators.
 
