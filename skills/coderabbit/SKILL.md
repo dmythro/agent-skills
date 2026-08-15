@@ -75,7 +75,7 @@ Defaults (CLI v0.7): all tracked changes, base = repository default branch, plai
 2. Parse findings; triage by `severity`. Address `critical` and `major` first.
 3. **Validate each finding** against the codebase (conventions, actual behavior, project docs). Fix valid ones per `codegenInstructions`; note invalid ones with a one-line rationale for the user.
 4. Re-run the same review command to verify fixes. Stop when no valid `critical`/`major` findings remain, or the hourly bucket is exhausted (the CLI reports the limit -- wait or stop, never hammer).
-5. Then push / create the PR; the PR-side review (if any) should come back clean or near-clean.
+5. Then push / create the PR -- **once the change is completely finished**, not once the findings are fixed. Where PR-side auto-review and `auto_incremental_review` are on (both default), the push *is* the review request and it reviews whatever the branch holds at that moment: remaining tasks, tests, docs and config belong in the same push, or each leftover costs another PR-side window. The PR-side review (if any) should then come back clean or near-clean.
 
 Commit fixes by what they change, never by what prompted them -- `fix: validate empty page cursor`, not `fix: coderabbit fixes` or `fix: review round 2` (see the `git-commit` skill). Fixes must not add code comments that restate what the code already reads.
 
@@ -92,6 +92,18 @@ Two passes (review, fix, verify) is the normal shape. More than three passes mea
 
 The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are current. Beyond the hourly allowance, the usage-based add-on bills $0.25 per reviewed file (Pro and up). Open-source public repos get free reviews with popularity-based limits.
 
+### Where a Bounce Shows Up
+
+**A depleted bucket passes for a clean result in every lane that ignores the lane's own signal.** Each lane does report it -- but never as a failed run, and never in the field most checks look at. Know the tell for the lane you are in:
+
+| Lane | What a bounce looks like | The tell |
+|------|--------------------------|----------|
+| CLI (`--agent`) | Exit `1` with zero findings -- identical to a failure by exit status, and "no findings" reads as clean | `{"type":"error","errorType":"rate_limit",...,"metadata":{"waitTime":"7 minutes"}}` -- branch on `errorType`, never on the findings count |
+| CLI (default output) | The run ends with a limit message and no findings | Read the message; do not treat the empty result as a passing review |
+| PR-side | Often **nothing at all** -- no review, no threads, no comment -- plus a green `CodeRabbit` check in the PR's checks list | That check's `description` reads `Review rate limited` (state is `SUCCESS` either way): `gh pr checks --json name,state,description`. `Review completed` is the reviewed case |
+
+The PR-side row is the one that misleads most: the checks list shows a tick next to CodeRabbit between passing CI jobs, so the PR reads as reviewed-and-green when the code was never looked at. PR-side handling (windows, re-triggers, the loop) lives in the `git-pr` skill.
+
 ## Configuration
 
 `.coderabbit.yaml` at the repo root governs both PR-side and CLI reviews (the CLI also accepts `-c <file>` for extra instruction files, e.g. `CLAUDE.md`). For typed, well-linted projects the goal is high-level findings only: `profile`, `tone_instructions`, disabled CI-redundant linters, `path_filters` for generated files. Validate edits with `coderabbit config validate [file]` (checks against the current official schema) before committing.
@@ -107,6 +119,8 @@ The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are curren
 5. **Org context needs matching access** -- on a repo not linked to your CodeRabbit org, reviews run in limited free mode (no learnings/org context); results differ from PR-side reviews on the same code.
 6. **`--agent` emits JSON lines, not a JSON document** -- parse line-by-line; do not `JSON.parse` the whole output.
 7. **`--type <scope>` and `--plain` no longer exist** (removed in v0.7; `error: unknown option`) -- older docs and allowlists reference them; use `--committed`/`--uncommitted` and rely on the plain default.
+8. **A PR-side rate limit is silent and green** -- no review, no threads, usually no comment, and a passing `CodeRabbit` check whose `description` reads `Review rate limited`. Nothing about the PR looks wrong, so an unreviewed PR gets reported as reviewed. Read that description before concluding anything from a quiet PR-side round (Where a Bounce Shows Up).
+9. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs.
 
 > **Reference**: See `references/configuration.md` for `.coderabbit.yaml` tuning and PR commands
 > **Reference**: See `references/allowlist.md` for auto-approval patterns

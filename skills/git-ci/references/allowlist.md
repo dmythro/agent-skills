@@ -77,7 +77,7 @@ For maximum restriction, use exact command strings that only auto-approve specif
 ### Tier 1: Current-Branch (No Wildcards)
 
 ```json
-"Bash(gh pr checks --json name,state,conclusion,bucket)",
+"Bash(gh pr checks --json name,state,bucket,description)",
 "Bash(gh pr checks --watch --fail-fast)",
 "Bash(gh run list --json databaseId,displayTitle,status,conclusion,headBranch,event --limit 10)",
 "Bash(gh pr view --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",
@@ -97,7 +97,7 @@ For maximum restriction, use exact command strings that only auto-approve specif
 ### Tier 2: By-ID (Single `*` for Run/Pipeline ID)
 
 ```json
-"Bash(gh pr checks * --json name,state,conclusion,bucket)",
+"Bash(gh pr checks * --json name,state,bucket,description)",
 "Bash(gh pr checks * --watch --fail-fast)",
 "Bash(gh run view * --json jobs,status,conclusion,displayTitle)",
 "Bash(gh run view * --log-failed)",

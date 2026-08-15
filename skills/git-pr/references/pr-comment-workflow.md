@@ -89,7 +89,7 @@ After evaluating all comments, make all code fixes before any GitHub API writes:
 
 1. Fix all "valid and unaddressed" comments in code -- threads and body-only findings alike. Do not add code comments that narrate the fix or restate what the code already reads -- comment only non-obvious constraints.
 2. Commit the fixes using Conventional Commits format, as many commits as the change needs. The message describes the change itself (e.g., `fix: handle null token refresh`), never the review process -- no "address review feedback", bot names, or round numbers; the PR threads already record why (see the `git-commit` skill).
-3. **Push once, after the last commit of the round.** On a repo with auto-review every push triggers another incremental bot review from a per-developer hourly bucket, so pushing per commit spends several reviews on unfinished work. If the change is still moving, keep the PR a draft -- drafts are not auto-reviewed, so pushes to them are free.
+3. **Push once, after the last commit of the round -- and only when the round is genuinely finished.** On a repo with auto-review every push triggers another incremental bot review from a per-developer hourly bucket, and it reviews whatever is on the branch at that moment. So the push waits for *everything*: every valid finding fixed (threads and body-only), every rejected one with a verdict, the tests and docs the fixes imply, local checks green, nothing left uncommitted. Pushing per commit -- or pushing to check one fix -- spends several reviews on unfinished work. If the change is still moving, keep the PR a draft -- drafts are not auto-reviewed, so pushes to them are free. Full gate: `bot-review-loop.md` (One Push Per Round).
 
 Only proceed to Phase 2 after the push succeeds. This ensures reviewers see the actual fixes when they read your replies.
 
@@ -173,8 +173,9 @@ After both phases are complete:
 - Body-only bot findings (nitpicks, outside diff range, failed to post) triaged too, with verdicts stated somewhere on the PR
 - Top-level bot threads reconcile with the `Actionable comments posted: N` the reviews claim
 - All valid feedback addressed with code fixes
-- Fixes committed and pushed before any replies, in a single push for the whole round
+- Fixes committed and pushed before any replies, in a single push for the whole round, made only once every task of the round was done (pre-push gate in `bot-review-loop.md`)
 - All replies and resolves batched into one command (one approval)
 - "Needs discussion" threads replied to but left unresolved
 - No reply says "Fixed" without a corresponding pushed commit
 - Unresolved threads re-fetched after the final push -- the push triggers another incremental review, which lands minutes later and is the round you are most likely to abandon half-read
+- That follow-up round confirmed as having actually run -- a green `CodeRabbit` check whose `description` reads `Review rate limited` means it never did (`bot-review-loop.md`, The Status Check Nobody Reads)

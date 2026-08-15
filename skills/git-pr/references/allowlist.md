@@ -97,6 +97,8 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/issues/*/labels)",
 "Bash(gh api repos/*/issues/*/labels --jq *)",
 "Bash(gh api repos/*/issues/*/timeline *)",
+"Bash(gh api repos/*/commits/*/status)",
+"Bash(gh api repos/*/commits/*/status --jq *)",
 "Bash(gh api repos/*/rules/branches/*)",
 "Bash(gh api repos/*/rules/branches/* --jq *)",
 "Bash(gh api repos/*/rulesets)"
@@ -109,6 +111,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **`/comments`, `/reviews`, `/requested_reviewers`**: bare pattern (no trailing `*`) blocks POST/DELETE. Explicit `--paginate`, `--jq *`, and `--paginate --slurp | jq *` variants are added separately for read-only flag support
 - **`--paginate --slurp | jq *`** (reviews, PR comments, issue comments): the bot review loop slurps all pages into one array and pipes to a separate `jq`, because `--paginate` applies `-q/--jq` per page (and `--slurp` cannot combine with `-q/--jq`). The pipe is spelled out because `*` cannot cross it. The PR-comments variant also serves the finding-count reconciliation in `bot-review-loop.md`, which counts top-level bot threads across all pages
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`, `--slurp | jq`) is safer
+- **`/commits/{sha}/status`**: the combined commit status for a sha -- how `bot_status` reads CodeRabbit's `Review completed` / `Review rate limited` verdict (`bot-review-loop.md`, The Status Check Nobody Reads). GET-only: writing a status is a POST to the different `/repos/{owner}/{repo}/statuses/{sha}` route, so the trailing wildcards cannot reach a write. The sha comes from an inline `$(gh pr view ... --jq .headRefOid)` substitution, which the `*` covers
 - **`/rules/branches/` and `/rulesets`**: read-only detection of the Copilot auto-review rule (`copilot_code_review`, see `copilot-review-config.md`). `/rules/branches/` is a GET-only route, so its trailing wildcards are safe; `/rulesets` accepts POST (creates rulesets), so only the **bare** pattern is listed -- no `--jq *` variant, because a trailing `*` after `--jq` could absorb `-X POST -f ...`. Filter ruleset JSON with a separate `| jq` or approve the flagged call manually; ruleset writes stay manual
 - **Billing usage endpoints are not allowlisted**: the quota-check commands in `copilot-review-config.md` use `$(...)` username substitution inside a quoted URL (query params contain `&`), which does not match simple patterns -- they are occasional diagnostics, approve manually
 - **`gh run list` / `gh run view`**: read-only subcommands powering the Copilot failure diagnosis (`bot_fail_diag` in `bot-review-loop.md`); broader CI patterns live in the `git-ci` skill
@@ -183,7 +186,7 @@ For maximum restriction, use exact command strings. These only auto-approve the 
 "Bash(gh pr view * --json files)",
 "Bash(gh pr view * --json commits)",
 "Bash(gh pr view * --json mergeable,reviewDecision,statusCheckRollup,isDraft,mergeStateStatus)",
-"Bash(gh pr checks * --json name,state,conclusion,bucket)",
+"Bash(gh pr checks * --json name,state,bucket,description)",
 "Bash(gh pr diff * --name-only)",
 "Bash(gh issue view * --json number,title,state,body,labels)",
 "Bash(gh pr list --search * --json number,title,url)",
