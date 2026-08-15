@@ -102,6 +102,7 @@ Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL 
 | `pending` | `Review in progress`  | A review is running on this sha right now -- wait, and never trigger over it     |
 | `success` | `Review completed`    | The bot reviewed this sha. With zero unresolved threads, that is a genuine clean round |
 | `success` | `Review rate limited` | The bucket was empty: **this sha was never reviewed**. Nothing is queued -- when the window reopens, only a fresh trigger starts a review |
+| `success` | `Review skipped: ...` | Excluded by config, e.g. `draft pull request` (`auto_review.drafts: false`) -- promote the PR or trigger manually |
 
 `state` separates only "running" from "finished" -- it is `success` for **both** finished outcomes, which is why the description is the verdict. Match the description loosely: the wording is short and CodeRabbit adds variants over time.
 
@@ -245,15 +246,25 @@ bot_status() {
 
   [ "${clean_head:-0}" -gt 0 ] && { echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (clean-review notice names HEAD; no review object expected)."; return 0; }
 
-  # HEAD's own status says the round was refused: HEAD is UNREVIEWED, never clean. Wait out the
-  # window the notices name if one is still binding; a silent bounce names none, so fall back to
-  # 30 min from the status timestamp (hourly buckets, adaptively throttled to ~25-30 min). Once
-  # that has passed, the answer is not "wait longer" -- a bounced round is never queued, so return
-  # 3 and let the tick post a fresh trigger.
+  # HEAD's own status says the round was refused: HEAD is UNREVIEWED, never clean. The deadline
+  # comes from the notice window when one is still readable -- but the notice is EDITED INTO the
+  # summary comment and the next walkthrough edit can remove it again (observed: window text
+  # present, gone ~100s later, while the sha's status kept saying "Review rate limited"), and a
+  # bounced auto-review never posts one at all. So the fallback is the status's own timestamp
+  # plus BOT_BACKOFF, which GROWS with BOT_BOUNCES: a stated window is a lower bound, and the
+  # retry that bounces again is the signal that the bucket needs longer, not that the bot is
+  # broken. Every 6 exports BOT_WAIT_UNTIL (epoch) -- schedule from that, because by the time the
+  # retry comes round the notice it was parsed from may no longer exist. Once the deadline has
+  # passed the answer is not "wait longer": a bounced round is never queued, so return 3 and let
+  # the tick post a fresh trigger.
   if [ -n "$chk_desc" ] && [ -n "$BOT_CHECK_LIMIT_RE" ] && printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_LIMIT_RE"; then
-    until_ts="${lim_until%.*}"; [ -z "$until_ts" ] && until_ts=$(( chk_at + 1800 ))
+    back=$(( 1800 * (${BOT_BOUNCES:-0} + 1) )); [ "$back" -gt 7200 ] && back=7200
+    until_ts="${lim_until%.*}"; [ -z "$until_ts" ] && until_ts=$(( chk_at + back ))
+    # After a repeat bounce, never wait less than the backoff: the last stated window proved short.
+    [ "${BOT_BOUNCES:-0}" -gt 0 ] && [ "$until_ts" -lt "$(( $(date +%s) + back ))" ] && until_ts=$(( $(date +%s) + back ))
     if [ "$(date +%s)" -lt "$until_ts" ]; then
-      echo "$BOT_THREAD_PREFIX rate-limited at HEAD (status: $chk_desc) -- next review available in ~$(( (until_ts - $(date +%s)) / 60 + 1 )) min"
+      BOT_WAIT_UNTIL="$until_ts"
+      echo "$BOT_THREAD_PREFIX rate-limited at HEAD (status: $chk_desc) -- next review available in ~$(( (until_ts - $(date +%s)) / 60 + 1 )) min (BOT_WAIT_UNTIL=$until_ts, bounces=${BOT_BOUNCES:-0})"
       return 6
     fi
     echo "$BOT_THREAD_PREFIX status says HEAD was NOT reviewed ($chk_desc); window elapsed -- a bounced round is never queued, post a fresh trigger"
@@ -267,7 +278,8 @@ bot_status() {
     echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (HEAD's commit status reports it reviewed: $chk_desc)."; return 0
   fi
   if [ -n "$lim_until" ] && [ "$(date +%s)" -lt "${lim_until%.*}" ]; then
-    echo "$BOT_THREAD_PREFIX rate-limited -- next review available in ~$(( (${lim_until%.*} - $(date +%s)) / 60 + 1 )) min"
+    BOT_WAIT_UNTIL="${lim_until%.*}"
+    echo "$BOT_THREAD_PREFIX rate-limited -- next review available in ~$(( (${lim_until%.*} - $(date +%s)) / 60 + 1 )) min (BOT_WAIT_UNTIL=$BOT_WAIT_UNTIL)"
     return 6
   fi
   [ "${clean_at:-0}" -gt "${lim_at:-0}" ] && { echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (trigger ack covers HEAD; no review object expected)."; return 0; }
@@ -337,6 +349,46 @@ bot_tick() {
   echo "No review within this tick -- re-run bot_tick (safe: it re-checks before re-requesting)"; return 3
 }
 ```
+
+## Waiting Out a Bounce (CodeRabbit)
+
+**A refused round leaves no reliable way to ask "when may I retry?" later -- so capture the answer the moment you get it.** `bot_status` exports `BOT_WAIT_UNTIL` (epoch seconds) with every `6`; schedule the retry from that value and never from a re-read of the PR:
+
+| Deadline source | When it applies | Durability |
+|---|---|---|
+| A **sibling PR's** `Review completed`, newer than your bounce | You have other open PRs (`bot_bucket`) | Proof the bucket has capacity **now** -- overrides every stated window |
+| Parsed notice window (`lim_until`) | A quota notice is readable right now | **None** -- it is an edit to the summary comment, and the next walkthrough edit can remove it |
+| Rate-limit status timestamp + `BOT_BACKOFF` | Silent bounce, or the notice is already gone | Durable: the sha's status stays put |
+| `now + BOT_BACKOFF` (repeat bounce) | The retry bounced again | The last window proved short -- lengthen it |
+
+**The stated window is a per-PR estimate, not the bucket's clock.** Measured on one developer's account inside nine minutes: two PRs bounced 104 seconds apart quoting **48 minutes** and **10 minutes**, and a third PR's review **completed** eight minutes after the "48 minutes" notice was written. Waiting out the largest number you can find therefore idles through windows that already reopened -- so take the **minimum** of the windows visible across your PRs, and let a sibling completion override them entirely.
+
+`BOT_BACKOFF` is `30 min x (BOT_BOUNCES + 1)`, capped at 2 h, and applies only **after a retry has bounced again** -- that repeat is the evidence the bucket really is closed. Count `BOT_BOUNCES` in the loop, one per `6`, and reset it the moment any review runs. Probing early is cheap: a refused trigger is never queued and consumes nothing, so an early probe costs one comment and its ack, while over-waiting costs the whole window.
+
+```bash
+# Usage: bot_bucket   (read-only) -- what the shared per-developer bucket did recently, across
+# every PR you have open. The newest "Review completed" line is the bucket's real state: if it
+# postdates your own bounce, retry NOW regardless of any window a notice quoted.
+bot_bucket() {
+  gh search prs --author=@me --state=open --limit 20 --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"' | while read -r r n; do
+    gh api "repos/$r/commits/$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)/status" --jq "[.statuses[] | select(.context|ascii_downcase|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at) $r#$n \(.description // \"\")\" end" 2>/dev/null
+  done | sort
+}
+```
+
+Every PR you have open contends for this one bucket, including PRs another agent or session opened on your account minutes ago -- so `bot_bucket` also explains *why* a round bounced, which a single PR's view never shows.
+
+**There is no CI log to consult for CodeRabbit.** It publishes a commit status, not an Actions run: `check-runs` is empty for it and the status's `target_url` is `null`, so nothing behind the check explains the wait. (`bot_fail_diag` is Copilot-only -- Copilot *does* run as a workflow, which is why its hard limits are diagnosable and CodeRabbit's are not.) The status description, an ack if one was posted, and the clock are the whole picture.
+
+The wait itself must not sit inside one tool call -- a single Bash invocation is capped at ten minutes, and these waits run to hours:
+
+```bash
+# Usage: bot_sleep_until <EPOCH>   -- run it in the BACKGROUND, then re-run bot_tick when it exits.
+# Sleeps in 60s steps so a foreground misuse fails fast instead of blocking a whole tool call.
+bot_sleep_until() { while [ "$(date +%s)" -lt "$1" ]; do sleep 60; done; echo "window open ($(date +%H:%M)) -- post a fresh trigger"; }
+```
+
+Run it with the harness's background/monitor facility (never a foreground `sleep`), and on wake re-run `bot_tick`: its fresh trigger is what starts the review, since the bounced one was never queued. Read that trigger's ack before waiting on anything again.
 
 ## Findings That Never Become Threads (CodeRabbit)
 
@@ -434,10 +486,17 @@ repeat:
          the reset is days away, and every re-request until then fails identically while
          still burning a billable round + Actions minutes. CodeRabbit (hourly window): if
          another review bot is active on this repo, STOP this bot's loop and rely on that
-         one; otherwise wait out the printed window plus 1-2 min slack ("next review
-         available in ~N min"; sleep in a background Bash), then re-run bot_tick -- the
-         bounced request was never queued, so the re-run's fresh trigger is what starts
-         the review (read its ack). Waits don't consume a round.
+         one; otherwise BOT_BOUNCES += 1, then run bot_bucket ONCE: if any of your open PRs
+         shows a "Review completed" newer than this bounce, the bucket is open now -- skip the
+         wait entirely and re-tick. Only without that evidence, wait until BOT_WAIT_UNTIL
+         (which bot_status exported with this 6) plus 1-2 min slack -- bot_sleep_until in a
+         BACKGROUND Bash, never a foreground sleep -- then re-run bot_tick: the bounced request was never
+         queued, so the re-run's fresh trigger (or the next push) is what starts the review,
+         and its ack is the first thing to read. Schedule from the exported value, not from
+         a later re-read: the notice it came from may be edited away in the meantime
+         (Waiting Out a Bounce). A retry that bounces again is not a broken bot -- it means
+         the stated window was short, and the backoff lengthens the next wait. Reset
+         BOT_BOUNCES when a review actually runs. Waits don't consume a round.
     2 -> not clean; fails = 0; processed += 1. If bot_status flagged the rare >100-thread inconclusive case,
          paginate/resolve to confirm before trusting clean. Otherwise validate each unresolved
          comment (pr-comment-workflow.md) AND the body-only buckets of the reviews behind them
@@ -510,4 +569,5 @@ For unattended loops the commands must match the patterns in `allowlist.md`:
 12. **Zero unresolved threads is not zero findings** -- CodeRabbit puts nitpicks (`profile: chill`), outside-diff-range findings and failed-to-post comments in the review **body**, where `reviewThreads` never sees them; a PR can read "clean" with four untouched findings in it. Triage the body buckets and reconcile the claimed `Actionable comments posted: N` against the threads that exist before calling a round done (Findings That Never Become Threads).
 13. **One push per round -- pushes are what spend the quota** -- on an auto-review repo each push triggers another incremental review from the same per-developer hourly bucket, so three commits pushed separately are three reviews of a change that was never finished. Commit as often as the change needs, but push once, after every fix in the round is committed; iterate in draft (not auto-reviewed) while the change is still moving.
 14. **A green `CodeRabbit` check does not mean the code was reviewed** -- the commit status it writes on each processed sha is `success` in both outcomes; the truth is in `description` (`Review completed` vs `Review rate limited`), which `gh pr view --json statusCheckRollup` omits and `gh pr checks` returns only when `description` is requested explicitly. A rate-limited round leaves nothing else behind -- no review object, no threads, often no comment -- so a checks list that reads all-green next to CI jobs is exactly what an unreviewed PR looks like. Read the description (or the `/commits/{sha}/status` API -- **not** `/check-runs`, which does not have it) before reporting a PR as reviewed or merging on that basis.
-15. **Push only what is ready to be reviewed** -- with auto-review plus `auto_incremental_review`, `git push` *is* the review request, and it reviews whatever is on the branch at that moment. Finish every task of the round -- fixes, tests, docs, local checks, everything committed -- and push once (see the pre-push gate in One Push Per Round); a progress push spends a scarce per-developer window on code you already intend to change.
+15. **The rate-limit window expires as evidence, not just as a deadline** -- the quota notice is an *edit* to the summary comment, so a later walkthrough edit can delete it while the sha's status still reads `Review rate limited` (observed on this repo: window text present, gone ~100 seconds later). Capture the deadline when you first see it -- `bot_status` exports `BOT_WAIT_UNTIL` with every `6` -- and schedule from that; re-reading the PR later can leave you with a limit you can no longer date. Treat a stated window as a lower bound and back off on repeat bounces (Waiting Out a Bounce), and don't go hunting for a CI log: CodeRabbit has no Actions run, empty `check-runs`, and a `null` `target_url`.
+16. **Push only what is ready to be reviewed** -- with auto-review plus `auto_incremental_review`, `git push` *is* the review request, and it reviews whatever is on the branch at that moment. Finish every task of the round -- fixes, tests, docs, local checks, everything committed -- and push once (see the pre-push gate in One Push Per Round); a progress push spends a scarce per-developer window on code you already intend to change.

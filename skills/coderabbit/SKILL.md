@@ -68,6 +68,7 @@ Defaults (CLI v0.7): all tracked changes, base = repository default branch, plai
 - `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end.
 - `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review.
 - `coderabbit stats` -- review statistics (`--rebuild` rescans review history).
+- `coderabbit usage` -- the current billing period: organization, whether usage billing (overage) is active, your review count, and the period reset date. **Billing totals only** -- it does not report the hourly bucket, and there is no CLI command that reveals a PR-side retry window (see Key Gotchas).
 
 ## The Local Review-Fix Loop
 
@@ -104,6 +105,16 @@ The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are curren
 
 The PR-side row is the one that misleads most: the checks list shows a tick next to CodeRabbit between passing CI jobs, so the PR reads as reviewed-and-green when the code was never looked at. PR-side handling (windows, re-triggers, the loop) lives in the `git-pr` skill.
 
+**Neither the CLI nor CI logs can tell you when a PR-side round may retry.** Three dead ends, so no one spends the time again:
+
+| Where you might look | What you actually get |
+|----------------------|-----------------------|
+| `coderabbit usage` | Billing period only -- org, overage on/off, review count, reset date. No hourly bucket |
+| CI logs behind the check | Nothing: CodeRabbit posts a **commit status**, not an Actions run (`check-runs` is empty, `target_url` is `null`). Log-diagnosable hard limits are a Copilot thing |
+| The quota notice on the PR | A per-PR **estimate** that the next summary-comment edit can delete -- two PRs of one developer quoted 48 and 10 minutes 104 seconds apart, while a third PR's review completed 8 minutes later |
+
+What *does* answer it: the newest `Review completed` across **all** your open PRs, since the bucket is per developer (`bot_bucket` in `git-pr`'s `references/bot-review-loop.md`). If a sibling PR was reviewed after your bounce, the bucket is open now.
+
 ## Configuration
 
 `.coderabbit.yaml` at the repo root governs both PR-side and CLI reviews (the CLI also accepts `-c <file>` for extra instruction files, e.g. `CLAUDE.md`). For typed, well-linted projects the goal is high-level findings only: `profile`, `tone_instructions`, disabled CI-redundant linters, `path_filters` for generated files. Validate edits with `coderabbit config validate [file]` (checks against the current official schema) before committing.
@@ -120,7 +131,8 @@ The PR-side row is the one that misleads most: the checks list shows a tick next
 6. **`--agent` emits JSON lines, not a JSON document** -- parse line-by-line; do not `JSON.parse` the whole output.
 7. **`--type <scope>` and `--plain` no longer exist** (removed in v0.7; `error: unknown option`) -- older docs and allowlists reference them; use `--committed`/`--uncommitted` and rely on the plain default.
 8. **A PR-side rate limit is silent and green** -- no review, no threads, usually no comment, and a passing `CodeRabbit` check whose `description` reads `Review rate limited`. Nothing about the PR looks wrong, so an unreviewed PR gets reported as reviewed. Read that description before concluding anything from a quiet PR-side round (Where a Bounce Shows Up).
-9. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs.
+9. **A quoted retry window is an estimate, and it is not durable** -- it is edited into the summary comment and a later edit can remove it, while different PRs quote wildly different numbers at the same moment. Capture it when you see it, take the smallest one visible across your PRs, and treat a sibling PR's `Review completed` as the real all-clear (Where a Bounce Shows Up). Don't wait out the largest number you can find.
+10. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs.
 
 > **Reference**: See `references/configuration.md` for `.coderabbit.yaml` tuning and PR commands
 > **Reference**: See `references/allowlist.md` for auto-approval patterns

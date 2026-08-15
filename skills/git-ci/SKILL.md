@@ -75,6 +75,7 @@ gh pr checks --json name,state,bucket,description --jq '.[] | select(.name|ascii
 | `pending` | `Review in progress`  | Running right now -- the PR is not reviewed *yet*                    |
 | `success` | `Review completed`    | The bot reviewed this commit                                         |
 | `success` | `Review rate limited` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
+| `success` | `Review skipped: ...` | Excluded by config (e.g. `draft pull request`) -- nothing was reviewed |
 
 `state` tells running from finished, nothing more: both finished outcomes are `success`.
 
