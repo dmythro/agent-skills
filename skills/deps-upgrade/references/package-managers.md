@@ -2,7 +2,7 @@
 
 Checked against bun 1.3.14, npm 11.19.0, pnpm 11.21.0 and yarn 4.18.0 -- by execution where the command runs outside its native project type, and against the tool's own help output otherwise. Where a manager lacks a capability the gap is stated rather than papered over with an approximation.
 
-**Use the project's own manager.** This page is a cross-manager reference, not a menu: in a Bun project run the bun column, in a pnpm project the pnpm column. Mixing managers inside one project risks a second lockfile and a differently-resolved tree. The one documented exception is `npm outdated --json` (see Outdated below), which reads `package.json` and `node_modules` without resolving or writing anything. The `SKILL.md` Bun-First Mapping lists the native command for every step.
+**Use the project's own manager.** This page is a cross-manager reference, not a menu: in a Bun project run the bun column, in a pnpm project the pnpm column. A manager the project does not use may not be installed on the machine at all, and where it is, it resolves by its own rules and can leave a second lockfile or a differently-shaped `node_modules` behind. Every capability here exists in all four; the `SKILL.md` Capability Matrix is the per-manager index.
 
 ## Detection
 
@@ -23,7 +23,7 @@ The picking step belongs to the user; these are documented so the delta can be r
 | bun     | `bun update -i -r` | `-i` interactive select, `-r` all workspaces, `--latest` ignores ranges, `--filter <glob>` targets workspaces |
 | pnpm    | `pnpm update -i -r -L` | `-L`/`--latest` ignores ranges in `package.json` |
 | yarn    | `yarn upgrade-interactive` | Built in from v4; v2/v3 need `yarn plugin import interactive-tools`. `yarn up -i` is the equivalent |
-| npm     | none | `npm update` respects ranges only and has no interactive mode -- use `bunx taze -I` or `bunx npm-check-updates -i` |
+| npm     | none | `npm update` respects ranges only and has no interactive mode -- use `npx taze -I` or `npx npm-check-updates -i` |
 
 Without `--latest` (bun, pnpm) a non-interactive update stays inside the ranges already declared. Interactive pickers show the latest available version alongside the in-range one, so a major can still be selected deliberately. When the delta contains a major nobody expected, the question to ask is which of the three happened: `--latest`, an interactive pick, or a hand edit to `package.json`.
 
@@ -36,7 +36,9 @@ Without `--latest` (bun, pnpm) a non-interactive update stays inside the ranges 
 | pnpm    | `pnpm outdated --format json` | Yes. `--long` adds the repo link, `--compatible` limits to in-range, `-r` for workspaces |
 | yarn    | none | Berry dropped `yarn outdated`; there is no replacement |
 
-**`npm outdated --json` is the portable answer wherever `node_modules` exists.** It reads `package.json` plus the installed tree and needs no `package-lock.json`, so it works unchanged inside a bun, pnpm or yarn project. The exception is Yarn Plug'n'Play, which has no `node_modules` to read -- there, fall back to `taze` or a lockfile-based comparison.
+**Yarn is the only real gap**, and its in-ecosystem answer is `yarn dlx taze` or the interactive `yarn upgrade-interactive`. `yarn outdated` does not merely warn -- it falls through to `yarn run` and fails with `Couldn't find a script named "outdated"`.
+
+Bun's table is machine-readable enough to parse: fixed columns, one row per package. Prefer that to invoking another manager, which may be absent and resolves by its own rules. (`npm outdated --json` does work against a bun or pnpm tree, since it reads only `package.json` and `node_modules` -- but it is a cross-manager call, so use it only in npm projects or as a deliberate exception. Yarn Plug'n'Play has no `node_modules` for it to read at all.)
 
 ```json
 {
@@ -101,11 +103,52 @@ graphql@16.8.0
 
 ## Peer Conflicts
 
+The capability all four have, at four levels of quality. All output below is from the same deliberately broken tree: `graphql@17.0.2` installed against `graphql-tag@2.12.6`, which peers `^16.0.0` and below.
+
+### pnpm -- purpose-built, exits non-zero
+
 ```bash
+pnpm peers check
+```
+
+```text
+Issues with peer dependencies found
+
+✕ unmet peer graphql
+  Installed: 17.0.2
+  Wanted:
+    "^0.9.0 || ... || ^16.0.0":
+      graphql-tag@2.12.6
+```
+
+Exits `1` when problems exist, so it works directly as a verification gate. `pnpm install` also ends with `[WARN] Issues with peer dependencies found. Run "pnpm peers check" to list them.`
+
+### yarn -- reported at install, explained by hash
+
+`yarn install` prints the diagnosis inline and hands over a lookup key:
+
+```text
+YN0060: │ graphql is listed by your project with version 17.0.2 (p01e102), which doesn't satisfy
+        │ what graphql-tag requests (~0.9.0 || ... || ^16.0.0).
+YN0086: │ Some peer dependencies are incorrectly met; run yarn explain peer-requirements <hash>
+```
+
+The six-letter `p`-prefixed code is the hash:
+
+```bash
+yarn explain peer-requirements p01e102
+```
+
+It expands to the full dependent tree, each requested range, and the combined range the project fails to satisfy.
+
+### npm -- no dedicated command
+
+```bash
+npm ls --all --json | jq '.problems'      # ["invalid: graphql@17.0.2 /path/node_modules/graphql"]
 npm install --dry-run --no-audit --no-fund
 ```
 
-The portable detector, and the only one that prints the full chain:
+`npm install --dry-run` prints the full requiring chain and writes nothing -- verified: no `package-lock.json` is created and an existing lockfile is untouched.
 
 ```text
 npm error Conflicting peer dependency: graphql@16.14.2
@@ -113,16 +156,15 @@ npm error   peer graphql@"^0.9.0 || ... || ^16.0.0" from graphql-tag@2.12.6
 npm error     graphql-tag@"2.12.6" from the root project
 ```
 
-It writes nothing -- verified in a bun project: no `package-lock.json` is created and `bun.lock` is left untouched.
+**Plain `npm ls` at depth 0 shows the same broken tree as clean at exit `0`** -- `--all --json` is required.
 
-Manager-native alternatives, all weaker:
+### bun -- a warning that names nobody
 
-| Manager | Behavior |
-|---------|----------|
-| bun     | `warn: incorrect peer dependency "graphql@17.0.2"` during install. Does not fail, does not name the requiring package, scrolls past in normal output |
-| npm     | `npm ls --all --json \| jq '.problems'` -> `["invalid: graphql@17.0.2 /path/node_modules/graphql"]`. **Plain `npm ls` at depth 0 shows the same tree as clean at exit 0** |
-| pnpm    | Reports unmet peers during install and in `pnpm why --json` |
-| yarn    | `yarn explain peer-requirements [hash]` explains a specific requirement set |
+```text
+warn: incorrect peer dependency "graphql@17.0.2"
+```
+
+Non-fatal, absent from `bun outdated` and `bun pm ls`, and it never says which package wanted the range. Use the `Bun.semver` peer check in `dependency-audit.md`, which reproduces what `pnpm peers check` reports.
 
 ## Audit
 
@@ -180,12 +222,12 @@ When an expected version does not appear in a resolution, check the publish date
 
 ## Manager-Agnostic Tools
 
-Useful where a manager has a gap, and worth naming explicitly since they detect the manager themselves:
+Useful where a manager has a gap, and worth naming explicitly since they detect the manager themselves. Launch them through the project's own runner -- `bunx` / `npx` / `pnpm dlx` / `yarn dlx` -- not through whichever one you happen to know:
 
 | Tool | Use | Currency |
 |------|-----|----------|
-| `taze` | Cross-manager outdated and interactive upgrade (`bunx taze -I`), monorepo aware | 21.x, active |
-| `npm-check-updates` | Range rewriting in `package.json` (`bunx npm-check-updates -i`) | 23.x, active |
+| `taze` | Cross-manager outdated and interactive upgrade (`<runner> taze -I`), monorepo aware. The practical answer to yarn's missing `outdated` | 21.x, active |
+| `npm-check-updates` | Range rewriting in `package.json` (`<runner> npm-check-updates -i`) | 23.x, active |
 | `knip` | Unused dependencies, exports and files | 6.x, active |
 | `depcheck` | Unused dependencies | Last published 2025-08 -- prefer knip |
 

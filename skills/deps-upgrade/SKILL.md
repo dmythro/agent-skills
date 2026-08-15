@@ -28,7 +28,7 @@ description: >-
 
 ## Critical Rules
 
-1. **Use the project's own package manager.** In a Bun project that means `bun` throughout -- `bun info`, `bun why`, `bun audit`, `bun pm ls` -- not the npm equivalents. Reaching for another manager's CLI inside a Bun project invites lockfile and resolution mismatches. Exactly one query has no bun form -- machine-readable `outdated` -- and it is called out where it applies; everything else has a native command or a short `Bun.semver` recipe (see Bun-First Mapping).
+1. **Detect the manager first, then use only its column.** A Bun project gets `bun` throughout, a pnpm project `pnpm`, an npm project `npm`, a yarn project `yarn`. Another manager's CLI may not be installed at all, and if it is, it resolves against its own rules and can write a second lockfile or a differently-shaped tree. Every capability this skill needs has a native form in all four managers -- see the Capability Matrix -- so there is never a reason to reach across.
 2. **Establish the delta from git, never from the prompt.** "I upgraded a lot of packages" is a starting point, not an inventory. The lockfile diff is the only complete record -- it carries transitive bumps that `package.json` never shows.
 3. **`outdated` reports drift, not compatibility.** A clean `bun outdated` means every dependency sits at the newest version its range allows; it says nothing about whether the tree still resolves, builds or runs. Never report an upgrade as validated on that basis.
 4. **Peer ranges of ecosystem packages are the ceiling, not the registry's `latest`.** A framework plugin pinning `next@">=16.2.6 <17.0.0"` caps the framework regardless of what the registry calls latest. Read the peers of the packages that wrap the target before proposing a bump.
@@ -40,35 +40,50 @@ description: >-
 
 ---
 
-## Bun-First Mapping
+## Capability Matrix
 
-In a Bun project every step of this skill has a native command. Reach for another manager only where the gap is real and stated.
+Read down your project's column and use nothing else. Blank means the manager has no such command -- the workaround in the notes stays inside that manager.
 
-| Need | Bun | Note |
-|------|-----|------|
-| Registry metadata | `bun info <pkg> [prop]` | Works in any project directory (needs a `package.json`, which a Bun project has) |
-| Why installed | `bun why <pkg>` | Globs supported: `bun why "@types/*"` |
-| Installed tree | `bun pm ls --all` | |
-| Advisories | `bun audit --json` | Banner to stderr, JSON to stdout -- pipes cleanly |
-| Lockfile advisories | `bun pm scan` | No installed tree required |
-| Peer validation | `bun run peer-check.ts` | `Bun.semver.satisfies` over installed manifests -- see `references/dependency-audit.md` |
-| Frozen install | `bun install --frozen-lockfile [--dry-run]` | |
-| Read package.json | `bun pm pkg get <field>` | |
-| Run a tool | `bunx <tool>` | Never `npx` in a Bun project |
-| Versions in a range | `bun info <pkg> versions` + `Bun.semver` | The bare property returns every version unsorted; filter and order it (recipe below) |
-| **Machine-readable `outdated`** | **none** | `bun outdated` prints a table; `--json` is accepted and ignored. Parse the table, or read `npm outdated --json` |
+| Capability | bun | npm | pnpm | yarn (berry) |
+|---|---|---|---|---|
+| Registry metadata | `bun info <pkg> [prop]` | `npm view <pkg> <field>` | `pnpm view <pkg> <field>` | `yarn npm info <pkg> -f <fields>` |
+| Why installed | `bun why <pkg>` | `npm why <pkg>` | `pnpm why <pkg>` | `yarn why <pkg> --peers` |
+| Installed tree | `bun pm ls --all` | `npm ls --all` | `pnpm list --depth Infinity` | `yarn info -A -R` |
+| Peer validation | `peer-check.ts` (below) | `npm ls --all --json` -> `.problems` | **`pnpm peers check`** | `yarn explain peer-requirements <hash>` |
+| Advisories | `bun audit --json` | `npm audit --json` | `pnpm audit --json` | `yarn npm audit --json` |
+| Outdated | `bun outdated` (table only) | `npm outdated --json` | `pnpm outdated --format json` | -- |
+| Versions in a range | `bun info <pkg> versions` + `Bun.semver` | `npm view '<pkg>@<range>' version` | `pnpm view <pkg> versions --json` + filter | `yarn npm info <pkg> -f versions --json` + filter |
+| Lockfile check | `bun install --frozen-lockfile --dry-run` | `npm ci --dry-run` | `pnpm install --frozen-lockfile` | `yarn install --immutable` |
+| Read package.json | `bun pm pkg get <field>` | `npm pkg get <field>` | `pnpm pkg get <field>` | read the file |
+| Run a tool | `bunx <tool>` | `npx <tool>` | `pnpm dlx <tool>` | `yarn dlx <tool>` |
 
-Enumerating the versions an upgrade crossed, without leaving bun:
+Where the notes matter:
+
+- **Peer validation differs sharply in quality.** `pnpm peers check` and `yarn explain peer-requirements` are purpose-built: both name the requiring package, the wanted range and the installed version, and `pnpm peers check` exits `1`, so it works as a gate. npm has no dedicated command -- `npm ls --all --json` surfaces `"invalid: <pkg>@<ver>"` under `.problems`, and `npm install --dry-run` prints the full chain without writing. Bun has the weakest story (a non-fatal warning that names nobody), which is why it gets the script in `references/dependency-audit.md`.
+- **pnpm and yarn report peer problems during install**, so the install output is worth reading rather than discarding: pnpm ends with `Issues with peer dependencies found`, yarn emits `YN0060` naming the package and the six-letter `p`-prefixed hash that `yarn explain peer-requirements` takes.
+- **Only npm enumerates a version range directly.** `npm view '<pkg>@>16.8.0 <=17.0.2' version` lists every match; `bun info` and `pnpm view` given the same range resolve to the single highest one instead, silently hiding what came between. Elsewhere, list all versions and filter.
+- **Yarn berry has no `outdated`.** It was dropped after v1 and `yarn outdated` fails as an unknown script. Use `yarn dlx taze` or `yarn upgrade-interactive`.
+- **Bun's `outdated` has no JSON.** `--json` is accepted and ignored. Parse the table -- the columns are `Current | Update | Latest`.
+
+Filtering versions to a range, per manager:
 
 ```bash
+# bun -- Bun.semver is built in, nothing to download
 bun -e 'const vs = JSON.parse(await Bun.$`bun info graphql versions --json`.text());
   console.log(vs.filter(v => Bun.semver.satisfies(v, ">16.8.0 <=17.0.2"))
                .sort(Bun.semver.order).join("\n"));'
+
+# npm -- native
+npm view 'graphql@>16.8.0 <=17.0.2' version
+
+# pnpm / yarn -- list, then filter with the semver CLI via that manager's runner
+pnpm view graphql versions --json | jq -r '.[]' | xargs pnpm dlx semver -r '>16.8.0 <=17.0.2'
+yarn npm info graphql -f versions --json | jq -r '.versions[]' | xargs yarn dlx semver -r '>16.8.0 <=17.0.2'
 ```
 
-Semver ranges exclude prereleases unless the range names one, so canaries and rc builds drop out without extra filtering.
+Semver ranges exclude prereleases unless the range names one, so canaries and rc builds drop out of all four without extra filtering.
 
-The one real gap is `outdated` in JSON form. It is a read-only query against files bun already wrote -- `npm outdated` reads only `package.json` and the installed tree -- so borrowing it cannot disturb the lockfile or `node_modules`. If you would rather not, `bun outdated`'s table carries the same `Current | Update | Latest` columns and parses fine.
+**Other tools are assumptions too.** These recipes use `jq` and `gh`; neither ships with a package manager. Check before relying on them (`command -v jq gh`) -- `gh` additionally needs auth for release reads. Without `jq`, parse with the project's own runtime; without `gh`, fall back to WebFetch on the releases page.
 
 ---
 
@@ -87,7 +102,7 @@ ls bunfig.toml .yarnrc.yml 2>/dev/null               # bunfig.toml also marks a 
 | `bun.lock` (text) or `bun.lockb` (binary) | bun    | `bun update -i -r`               |
 | `pnpm-lock.yaml`    | pnpm         | `pnpm update -i -r -L`           |
 | `yarn.lock`         | yarn (check `.yarnrc.yml` for berry) | `yarn upgrade-interactive`  |
-| `package-lock.json` | npm          | none built in -- `bunx taze -I` or `bunx npm-check-updates -i` |
+| `package-lock.json` | npm          | none built in -- `npx taze -I` or `npx npm-check-updates -i` |
 
 Workspaces change the shape of every command: a monorepo needs the recursive or filtered form, and every workspace `package.json` enters the delta.
 
@@ -143,45 +158,54 @@ pnpm and yarn have no true dry run here: `pnpm install --frozen-lockfile` and `y
 
 Run these before reading a single release note -- they are cheap and they catch the failures that no changelog would have warned about.
 
-**Peer conflicts (the highest-yield check):**
-
-`bun install` reports a violated peer range as `warn: incorrect peer dependency "graphql@17.0.2"` -- it does not fail, it never names the package that demanded the range, and it scrolls past in normal output. Neither does it survive into any machine-readable form. Run the peer check in `references/dependency-audit.md` instead: it reads the installed manifests and resolves each range with `Bun.semver.satisfies`, naming the requiring package and exiting non-zero on a conflict.
+**Peer conflicts (the highest-yield check).** Use your manager's:
 
 ```bash
-bun run peer-check.ts
-# CONFLICT graphql-tag@2.12.6 needs graphql@^0.9.0 || ... || ^16.0.0 -- installed 17.0.2
+pnpm peers check                     # names package, wanted range, installed version; exits 1
+yarn explain peer-requirements <hash>  # hash comes from the YN0060 line in install output
+npm ls --all --json | jq '.problems'   # "invalid: <pkg>@<ver>"; npm install --dry-run for the full chain
+bun run peer-check.ts                  # see references/dependency-audit.md
 ```
 
-Cross-manager fallbacks for the same question: `npm install --dry-run --no-audit --no-fund` (prints the full chain, writes nothing), `npm ls --all --json | jq '.problems'`, `yarn explain peer-requirements`.
+Bun is the one that needs the script. It reports a violated range as `warn: incorrect peer dependency "graphql@17.0.2"` -- non-fatal, naming nobody, and absent from any machine-readable output:
+
+```text
+$ bun run peer-check.ts
+CONFLICT graphql-tag@2.12.6 needs graphql@^0.9.0 || ... || ^16.0.0 -- installed 17.0.2
+```
+
+npm's plain `npm ls` is equally misleading -- at depth 0 it prints a peer-invalid tree as clean at exit `0`, so `--all --json` is required.
 
 **Engines vs the runtime actually in use:**
 
 ```bash
-bun info <pkg>@<new-version> engines
-bun --version && node --version
+bun info <pkg>@<ver> engines     # npm view / pnpm view / yarn npm info -f engines
+bun --version; node --version
 ```
 
 **Deprecations introduced by the bump:**
 
 ```bash
-bun info <pkg>@<new-version> deprecated || echo "not deprecated"
+bun info <pkg>@<ver> deprecated || echo "not deprecated"
 ```
 
-A package that is *not* deprecated has no such property, and `bun info` treats a missing property as an error: `error: Property deprecated not found`, exit `1`. That is the healthy case -- do not report it as a lookup failure. (`npm view` prints nothing and exits `0` for the same case.)
+A package that is *not* deprecated has no such property, and `bun info` treats a missing property as an error: `error: Property deprecated not found`, exit `1`. That is the healthy case -- do not report it as a lookup failure. `npm view` and `pnpm view` print nothing and exit `0` for the same case.
 
-**Duplicate majors in the tree** -- two copies of a stateful library (React, GraphQL, an ORM client) is a runtime bug, not a size problem:
+**Duplicate majors in the tree** -- two copies of a stateful library (React, GraphQL, an ORM client) is a runtime bug, not a size problem. Use the Why-installed and Installed-tree rows of the matrix:
 
 ```bash
-bun why <pkg> --depth 3
-bun pm ls --all
+bun why <pkg> --depth 3          # pnpm why / npm why / yarn why --peers
+bun pm ls --all                  # pnpm list --depth Infinity / npm ls --all / yarn info -A -R
 ```
 
 **Security posture after the bump:**
 
 ```bash
 bun audit --json | jq 'to_entries[] | {pkg: .key, advisories: [.value[] | {severity, title, vulnerable_versions}]}'
-bun pm scan          # lockfile-only scan, no installed tree needed
+bun pm scan                      # bun only: lockfile scan, no installed tree needed
 ```
+
+`npm audit --json`, `pnpm audit --json` and `yarn npm audit --json` answer the same question with their own output shapes -- read the shape before writing a filter.
 
 **Type package alignment** -- `@types/*` majors track their runtime package's major. A mismatch surfaces as type errors during Phase 6, not as an install failure, so pair them in the delta table.
 
@@ -192,12 +216,12 @@ bun pm scan          # lockfile-only scan, no installed tree needed
 Budget this phase by the risk column from Phase 0. Fetching notes for every transitive patch burns context and buries the findings that matter.
 
 ```bash
-bun info <pkg> repository                          # resolve the repo
-bun info <pkg> homepage                            # docs site, for upgrade guides
+bun info <pkg> repository        # npm view <pkg> repository.url / pnpm view / yarn npm info -f repository
+bun info <pkg> homepage          # docs site, where upgrade guides live
 gh release view v17.0.0 --repo <owner>/<repo> --json tagName,publishedAt,body
 ```
 
-Enumerate every version crossed with the `Bun.semver` recipe in Bun-First Mapping. Note that `bun info '<pkg>@<range>' version` does **not** do this -- it resolves the range to the single highest match (`bun info 'graphql@16' version` returns `16.14.2`), which silently hides the versions in between.
+Enumerate every version crossed with your manager's row in the Capability Matrix. Only npm takes a range directly; with bun and pnpm, `<pkg>@<range>` resolves to the single highest match (`bun info 'graphql@16' version` returns `16.14.2`), silently hiding everything in between.
 
 Source order, cheapest first: `node_modules/<pkg>/CHANGELOG.md` (free, already on disk, but many packages ship none) -> `gh release view` -> the repo's `CHANGELOG.md` / `UPGRADING.md` / `MIGRATION.md` -> the docs site upgrade guide via WebFetch.
 
@@ -236,14 +260,14 @@ From the notes gathered in Phase 2, surface additions the project could use, ran
 Cheapest first, stopping at the first failure and attributing it before moving on:
 
 ```bash
-bun install --frozen-lockfile     # tree resolves as locked
+bun install --frozen-lockfile     # npm ci / pnpm install --frozen-lockfile / yarn install --immutable
 bun run typecheck                 # or: bunx tsc --noEmit
 bun run lint
 bun run build
-bun test
+bun test                          # or the project's own test script
 ```
 
-Read the actual script names from `package.json` rather than assuming; skip gates the project does not define and say so. Then a runtime smoke check -- boot the dev server, hit one route or entry point that exercises the upgraded packages. Type-clean and build-clean code still fails at runtime on changed initialization, config schemas and adapter APIs.
+Substitute your manager's runner throughout (`npm run`, `pnpm`, `yarn`). Note that `bun test` is Bun's own runner: in a project whose tests are Jest or Vitest, the gate is `bun run test`, which executes the project's script. Read the actual script names from `package.json` rather than assuming; skip gates the project does not define and say so. Then a runtime smoke check -- boot the dev server, hit one route or entry point that exercises the upgraded packages. Type-clean and build-clean code still fails at runtime on changed initialization, config schemas and adapter APIs.
 
 Map every failure to the package that caused it. "Build fails" is not a finding; "build fails because the config option was renamed in 16.0" is.
 
@@ -266,24 +290,25 @@ Commit the result by what changed, never by the process that produced it -- `fix
 
 ## Key Gotchas
 
-1. **`bun outdated` has no JSON output** (through 1.3.x) -- `--json` is silently ignored and the table prints anyway. For machine-readable drift use `npm outdated --json`, which works inside a bun, pnpm or yarn tree because it reads `package.json` and `node_modules` directly.
-2. **`bun info` fails outside a project** -- `error: Bun could not find a package.json file to install from`, including for plain registry lookups. Inside a project it is the right tool; `npm view` is for ad-hoc lookups from an arbitrary directory.
-3. **`bun info <pkg> deprecated` errors when the package is healthy** -- `error: Property deprecated not found`, exit `1`. A missing property is an error to `bun info`, so the good outcome looks like a failed command. Branch on the message, not the exit status (`npm view` prints nothing and exits `0`).
-4. **`bun info '<pkg>@<range>' version` returns one version, not the range** -- it resolves to the highest match, silently hiding every version in between. Enumerate with `bun info <pkg> versions` plus a `Bun.semver.satisfies` filter.
-5. **`Bun.Glob` has no brace expansion** -- `new Glob("{*,@*/*}/package.json")` matches nothing and reports no error, so a scan over `node_modules` silently returns zero packages and every check built on it reports success. Scan `*/package.json` and `@*/*/package.json` separately.
-6. **`npm install --dry-run` writes nothing** -- verified: no `package-lock.json` appears and an existing `bun.lock` is untouched. It is the portable peer-conflict reporter, and the only one that prints the requiring package.
-7. **`npm ls` at depth 0 hides peer invalidity** -- a tree with a violated peer range printed clean at exit 0. Use `npm ls --all --json | jq '.problems'`.
-8. **bun writes its banner to stderr and data to stdout** -- `bun audit --json | jq` pipes cleanly; no stripping needed.
-9. **`dist-tags` can be polluted** -- some packages carry dozens of canary and experimental tags. Read `dist-tags.latest`, never the first entry.
-10. **Release tag naming is inconsistent** -- `v17.0.2`, `17.0.2`, `@scope/pkg@6.0.0` in package-tagged monorepos, and release *names* that carry more than the version (React names tag `v19.2.8` as `19.2.8 (July 21st, 2026)`, so name matching fails where `tagName` matching works). Resolve by ladder, do not guess once and give up.
-11. **Canary-heavy repos drown the release list** -- `gh release list --repo vercel/next.js` returns mostly prereleases; pass `--exclude-pre-releases`.
-12. **`repository.url` can point at a renamed org** -- React's metadata says `github.com/react/react`. `gh` follows the redirect, so pass it through rather than validating it by hand.
-13. **Many packages ship no changelog anywhere** -- not in the tarball, not at the monorepo root. GitHub releases are then the only source, and for a few packages the docs site is.
-14. **Yarn berry has no `outdated` command** -- it was not carried over from v1. Use `npm outdated --json` or a manager-agnostic tool.
-15. **Transitive bumps never appear in `package.json`** -- a supply-chain incident or a breaking change in a nested dependency is visible only in the lockfile diff.
-16. **A same-day publish deserves a second look** -- `bun info <pkg> time --json` dates every version. Every manager now ships a cooldown for this reason (`bun install --minimum-release-age`, `npm --min-release-age`, yarn's time gate), so a version the tool refuses to pick may be held back deliberately, not broken.
-17. **`knip` and similar unused-dependency tools flag peer-required packages as unused** -- that is the exact trap Critical Rule 4 exists for. Treat their output as a list of candidates to investigate, never as a removal list.
-18. **Lockfile drift outlives the upgrade** -- widening a range without changing the installed version means the next clean install resolves differently. Flag range-only edits even though nothing appears to have changed.
+1. **A manager you did not detect may not be installed** -- and if it is, it resolves by its own rules and can leave a second lockfile behind. `npm` in particular is not present on every machine that has bun. Every capability has a native form in all four managers (Capability Matrix); reaching across is never necessary and rarely harmless. The same caution covers `jq` and `gh`, which no manager installs.
+2. **`bun outdated` has no JSON output** (through 1.3.x) -- `--json` is silently ignored and the table prints anyway. Parse the table (`Current | Update | Latest`) rather than switching managers for it.
+3. **`bun info` fails outside a project** -- `error: Bun could not find a package.json file to install from`, including for plain registry lookups. Inside a project it is the right tool.
+4. **`bun info <pkg> deprecated` errors when the package is healthy** -- `error: Property deprecated not found`, exit `1`. A missing property is an error to `bun info`, so the good outcome looks like a failed command. Branch on the message, not the exit status (`npm view` prints nothing and exits `0`).
+5. **`bun info '<pkg>@<range>' version` returns one version, not the range** -- it resolves to the highest match, silently hiding every version in between. Enumerate with `bun info <pkg> versions` plus a `Bun.semver.satisfies` filter.
+6. **`Bun.Glob` has no brace expansion** -- `new Glob("{*,@*/*}/package.json")` matches nothing and reports no error, so a scan over `node_modules` silently returns zero packages and every check built on it reports success. Scan `*/package.json` and `@*/*/package.json` separately.
+7. **Peer-conflict reporting is where the managers differ most** -- `pnpm peers check` names package, range and installed version and exits `1`; yarn prints `YN0060` at install with a hash for `yarn explain peer-requirements`; npm needs `npm ls --all --json` -> `.problems` or `npm install --dry-run`; bun emits a non-fatal warning naming nobody. Do not assume the quality of one carries to another.
+8. **`npm ls` at depth 0 hides peer invalidity** -- a tree with a violated peer range printed clean at exit `0`. Use `npm ls --all --json | jq '.problems'`. In npm projects only: `npm install --dry-run` writes nothing (verified -- no `package-lock.json` appears) and prints the full requiring chain.
+9. **bun writes its banner to stderr and data to stdout** -- `bun audit --json | jq` pipes cleanly; no stripping needed.
+10. **`dist-tags` can be polluted** -- some packages carry dozens of canary and experimental tags. Read `dist-tags.latest`, never the first entry.
+11. **Release tag naming is inconsistent** -- `v17.0.2`, `17.0.2`, `@scope/pkg@6.0.0` in package-tagged monorepos, and release *names* that carry more than the version (React names tag `v19.2.8` as `19.2.8 (July 21st, 2026)`, so name matching fails where `tagName` matching works). Resolve by ladder, do not guess once and give up.
+12. **Canary-heavy repos drown the release list** -- `gh release list --repo vercel/next.js` returns mostly prereleases; pass `--exclude-pre-releases`.
+13. **`repository.url` can point at a renamed org** -- React's metadata says `github.com/react/react`. `gh` follows the redirect, so pass it through rather than validating it by hand.
+14. **Many packages ship no changelog anywhere** -- not in the tarball, not at the monorepo root. GitHub releases are then the only source, and for a few packages the docs site is.
+15. **Yarn berry has no `outdated` command** -- it was not carried over from v1, and `yarn outdated` fails as an unknown *script* rather than an unknown command. Use `yarn dlx taze` or `yarn upgrade-interactive`.
+16. **Transitive bumps never appear in `package.json`** -- a supply-chain incident or a breaking change in a nested dependency is visible only in the lockfile diff.
+17. **A same-day publish deserves a second look** -- `bun info <pkg> time --json` dates every version. Every manager now ships a cooldown for this reason (`bun install --minimum-release-age`, `npm --min-release-age`, yarn's time gate), so a version the tool refuses to pick may be held back deliberately, not broken.
+18. **`knip` and similar unused-dependency tools flag peer-required packages as unused** -- that is the exact trap Critical Rule 4 exists for. Treat their output as a list of candidates to investigate, never as a removal list.
+19. **Lockfile drift outlives the upgrade** -- widening a range without changing the installed version means the next clean install resolves differently. Flag range-only edits even though nothing appears to have changed.
 
 ---
 

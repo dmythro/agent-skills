@@ -32,7 +32,9 @@ This is the step that gets skipped, and it is the one that matters.
 bun why <pkg>                  # npm why / pnpm why --json / yarn why --peers
 ```
 
-Then find every installed package that declares it as a peer. Read the installed manifests, not the registry:
+Then find every installed package that declares it as a peer. Read the installed manifests, not the registry.
+
+**bun** (hoisted layout -- manifests sit one or two levels down):
 
 ```bash
 bun -e 'const {Glob} = await import("bun"); const t = "<pkg>";
@@ -43,6 +45,18 @@ bun -e 'const {Glob} = await import("bun"); const t = "<pkg>";
       if (r) console.log(`${m.name}@${m.version} requires ${t}@${r}`);
     }'
 ```
+
+**npm, pnpm, yarn (node-modules linker)** -- same idea without a depth assumption:
+
+```bash
+find node_modules -name package.json -exec jq -r --arg t "<pkg>" \
+  'select(.peerDependencies[$t] // empty)
+   | "\(.name)@\(.version) requires \($t)@\(.peerDependencies[$t])"' {} \; 2>/dev/null | sort -u
+```
+
+**Do not add `-maxdepth` to that command.** pnpm's isolated layout stores real manifests at `node_modules/.pnpm/<name>@<version>[_<peerhash>]/node_modules/<name>/package.json` -- five levels down. A `-maxdepth 3` written for a flat npm tree returns *nothing* under pnpm and reports "no package requires this peer", which is the same silent-empty failure as a glob that matches no files. Bun's `--linker isolated` mode nests the same way, as does any yarn PnP project (which has no `node_modules` at all -- use `yarn why <pkg> --peers` there).
+
+Cheaper still, when the manager offers it: `pnpm peers check` lists every unmet peer with its requester, and `yarn why <pkg> --peers` reports peer-driven requirements directly.
 
 **Do not use `npm view <pkg> peerDependencies` for this.** Without a version specifier it returns the metadata of the registry's `latest`, which is not what is installed -- so a project on `payload@3.88` reading a newer `payload`'s peers gets the wrong range and the wrong verdict. Installed manifests carry the exact version's peers, cost no network call, and cover transitive packages that a `package.json` scan never reaches. Where the registry is genuinely the right source -- checking what a *future* version would require -- pin the version explicitly: `npm view <pkg>@<version> peerDependencies --json`.
 
@@ -123,9 +137,11 @@ Narrow windows are common in framework plugin ecosystems -- a CMS adapter pinnin
 
 Overrides deserve a specific look: a forced version in `overrides` (npm/bun), `resolutions` (yarn) or `pnpm.overrides` silently wins over every declared range, so a package can appear upgradeable and never move. Overrides also decay -- one added to force a security patch stays after the upstream fix ships, holding the tree back.
 
-## Whole-Tree Peer Check
+## Whole-Tree Peer Check (bun)
 
-`bun install` warns once about a violated peer range, does not fail, and never names the package that required it. This resolves every installed peer range against what is installed, names both sides, and exits non-zero on a problem -- suitable as a verification gate. Save as `peer-check.ts`:
+**Only needed in Bun projects.** pnpm ships `pnpm peers check`, yarn reports `YN0060` at install with a hash for `yarn explain peer-requirements`, and npm surfaces `.problems` via `npm ls --all --json`. Bun alone warns once, does not fail, and never names the package that required the range.
+
+This resolves every installed peer range against what is installed, names both sides, and exits non-zero on a problem -- matching what `pnpm peers check` gives pnpm users. Save as `peer-check.ts`:
 
 ```typescript
 import { Glob } from "bun";

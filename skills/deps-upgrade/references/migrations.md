@@ -44,14 +44,16 @@ A project with a migrations directory has committed to generated, reviewed, vers
 
 Where a package ships one, it is more reliable than hand-editing and far more reliable than an agent's memory of the rename. Confirm the exact invocation from the release notes or upgrade guide for the target version -- these tools change their own CLI between majors.
 
+`RUN` below stands for the project manager's own runner -- `bunx`, `npx`, `pnpm dlx` or `yarn dlx`. Substitute the one the project uses; the others may not be installed.
+
 | Ecosystem | Tool | Typical invocation |
 |-----------|------|--------------------|
-| Next.js | `@next/codemod` | `bunx @next/codemod@latest upgrade latest` |
-| React | `codemod` registry | `bunx codemod@latest react/19/migration-recipe` |
-| Tailwind | `@tailwindcss/upgrade` | `bunx @tailwindcss/upgrade` |
-| MUI | `@mui/codemod` | `bunx @mui/codemod@latest <version>/preset-safe <path>` |
-| ESLint | `@eslint/migrate-config` | `bunx @eslint/migrate-config .eslintrc.json` |
-| Generic | `jscodeshift` | `bunx jscodeshift -t <transform> src/` |
+| Next.js | `@next/codemod` | `RUN @next/codemod@latest upgrade latest` |
+| React | `codemod` registry | `RUN codemod@latest react/19/migration-recipe` |
+| Tailwind | `@tailwindcss/upgrade` | `RUN @tailwindcss/upgrade` |
+| MUI | `@mui/codemod` | `RUN @mui/codemod@latest <version>/preset-safe <path>` |
+| ESLint | `@eslint/migrate-config` | `RUN @eslint/migrate-config .eslintrc.json` |
+| Generic | `jscodeshift` | `RUN jscodeshift -t <transform> src/` |
 
 Run order that keeps the diff reviewable:
 

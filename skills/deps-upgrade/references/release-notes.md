@@ -20,14 +20,22 @@ State in the report which tiers were read. A validation that silently skipped ti
 Notes for the target version alone are not enough -- a breaking change shipped mid-range stays broken.
 
 ```bash
+# bun -- Bun.semver is built in
 bun -e 'const vs = JSON.parse(await Bun.$`bun info <pkg> versions --json`.text());
   console.log(vs.filter(v => Bun.semver.satisfies(v, ">16.8.0 <=17.0.2"))
                .sort(Bun.semver.order).join("\n"));'
+
+# npm -- the only manager that takes a range directly
+npm view '<pkg>@>16.8.0 <=17.0.2' version
+
+# pnpm / yarn -- list all, filter with the semver CLI through that manager's runner
+pnpm view <pkg> versions --json | jq -r '.[]' | xargs pnpm dlx semver -r '>16.8.0 <=17.0.2'
+yarn npm info <pkg> -f versions --json | jq -r '.versions[]' | xargs yarn dlx semver -r '>16.8.0 <=17.0.2'
 ```
 
-`bun info <pkg> versions` returns every published version unsorted, so the filter and sort are both needed. Semver ranges exclude prereleases unless the range names one, which drops canaries and rc builds without extra work.
+Version lists come back unsorted, so filter *and* sort. Semver ranges exclude prereleases unless the range names one, which drops canaries and rc builds without extra work.
 
-Cross-manager equivalent: `npm view '<pkg>@>16.8.0 <=17.0.2' version` -- quote the spec so the shell does not consume the comparison operators.
+Quote any range passed to a manager so the shell does not consume the comparison operators. And note that `bun info '<pkg>@<range>' version` and `pnpm view '<pkg>@<range>' version` do **not** enumerate -- they resolve to the single highest match, hiding every version in between.
 
 Pair with publish dates when the timeline matters:
 
@@ -39,11 +47,13 @@ bun info <pkg> time --json | jq -r 'to_entries | map(select(.key | test("^[0-9]"
 ## Step 2: Resolve the Repository
 
 ```bash
-bun info <pkg> repository      # {"type":"git","url":"git+https://github.com/owner/repo.git"}
-bun info <pkg> homepage        # docs site, where upgrade guides usually live
+bun info <pkg> repository                       # {"type":"git","url":"git+https://github.com/owner/repo.git"}
+npm view <pkg> repository.url homepage --json   # npm
+pnpm view <pkg> repository.url homepage --json  # pnpm
+yarn npm info <pkg> -f repository,homepage --json  # yarn
 ```
 
-The URL arrives as `git+https://github.com/owner/repo.git` -- strip the `git+` prefix and `.git` suffix to get `owner/repo`. Cross-manager equivalent: `npm view <pkg> repository.url homepage --json`.
+The URL arrives as `git+https://github.com/owner/repo.git` -- strip the `git+` prefix and `.git` suffix to get `owner/repo`.
 
 Two traps:
 
