@@ -73,10 +73,10 @@ Only reach for the registry when asking what a *different* version declares, and
 ### Step 3: Is it referenced anywhere an import grep would miss
 
 ```bash
-rg -n "<pkg>" --glob '!node_modules' --glob '!*.lock*' -l | head -20
+rg -nF -- "<pkg>" --glob '!node_modules' --glob '!*.lock*' -l | head -20
 ```
 
-Search the package name as a plain string, not as an import. These references are invisible to import-based analysis and to every unused-dependency tool:
+`-F` matters: package names carry `.`, `-` and `@`, and without fixed-string matching a name like `vue.js` also matches `vuexjs`. Search the package name as a plain string, not as an import. These references are invisible to import-based analysis and to every unused-dependency tool:
 
 - Config files naming plugins as strings -- ESLint, Tailwind, PostCSS, Babel, Vite, Jest
 - Binaries invoked from `package.json` scripts
@@ -104,7 +104,7 @@ The registry's `latest` is what exists, not what installs. The ceiling is set by
 
 ### Find the ceiling
 
-Use the peer scan from Step 2 above -- it lists every installed package that constrains the target, at the versions actually installed. The narrowest range in that output is the ceiling.
+Use the peer scan from Step 2 above -- it lists every installed package that constrains the target, at the versions actually installed. The narrowest range in that output is the **peer** ceiling, which is only one of several: `engines`, an override, or a deprecation can cap the same package independently and lower. Clear the peer ceiling and then check the rest (Ceilings that are not peer ranges, below) before reporting a version as reachable.
 
 For the whole tree at once rather than one package, run the peer check below.
 
@@ -151,9 +151,16 @@ import { Glob } from "bun";
 const installed = new Map<string, string>();
 const peers: { from: string; dep: string; range: string; optional: boolean }[] = [];
 
-// Bun.Glob has no brace expansion -- scoped packages need their own scan
-for (const pattern of ["*/package.json", "@*/*/package.json"]) {
-  for await (const rel of new Glob(pattern).scan({ cwd: "node_modules", onlyFiles: true })) {
+// Separate patterns: a Bun.Glob brace alternative cannot contain "/".
+// The .bun/* pairs cover --linker isolated, and need dot:true to be seen at all.
+const PATTERNS = [
+  "*/package.json",
+  "@*/*/package.json",
+  ".bun/*/node_modules/*/package.json",
+  ".bun/*/node_modules/@*/*/package.json",
+];
+for (const pattern of PATTERNS) {
+  for await (const rel of new Glob(pattern).scan({ cwd: "node_modules", onlyFiles: true, dot: true })) {
     const pkg = await Bun.file(`node_modules/${rel}`).json().catch(() => null);
     if (!pkg?.name || !pkg.version) continue;
     installed.set(pkg.name, pkg.version);
@@ -190,7 +197,9 @@ CONFLICT graphql-tag@2.12.6 needs graphql@^0.9.0 || ... || ^16.0.0 -- installed 
 1 peer problem(s)
 ```
 
-`peerDependenciesMeta[dep].optional` is honoured: an optional peer that is simply absent is not a problem, while an optional peer that is installed at a non-satisfying version still is. Hoisted layouts are covered by the top-level scan; under an isolated linker (`--linker isolated`) nested copies exist, so extend the patterns or run it per workspace.
+`peerDependenciesMeta[dep].optional` is honoured: an optional peer that is simply absent is not a problem, while an optional peer that is installed at a non-satisfying version still is.
+
+Verified against both bun linkers. Under `--linker isolated` the top-level patterns match **nothing** -- real manifests live at `node_modules/.bun/<name>@<version>[+hash]/node_modules/<name>/package.json`, and because `.bun` is a dot directory `scan` skips it entirely without `dot: true`. Either omission yields "peers ok" on a tree with a real conflict. In a workspace monorepo, run it per workspace or extend the patterns to each `*/node_modules`.
 
 ## Duplicate Majors
 

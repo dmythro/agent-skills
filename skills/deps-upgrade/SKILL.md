@@ -49,7 +49,7 @@ Read down your project's column and use nothing else. Blank means the manager ha
 | Registry metadata | `bun info <pkg> [prop]` | `npm view <pkg> <field>` | `pnpm view <pkg> <field>` | `yarn npm info <pkg> -f <fields>` |
 | Why installed | `bun why <pkg>` | `npm why <pkg>` | `pnpm why <pkg>` | `yarn why <pkg> --peers` |
 | Installed tree | `bun pm ls --all` | `npm ls --all` | `pnpm list --depth Infinity` | `yarn info -A -R` |
-| Peer validation | `peer-check.ts` (below) | `npm ls --all --json` -> `.problems` | **`pnpm peers check`** | `yarn explain peer-requirements <hash>` |
+| Peer validation | `peer-check.ts` (`references/dependency-audit.md`) | `npm ls --all --json` -> `.problems` | **`pnpm peers check`** | `yarn explain peer-requirements <hash>` |
 | Advisories | `bun audit --json` | `npm audit --json` | `pnpm audit --json` | `yarn npm audit --json` |
 | Outdated | `bun outdated` (table only) | `npm outdated --json` | `pnpm outdated --format json` | -- |
 | Versions in a range | `bun info <pkg> versions` + `Bun.semver` | `npm view '<pkg>@<range>' version` | `pnpm view <pkg> versions --json` + filter | `yarn npm info <pkg> -f versions --json` + filter |
@@ -62,7 +62,8 @@ Where the notes matter:
 - **Peer validation differs sharply in quality.** `pnpm peers check` and `yarn explain peer-requirements` are purpose-built: both name the requiring package, the wanted range and the installed version, and `pnpm peers check` exits `1`, so it works as a gate. npm has no dedicated command -- `npm ls --all --json` surfaces `"invalid: <pkg>@<ver>"` under `.problems`, and `npm install --dry-run` prints the full chain without writing. Bun has the weakest story (a non-fatal warning that names nobody), which is why it gets the script in `references/dependency-audit.md`.
 - **pnpm and yarn report peer problems during install**, so the install output is worth reading rather than discarding: pnpm ends with `Issues with peer dependencies found`, yarn emits `YN0060` naming the package and the six-letter `p`-prefixed hash that `yarn explain peer-requirements` takes.
 - **Only npm enumerates a version range directly.** `npm view '<pkg>@>16.8.0 <=17.0.2' version` lists every match; `bun info` and `pnpm view` given the same range resolve to the single highest one instead, silently hiding what came between. Elsewhere, list all versions and filter.
-- **Yarn berry has no `outdated`.** It was dropped after v1 and `yarn outdated` fails as an unknown script. Use `yarn dlx taze` or `yarn upgrade-interactive`.
+- **The yarn column is berry (v2+). Yarn Classic is a different CLI.** Confirm which before running anything: `yarn.lock` with a `.yarnrc.yml` is berry, `yarn.lock` alone is v1. Classic keeps the npm-style surface -- `yarn outdated`, `yarn info <pkg>`, `yarn audit --json`, `yarn why <pkg>` (no `--peers`), `yarn list`, and `yarn install --frozen-lockfile` rather than `--immutable`. Running berry's `yarn npm info` or `yarn dlx` against v1 simply fails.
+- **Yarn berry has no `outdated`** -- v1 does, and it was dropped in the rewrite, so `yarn outdated` on berry fails as an unknown *script*. On berry use `yarn dlx taze` or `yarn upgrade-interactive`.
 - **Bun's `outdated` has no JSON.** `--json` is accepted and ignored. Parse the table -- the columns are `Current | Update | Latest`.
 
 Filtering versions to a range, per manager:
@@ -93,16 +94,19 @@ Check in this order -- the `packageManager` field wins where both exist, since i
 
 ```bash
 bun pm pkg get packageManager 2>/dev/null            # or: cat package.json | grep packageManager
-ls bun.lock bun.lockb package-lock.json pnpm-lock.yaml yarn.lock deno.lock 2>/dev/null
-ls bunfig.toml .yarnrc.yml 2>/dev/null               # bunfig.toml also marks a Bun project
+ls bun.lock bun.lockb package-lock.json pnpm-lock.yaml yarn.lock 2>/dev/null
+ls bunfig.toml .yarnrc.yml deno.lock 2>/dev/null     # bunfig.toml marks bun; .yarnrc.yml marks yarn berry
 ```
 
 | Lockfile            | Manager      | Interactive upgrade command      |
 |---------------------|--------------|----------------------------------|
 | `bun.lock` (text) or `bun.lockb` (binary) | bun    | `bun update -i -r`               |
 | `pnpm-lock.yaml`    | pnpm         | `pnpm update -i -r -L`           |
-| `yarn.lock`         | yarn (check `.yarnrc.yml` for berry) | `yarn upgrade-interactive`  |
+| `yarn.lock` + `.yarnrc.yml` | yarn berry (v2+) | `yarn upgrade-interactive`  |
+| `yarn.lock`, no `.yarnrc.yml` | yarn classic (v1) | `yarn upgrade-interactive`  |
 | `package-lock.json` | npm          | none built in -- `npx taze -I` or `npx npm-check-updates -i` |
+
+A `deno.lock` with no npm lockfile is a Deno project: none of the four columns apply, and the phases below still do (see `references/package-managers.md`). Say so rather than guessing a manager.
 
 Workspaces change the shape of every command: a monorepo needs the recursive or filtered form, and every workspace `package.json` enters the delta.
 
@@ -140,11 +144,13 @@ Classify every change, because the bump type sets how much scrutiny it earns:
 **Binary lockfiles produce no readable diff.** For `bun.lockb`, either snapshot the resolved tree before and after with `bun pm ls --all` and diff the snapshots, or convert the project once to the text lockfile that has been the default since Bun 1.2:
 
 ```bash
+cp bun.lockb /tmp/bun.lockb.bak                                      # keep the original
 bun install --save-text-lockfile --frozen-lockfile --lockfile-only   # rewrites the lockfile only
-rm bun.lockb                                                          # conversion leaves the old one in place
 ```
 
 `--frozen-lockfile --lockfile-only` keeps the conversion to a re-encoding: no resolution beyond what the lockfile already pins, and no touching `node_modules`. Without them the same command is free to resolve new versions, which changes the delta being measured.
+
+The conversion leaves `bun.lockb` in place, and **deleting it is the user's call, not a cleanup step** -- it is the only copy of the resolution if the new `bun.lock` turns out wrong. Verify the converted file first (`bun install --frozen-lockfile --dry-run` succeeds against it, and the resolved versions match the pre-conversion `bun pm ls --all` snapshot), then ask before `rm bun.lockb`.
 
 Confirm the working tree matches the lockfile before drawing any conclusion from it:
 
@@ -152,7 +158,9 @@ Confirm the working tree matches the lockfile before drawing any conclusion from
 bun install --frozen-lockfile --dry-run    # bun and npm (npm ci --dry-run) check without writing
 ```
 
-pnpm and yarn have no true dry run here: `pnpm install --frozen-lockfile` and `yarn install --immutable` fail fast when the lockfile disagrees with `package.json`, which answers the same question, but they install as a side effect. Run them only where installing is acceptable.
+pnpm has both, and they answer different questions: `pnpm install --dry-run` reports what an install would change while writing nothing (no lockfile, no `node_modules`), whereas `pnpm install --frozen-lockfile` is the validation -- it fails when `package.json` and the lockfile disagree, but installs as a side effect. Pair them as preview-then-validate, or use `--frozen-lockfile --lockfile-only` to check without linking.
+
+Yarn's `yarn install --immutable` likewise fails fast on drift and installs while doing it. Run it only where installing is acceptable.
 
 ## Phase 1: Static Integrity
 
@@ -295,7 +303,7 @@ Commit the result by what changed, never by the process that produced it -- `fix
 3. **`bun info` fails outside a project** -- `error: Bun could not find a package.json file to install from`, including for plain registry lookups. Inside a project it is the right tool.
 4. **`bun info <pkg> deprecated` errors when the package is healthy** -- `error: Property deprecated not found`, exit `1`. A missing property is an error to `bun info`, so the good outcome looks like a failed command. Branch on the message, not the exit status (`npm view` prints nothing and exits `0`).
 5. **`bun info '<pkg>@<range>' version` returns one version, not the range** -- it resolves to the highest match, silently hiding every version in between. Enumerate with `bun info <pkg> versions` plus a `Bun.semver.satisfies` filter.
-6. **`Bun.Glob` has no brace expansion** -- `new Glob("{*,@*/*}/package.json")` matches nothing and reports no error, so a scan over `node_modules` silently returns zero packages and every check built on it reports success. Scan `*/package.json` and `@*/*/package.json` separately.
+6. **`Bun.Glob` brace alternatives cannot contain `/`** -- `{*,@*}/package.json` matches fine, but `{*,@*/*}/package.json` matches nothing and reports no error, so a scan over `node_modules` silently returns zero packages and every check built on it reports success. Use one pattern per shape. The same silent-zero applies to dot directories: `node_modules/.bun` and `node_modules/.pnpm` are invisible to `scan` unless you pass `dot: true`.
 7. **Peer-conflict reporting is where the managers differ most** -- `pnpm peers check` names package, range and installed version and exits `1`; yarn prints `YN0060` at install with a hash for `yarn explain peer-requirements`; npm needs `npm ls --all --json` -> `.problems` or `npm install --dry-run`; bun emits a non-fatal warning naming nobody. Do not assume the quality of one carries to another.
 8. **`npm ls` at depth 0 hides peer invalidity** -- a tree with a violated peer range printed clean at exit `0`. Use `npm ls --all --json | jq '.problems'`. In npm projects only: `npm install --dry-run` writes nothing (verified -- no `package-lock.json` appears) and prints the full requiring chain.
 9. **bun writes its banner to stderr and data to stdout** -- `bun audit --json | jq` pipes cleanly; no stripping needed.
@@ -306,7 +314,7 @@ Commit the result by what changed, never by the process that produced it -- `fix
 14. **Many packages ship no changelog anywhere** -- not in the tarball, not at the monorepo root. GitHub releases are then the only source, and for a few packages the docs site is.
 15. **Yarn berry has no `outdated` command** -- it was not carried over from v1, and `yarn outdated` fails as an unknown *script* rather than an unknown command. Use `yarn dlx taze` or `yarn upgrade-interactive`.
 16. **Transitive bumps never appear in `package.json`** -- a supply-chain incident or a breaking change in a nested dependency is visible only in the lockfile diff.
-17. **A same-day publish deserves a second look** -- `bun info <pkg> time --json` dates every version. Every manager now ships a cooldown for this reason (`bun install --minimum-release-age`, `npm --min-release-age`, yarn's time gate), so a version the tool refuses to pick may be held back deliberately, not broken.
+17. **A same-day publish deserves a second look** -- `bun info <pkg> time --json` dates every version. Every manager now ships a cooldown for this reason (`bun install --minimum-release-age=<seconds>`, `npm install --min-release-age=<days>`, pnpm's `minimumReleaseAge` setting, yarn's default time gate), so a version the tool refuses to pick may be held back deliberately, not broken.
 18. **`knip` and similar unused-dependency tools flag peer-required packages as unused** -- that is the exact trap Critical Rule 4 exists for. Treat their output as a list of candidates to investigate, never as a removal list.
 19. **Lockfile drift outlives the upgrade** -- widening a range without changing the installed version means the next clean install resolves differently. Flag range-only edits even though nothing appears to have changed.
 

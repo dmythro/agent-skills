@@ -4,7 +4,25 @@ Auto-approval patterns for Claude Code `settings.json`. Covers the read-only ins
 
 **Take only your project's manager.** In a Bun project the `bun` and `gh` entries are the working set; the npm, pnpm and yarn entries are for projects using those managers. Allowlisting a manager the project does not use invites the agent to reach for a CLI that may not be installed, and that resolves by its own rules if it is.
 
-**OpenCode**: the same commands work with picomatch format (`"command": "allow"`) in OpenCode config.
+**OpenCode uses a different shape** -- the `Bash(command:*)` patterns below do not transfer. Rules are picomatch globs under `permission.bash` in `opencode.json`, mapping a command pattern to `allow`, `ask` or `deny`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "bun outdated*": "allow",
+      "bun info*": "allow",
+      "bun why*": "allow",
+      "bun audit*": "allow",
+      "gh release view*": "allow"
+    }
+  }
+}
+```
+
+Keep the catch-all `"*": "ask"` so anything unlisted still prompts. The same containment rule applies as below -- a glob ending in `*` matches any continuation, so write `"pnpm audit --json"` without a trailing `*` rather than letting `--fix` through.
 
 ## Pattern Syntax
 
@@ -36,7 +54,7 @@ Every subcommand below reads state without modifying `package.json`, the lockfil
       "Bash(npm why:*)",
       "Bash(npm explain:*)",
       "Bash(npm audit)",
-      "Bash(npm audit --json:*)",
+      "Bash(npm audit --json)",
       "Bash(npm query:*)",
       "Bash(npm pkg get:*)",
       "Bash(pnpm outdated:*)",
@@ -46,7 +64,7 @@ Every subcommand below reads state without modifying `package.json`, the lockfil
       "Bash(pnpm peers check:*)",
       "Bash(pnpm pkg get:*)",
       "Bash(pnpm audit)",
-      "Bash(pnpm audit --json:*)",
+      "Bash(pnpm audit --json)",
       "Bash(yarn why:*)",
       "Bash(yarn info:*)",
       "Bash(yarn npm info:*)",
@@ -66,9 +84,15 @@ Every subcommand below reads state without modifying `package.json`, the lockfil
 - `bun pm scan` -- reads the lockfile and queries the advisory database
 - `gh release list` / `gh release view` -- read-only; release creation is `gh release create`
 
-**Audit is deliberately not a `:*` prefix.** `Bash(npm audit:*)` would also match `npm audit fix`, which rewrites versions to satisfy advisories -- majors included. Prefix patterns match any continuation, so a subcommand that shares the prefix is covered by it. The same reasoning applies to `pnpm audit --fix`. `bun audit` has no fix form and `yarn npm audit` has none either, so both are safe as prefixes.
+**Audit patterns are fully exact, with no trailing `:*` at all.** A prefix pattern matches any continuation, so:
 
-Audit the rest of your allowlist for this shape: any read-only command with a writing sibling one word deeper needs an exact pattern, not a prefix.
+- `Bash(npm audit:*)` also matches `npm audit fix`, which rewrites versions to satisfy advisories, majors included.
+- `Bash(pnpm audit --json:*)` also matches `pnpm audit --json --fix` and `--fix=update`. pnpm's `--fix` is a *flag*, so it can follow `--json`; pinning the prefix to `--json` does not contain it.
+- `Bash(npm audit --json:*)` is unsafe for the same reason, less obviously: npm accepts the subcommand positionally **after** flags. Verified -- `npm audit --json fix --dry-run` returns an install summary (`"add": [...], "added": 1`), not an advisory report, so it is `npm audit fix` running. Flag-position pinning buys nothing against a positional subcommand.
+
+`bun audit` has no fix form, and `yarn npm audit` has none either, so both remain safe as prefixes.
+
+Audit the rest of your allowlist for all three shapes: a writing sibling one word deeper (`npm audit fix`), a writing *flag* that can follow any prefix you pin (`pnpm audit ... --fix`), and a subcommand accepted positionally after flags (`npm audit --json fix`). The last two are easy to miss precisely because the pattern looks specific. When a read-only command has a writing counterpart anywhere in its grammar, pin the whole string.
 
 ---
 

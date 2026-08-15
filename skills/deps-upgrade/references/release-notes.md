@@ -69,19 +69,30 @@ Source order, cheapest first.
 ### Local changelog (free, no network)
 
 ```bash
-cat node_modules/<pkg>/CHANGELOG.md 2>/dev/null | head -200
+# Read the section covering the versions crossed -- not the first N lines
+awk '/^#+ +\[?16\.9/,/^#+ +\[?16\.8/' node_modules/<pkg>/CHANGELOG.md 2>/dev/null
 ```
 
 Always try first, but expect misses: many popular packages ship no changelog in the tarball at all.
 
+**Do not truncate with `head` before searching.** Changelogs are newest-first, so a fixed cut reads the most recent entries and stops -- which is backwards when the upgrade spans older versions, and it drops the breaking change silently rather than reporting that it looked. Bound the *output* (the matches), never the *input* (the content searched).
+
 ### GitHub releases (primary)
 
 ```bash
-gh release list --repo <owner>/<repo> --limit 30 --exclude-pre-releases
+gh release list --repo <owner>/<repo> --limit 100 --exclude-pre-releases
 gh release view <tag> --repo <owner>/<repo> --json tagName,name,publishedAt,body
 ```
 
 `--exclude-pre-releases` matters on canary-heavy repos -- an unfiltered `gh release list --repo vercel/next.js` returns almost nothing but canaries.
+
+**Size the limit to the range, then confirm it reached back far enough.** `--limit` is a hard cap, and a repo that ships weekly can bury a six-month-old version below any round number you picked -- silently, since a short list looks the same as a complete one. Check that the oldest tag returned predates the version being upgraded *from*; if it does not, raise the limit or page the API:
+
+```bash
+gh api --paginate repos/<owner>/<repo>/releases --jq '.[] | select(.prerelease|not) | .tag_name'
+```
+
+The same applies to every `head` in this document: they bound what you print, not what you search.
 
 **Tag naming has no standard**, so resolve tags from the repo's actual list rather than constructing them:
 
