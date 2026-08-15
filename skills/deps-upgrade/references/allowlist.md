@@ -2,6 +2,8 @@
 
 Auto-approval patterns for Claude Code `settings.json`. Covers the read-only inspection commands this skill uses across bun, npm, pnpm, yarn and `gh`.
 
+**Take only your project's manager.** In a Bun project the `bun` and `gh` entries are the working set; the npm, pnpm and yarn entries are there for projects using those managers. The one npm entry worth keeping in a Bun project is `Bash(npm outdated:*)`, the single query bun has no machine-readable form for.
+
 **OpenCode**: the same commands work with picomatch format (`"command": "allow"`) in OpenCode config.
 
 ## Pattern Syntax

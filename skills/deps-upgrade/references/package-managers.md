@@ -2,6 +2,8 @@
 
 Checked against bun 1.3.14, npm 11.19.0, pnpm 11.21.0 and yarn 4.18.0 -- by execution where the command runs outside its native project type, and against the tool's own help output otherwise. Where a manager lacks a capability the gap is stated rather than papered over with an approximation.
 
+**Use the project's own manager.** This page is a cross-manager reference, not a menu: in a Bun project run the bun column, in a pnpm project the pnpm column. Mixing managers inside one project risks a second lockfile and a differently-resolved tree. The one documented exception is `npm outdated --json` (see Outdated below), which reads `package.json` and `node_modules` without resolving or writing anything. The `SKILL.md` Bun-First Mapping lists the native command for every step.
+
 ## Detection
 
 ```bash
@@ -61,7 +63,12 @@ Bun's table carries the same three columns as `Current | Update | Latest`.
 | pnpm    | `pnpm view <pkg> <field...>` (npm-compatible) |
 | yarn    | `yarn npm info <pkg> -f <fields> --json` |
 
-**`bun info` requires a `package.json` in the working directory** and fails with `error: Bun could not find a package.json file to install from` otherwise -- including for plain registry reads and version-range queries. Default to `npm view`, which works anywhere.
+**`bun info` requires a `package.json` in the working directory** and fails with `error: Bun could not find a package.json file to install from` otherwise -- including for plain registry reads. Inside a project this never comes up, so `bun info` is the default there; `npm view` is for ad-hoc lookups from an arbitrary directory.
+
+Two further `bun info` behaviors worth knowing before scripting it:
+
+- **A missing property is an error, not empty output.** `bun info <pkg> deprecated` on a healthy package prints `error: Property deprecated not found` and exits `1`. The absence *is* the good news -- do not report it as a failed lookup. `npm view` prints nothing and exits `0`.
+- **A range resolves to one version.** `bun info 'graphql@16' version` returns `16.14.2`, the highest match -- not the list. Enumerate with `bun info <pkg> versions` plus a `Bun.semver.satisfies` filter.
 
 Fields worth requesting:
 

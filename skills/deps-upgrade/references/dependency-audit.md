@@ -35,9 +35,13 @@ bun why <pkg>                  # npm why / pnpm why --json / yarn why --peers
 Then find every installed package that declares it as a peer. Read the installed manifests, not the registry:
 
 ```bash
-find node_modules -maxdepth 3 -name package.json -exec \
-  jq -r --arg t "<pkg>" 'select(.peerDependencies[$t] // empty)
-    | "\(.name)@\(.version) requires \($t)@\(.peerDependencies[$t])"' {} \; 2>/dev/null
+bun -e 'const {Glob} = await import("bun"); const t = "<pkg>";
+  for (const p of ["*/package.json", "@*/*/package.json"])
+    for await (const rel of new Glob(p).scan({cwd: "node_modules"})) {
+      const m = await Bun.file(`node_modules/${rel}`).json().catch(() => null);
+      const r = m?.peerDependencies?.[t];
+      if (r) console.log(`${m.name}@${m.version} requires ${t}@${r}`);
+    }'
 ```
 
 **Do not use `npm view <pkg> peerDependencies` for this.** Without a version specifier it returns the metadata of the registry's `latest`, which is not what is installed -- so a project on `payload@3.88` reading a newer `payload`'s peers gets the wrong range and the wrong verdict. Installed manifests carry the exact version's peers, cost no network call, and cover transitive packages that a `package.json` scan never reaches. Where the registry is genuinely the right source -- checking what a *future* version would require -- pin the version explicitly: `npm view <pkg>@<version> peerDependencies --json`.
@@ -84,12 +88,9 @@ The registry's `latest` is what exists, not what installs. The ceiling is set by
 
 ### Find the ceiling
 
-```bash
-# Every installed package that constrains the target, at the versions actually installed
-find node_modules -maxdepth 3 -name package.json -exec \
-  jq -r --arg t "<pkg>" 'select(.peerDependencies[$t] // empty)
-    | "\(.name)@\(.version) -> \($t)@\(.peerDependencies[$t])"' {} \; 2>/dev/null | sort -u
-```
+Use the peer scan from Step 2 above -- it lists every installed package that constrains the target, at the versions actually installed. The narrowest range in that output is the ceiling.
+
+For the whole tree at once rather than one package, run the peer check below.
 
 Then confirm against the resolver, which reports the conflict with its full chain:
 
@@ -122,6 +123,57 @@ Narrow windows are common in framework plugin ecosystems -- a CMS adapter pinnin
 
 Overrides deserve a specific look: a forced version in `overrides` (npm/bun), `resolutions` (yarn) or `pnpm.overrides` silently wins over every declared range, so a package can appear upgradeable and never move. Overrides also decay -- one added to force a security patch stays after the upstream fix ships, holding the tree back.
 
+## Whole-Tree Peer Check
+
+`bun install` warns once about a violated peer range, does not fail, and never names the package that required it. This resolves every installed peer range against what is installed, names both sides, and exits non-zero on a problem -- suitable as a verification gate. Save as `peer-check.ts`:
+
+```typescript
+import { Glob } from "bun";
+
+const installed = new Map<string, string>();
+const peers: { from: string; dep: string; range: string; optional: boolean }[] = [];
+
+// Bun.Glob has no brace expansion -- scoped packages need their own scan
+for (const pattern of ["*/package.json", "@*/*/package.json"]) {
+  for await (const rel of new Glob(pattern).scan({ cwd: "node_modules", onlyFiles: true })) {
+    const pkg = await Bun.file(`node_modules/${rel}`).json().catch(() => null);
+    if (!pkg?.name || !pkg.version) continue;
+    installed.set(pkg.name, pkg.version);
+    for (const [dep, range] of Object.entries(pkg.peerDependencies ?? {})) {
+      peers.push({
+        from: `${pkg.name}@${pkg.version}`,
+        dep,
+        range: range as string,
+        optional: pkg.peerDependenciesMeta?.[dep]?.optional === true,
+      });
+    }
+  }
+}
+
+let bad = 0;
+for (const p of peers) {
+  const have = installed.get(p.dep);
+  if (!have) {
+    if (!p.optional) { console.log(`MISSING  ${p.from} needs ${p.dep}@${p.range}`); bad++; }
+    continue;
+  }
+  if (!Bun.semver.satisfies(have, p.range)) {
+    console.log(`CONFLICT ${p.from} needs ${p.dep}@${p.range} -- installed ${have}`);
+    bad++;
+  }
+}
+console.log(bad === 0 ? "peers ok" : `${bad} peer problem(s)`);
+process.exit(bad === 0 ? 0 : 1);
+```
+
+```text
+$ bun run peer-check.ts
+CONFLICT graphql-tag@2.12.6 needs graphql@^0.9.0 || ... || ^16.0.0 -- installed 17.0.2
+1 peer problem(s)
+```
+
+`peerDependenciesMeta[dep].optional` is honoured: an optional peer that is simply absent is not a problem, while an optional peer that is installed at a non-satisfying version still is. Hoisted layouts are covered by the top-level scan; under an isolated linker (`--linker isolated`) nested copies exist, so extend the patterns or run it per workspace.
+
 ## Duplicate Majors
 
 Two copies of a stateful library in one tree is a runtime bug, not a bundle-size issue: React hooks fail across copies, ORM clients hold separate pools, `instanceof` checks fail across module instances.
@@ -148,22 +200,28 @@ Two other cases: a package that has started shipping its own types makes the `@t
 
 A project upgrades its CMS and asks why `graphql` is in `package.json` when the app writes no GraphQL, and whether it can go to 17.
 
+**Observed 2026-08-15** against `payload@3.88.0` (published 2026-08-11), `@payloadcms/graphql@3.88.0`, `@payloadcms/next@3.88.0`, `graphql@16.8.0` installed, `graphql@17.0.2` latest. The versions matter: this is a snapshot of one dependency graph, not a permanent fact about Payload. Re-run the commands rather than trusting the conclusion -- once Payload widens the range, the same method returns the opposite verdict, which is the point of recording the method instead of the answer.
+
 ```bash
 $ bun why graphql
 graphql@16.8.0
   └─ myapp (requires 16.8.0)
 
-$ npm view payload peerDependencies --json
+$ bun info payload@3.88.0 peerDependencies
 { "graphql": "^16.8.1" }
 
-$ npm view @payloadcms/next peerDependencies --json
-{ "next": ">=16.2.6 <17.0.0", "graphql": "^16.8.1", "payload": "3.88.0" }
+$ bun info @payloadcms/graphql@3.88.0 peerDependencies
+{ "graphql": "^16.8.1", "payload": "3.88.0" }
+
+$ bun info @payloadcms/next@3.88.0 peerDependencies
+{ "next": ">=15.2.9 <15.3.0 || >=15.3.9 <15.4.0 || >=15.4.11 <15.5.0 || >=16.2.6 <17.0.0",
+  "graphql": "^16.8.1", "payload": "3.88.0" }
 ```
 
 Both questions answered from the peer data, and the answers are the opposite of what an import grep suggests:
 
-- **Why it is here**: `payload` and `@payloadcms/next` declare `graphql` as a required peer. The CMS builds a GraphQL layer internally whether or not the application queries it. Declared with zero imports is correct.
-- **Can it go to 17**: no. `^16.8.1` caps it at 16.x. Installing 17 leaves the tree resolvable but peer-invalid -- `bun install` warns once and continues, so the breakage surfaces at runtime rather than at install.
-- **Bonus finding**: the same call shows the Next.js ceiling is `<17.0.0`, set by the CMS adapter rather than by Next itself.
+- **Why it is here**: all three Payload packages declare `graphql` as a required peer. The CMS builds a GraphQL layer internally whether or not the application queries it. Declared with zero imports is correct, and removing it breaks the install.
+- **Can it go to 17 (as of `payload@3.88.0`)**: no. `^16.8.1` caps it at 16.x, and `graphql@17.0.2` is outside it. Installing 17 leaves the tree resolvable but peer-invalid -- `bun install` warns once and continues, so the breakage surfaces at runtime rather than at install. The whole-tree peer check above catches it; `bun outdated` does not.
+- **Bonus finding**: the same three calls show the Next.js ceiling is `<17.0.0`, set by the CMS adapter rather than by Next itself, and that the adapter's range excludes several patch windows within 15.x.
 
-The correct report is "required peer, upgrade blocked upstream, revisit when the CMS widens the range" -- not "unused dependency, safe to remove", which is what every unused-dependency tool would have said.
+The correct report is "required peer, upgrade blocked upstream at `payload@3.88.0`, revisit when Payload widens the range" -- not "unused dependency, safe to remove", which is what every unused-dependency tool would have said. When revisiting, the check is a single command: `bun info payload peerDependencies` against the current release.

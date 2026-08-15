@@ -29,7 +29,7 @@ Which migration systems are in play is a property of the dependency tree, not of
 
 ```bash
 # ORM / CMS packages that own a schema
-node -p "Object.keys({...require('./package.json').dependencies, ...require('./package.json').devDependencies}).join('\n')" \
+bun pm pkg get dependencies devDependencies \
   | grep -iE 'payload|drizzle|prisma|typeorm|mikro-orm|sequelize|knex|mongoose|kysely'
 
 # Existing migration directories -- their presence sets the expected workflow

@@ -20,24 +20,30 @@ State in the report which tiers were read. A validation that silently skipped ti
 Notes for the target version alone are not enough -- a breaking change shipped mid-range stays broken.
 
 ```bash
-npm view '<pkg>@>16.8.0 <=17.0.2' version
+bun -e 'const vs = JSON.parse(await Bun.$`bun info <pkg> versions --json`.text());
+  console.log(vs.filter(v => Bun.semver.satisfies(v, ">16.8.0 <=17.0.2"))
+               .sort(Bun.semver.order).join("\n"));'
 ```
 
-Quote the spec so the shell does not consume the comparison operators. Output is one `<pkg>@<version> '<version>'` line per release, oldest first. Pair with publish dates when the timeline matters:
+`bun info <pkg> versions` returns every published version unsorted, so the filter and sort are both needed. Semver ranges exclude prereleases unless the range names one, which drops canaries and rc builds without extra work.
+
+Cross-manager equivalent: `npm view '<pkg>@>16.8.0 <=17.0.2' version` -- quote the spec so the shell does not consume the comparison operators.
+
+Pair with publish dates when the timeline matters:
 
 ```bash
-npm view <pkg> time --json | jq -r 'to_entries | map(select(.key | test("^[0-9]"))) | sort_by(.value) | .[-15:] | .[] | "\(.key)  \(.value)"'
+bun info <pkg> time --json | jq -r 'to_entries | map(select(.key | test("^[0-9]")))
+  | sort_by(.value) | .[-15:] | .[] | "\(.key)  \(.value)"'
 ```
-
-Prereleases appear in both listings. Filter them out unless the project deliberately runs one.
 
 ## Step 2: Resolve the Repository
 
 ```bash
-npm view <pkg> repository.url homepage --json
+bun info <pkg> repository      # {"type":"git","url":"git+https://github.com/owner/repo.git"}
+bun info <pkg> homepage        # docs site, where upgrade guides usually live
 ```
 
-`repository.url` arrives as `git+https://github.com/owner/repo.git` -- strip the `git+` prefix and `.git` suffix to get `owner/repo`.
+The URL arrives as `git+https://github.com/owner/repo.git` -- strip the `git+` prefix and `.git` suffix to get `owner/repo`. Cross-manager equivalent: `npm view <pkg> repository.url homepage --json`.
 
 Two traps:
 
