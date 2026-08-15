@@ -68,7 +68,7 @@ Defaults (CLI v0.7): all tracked changes, base = repository default branch, plai
 - `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end.
 - `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review.
 - `coderabbit stats` -- review statistics (`--rebuild` rescans review history).
-- `coderabbit usage` -- the current billing period: organization, whether usage billing (overage) is active, your review count, and the period reset date. **Billing totals only** -- it does not report the hourly bucket, and there is no CLI command that reveals a PR-side retry window (see Key Gotchas).
+- `coderabbit usage` -- the current billing period: organization, whether usage billing (overage) is active, your review count, and the period reset date. **Billing totals only** -- it does not report the hourly bucket, and there is no CLI command that reveals a PR-side retry window (see Key Gotchas). Present in CLI v0.7 (`coderabbit --help`) even though the online command reference omits it: **the installed binary is the source of truth, not the docs page** -- verify with `--help` before "removing an unsupported command". There is likewise no `@coderabbitai rate limit` PR command; the documented set is review / full review / pause / resume / ignore / resolve / approve / summary / generate sequence diagram / configuration / help.
 
 ## The Local Review-Fix Loop
 
