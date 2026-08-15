@@ -13,6 +13,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `coderabbit` | CodeRabbit CLI local reviews (pre-commit/pre-push/pre-PR) + `.coderabbit.yaml` low-noise configuration | `bunx skills add dmythro/agent-skills --skill coderabbit` <br> `npx skills add dmythro/agent-skills --skill coderabbit` |
 | `git-ci` | CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab) | `bunx skills add dmythro/agent-skills --skill git-ci` <br> `npx skills add dmythro/agent-skills --skill git-ci` |
 | `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, native issue Types, milestone scoping, Epic/Upcoming roadmap views | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
+| `deps-upgrade` | Dependency upgrade validation for bun/npm/pnpm/yarn: delta from git, peer and engine conflicts, release notes, breaking changes, migrations and codemods, held-back package analysis, verification gates | `bunx skills add dmythro/agent-skills --skill deps-upgrade` <br> `npx skills add dmythro/agent-skills --skill deps-upgrade` |
 
 ## Install
 
@@ -26,6 +27,7 @@ bunx skills add dmythro/agent-skills --skill git-pr
 bunx skills add dmythro/agent-skills --skill git-ci
 bunx skills add dmythro/agent-skills --skill git-project
 bunx skills add dmythro/agent-skills --skill coderabbit
+bunx skills add dmythro/agent-skills --skill deps-upgrade
 
 # or with npx
 npx skills add dmythro/agent-skills --skill bun-cli
@@ -35,6 +37,7 @@ npx skills add dmythro/agent-skills --skill git-pr
 npx skills add dmythro/agent-skills --skill git-ci
 npx skills add dmythro/agent-skills --skill git-project
 npx skills add dmythro/agent-skills --skill coderabbit
+npx skills add dmythro/agent-skills --skill deps-upgrade
 ```
 
 Or install all skills at once:
@@ -81,6 +84,7 @@ Skills with CLI commands include a `references/allowlist.md` with tiered auto-ap
 - [`git-ci/references/allowlist.md`](skills/git-ci/references/allowlist.md) -- `gh pr checks`, `gh run list`, `glab ci status`, `glab ci list`, etc.
 - [`git-project/references/allowlist.md`](skills/git-project/references/allowlist.md) -- `gh project list`, `gh project field-list`, `gh project item-list`, sub-issue reads, etc.
 - [`coderabbit/references/allowlist.md`](skills/coderabbit/references/allowlist.md) -- `coderabbit auth status`, `coderabbit doctor`, `coderabbit stats`, cached findings replay, etc.
+- [`deps-upgrade/references/allowlist.md`](skills/deps-upgrade/references/allowlist.md) -- `bun outdated`, `npm view`, `npm ls`, `bun why`, `pnpm audit`, `gh release view`, etc.
 
 ## License
 
