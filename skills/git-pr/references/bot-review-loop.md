@@ -140,9 +140,11 @@ The authoritative "done?" signal is **zero unresolved threads from this bot**, g
 # Exit: 0 clean (no unresolved threads; HEAD covered by a review object or, where BOT_CLEAN_RE /
 #       BOT_CHECK_OK_RE are set, by a clean-review notice or a "reviewed" commit status)
 #       | 2 not clean | 3 pending
-#       4 failed, no retry pending | 6 rate-limited (CodeRabbit: HEAD's commit status says the
-#       round was refused, or the newest notice's own timestamp + its parsed window has not
-#       elapsed; Copilot: hard limit found in the review run's CI log -- never retry)
+#       4 failed, no retry pending | 5 not applicable (the status says this PR is being SKIPPED:
+#       draft, disabled base branch -- no review is coming until the config or PR state changes)
+#       | 6 rate-limited (CodeRabbit: HEAD's commit status says the round was refused, or the
+#       newest notice's own timestamp + its parsed window has not elapsed; Copilot: hard limit
+#       found in the review run's CI log -- never retry). Every 6 exports BOT_WAIT_UNTIL.
 # Uses gh's {owner}/{repo} placeholders + inline $(...) so each command matches the allowlist
 # patterns on its own -- no owner=/repo=/head= assignments (a VAR= prefix breaks matching).
 bot_status() {
@@ -268,8 +270,10 @@ bot_status() {
   if [ -n "$chk_desc" ] && [ -n "$BOT_CHECK_LIMIT_RE" ] && printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_LIMIT_RE"; then
     back=$(( 600 * (1 << ${BOT_BOUNCES:-0}) )); [ "$back" -gt 7200 ] && back=7200
     until_ts="${lim_until%.*}"; [ -z "$until_ts" ] && until_ts=$(( chk_at + back ))
-    # After a repeat bounce, never wait less than the backoff: the last stated window proved short.
-    [ "${BOT_BOUNCES:-0}" -gt 0 ] && [ "$until_ts" -lt "$(( $(date +%s) + back ))" ] && until_ts=$(( $(date +%s) + back ))
+    # After a repeat bounce, never wait less than the backoff -- the last stated window proved
+    # short. Anchored to the BOUNCE (chk_at), never to now: a deadline measured from now slides
+    # forward on every poll, so the window never opens and the loop waits forever.
+    [ "${BOT_BOUNCES:-0}" -gt 0 ] && [ "$until_ts" -lt "$(( chk_at + back ))" ] && until_ts=$(( chk_at + back ))
     if [ "$(date +%s)" -lt "$until_ts" ]; then
       BOT_WAIT_UNTIL="$until_ts"
       echo "$BOT_THREAD_PREFIX rate-limited at HEAD (status: $chk_desc) -- next review available in ~$(( (until_ts - $(date +%s)) / 60 + 1 )) min (BOT_WAIT_UNTIL=$until_ts, bounces=${BOT_BOUNCES:-0})"
