@@ -26,7 +26,8 @@ gh pr checks {number} --json name,state,description --jq '
 
 # From the commit status API, pinned to the PR head (check-runs does NOT contain it)
 gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/status --jq '
-  [.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | {state, description, updated_at}'
+  [.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at)
+  | if . == null then empty else {state, description, updated_at} end'
 ```
 
 The `gh api` form is **not** covered by this skill's allowlist, which keeps every `gh api` call manual (`references/allowlist.md`); the `git-pr` skill allowlists it as a GET-only pattern (`repos/*/commits/*/status`). The `gh pr checks` form above needs no exception.

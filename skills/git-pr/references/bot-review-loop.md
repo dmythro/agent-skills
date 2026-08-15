@@ -33,6 +33,7 @@ BOT_LIMIT_RE=''                                                       # posts no
 BOT_CLEAN_RE=''                                                       # a clean review still submits a review object
 BOT_CHECK_LIMIT_RE=''                                                 # posts no commit status: its per-review
 BOT_CHECK_OK_RE=''                                                    # evidence is the 'Copilot' Actions run
+BOT_CHECK_RUNNING_RE=''                                               # (bot_requested reads requested_reviewers)
 bot_rerequest() { gh pr edit "$1" --add-reviewer "@copilot"; }
 # The failure notice is generic and can mask a HARD RATE LIMIT (weekly model cap, separate
 # from the premium-request/credit budget -- which it doesn't even consult). Each review runs
@@ -84,6 +85,9 @@ BOT_CLEAN_RE='no actionable comments were generated|actionable comments posted:[
 # Check Nobody Reads. Matched loosely: the wording is short and CodeRabbit adds variants over time.
 BOT_CHECK_LIMIT_RE='rate limit'                                       # this sha was NOT reviewed
 BOT_CHECK_OK_RE='review completed'                                    # this sha WAS reviewed
+BOT_CHECK_RUNNING_RE='review in progress'                             # a review is running RIGHT NOW on this
+                                                                      # sha (status state: pending) -- bot_requested
+                                                                      # reads it, so no tick triggers over it
 bot_rerequest() { gh pr comment "$1" --body "@coderabbitai review"; }
 ```
 
@@ -93,10 +97,13 @@ Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL 
 
 **A rate-limited auto-review is completely silent: no review, no threads, no comment -- and a green check.** A push-triggered round has no trigger comment to bounce back against (a manual `@coderabbitai review` at least gets its "Review rate limited" ack), so the one place it is always recorded is a **commit status** CodeRabbit writes on the sha it processed -- and that status is `success` whether the review ran or was refused. In the PR's checks list it renders as `CodeRabbit -- Review rate limited` next to a green tick, between the CI jobs, which is why it gets read as "all checks passed" and the round is presumed reviewed.
 
-| `description`         | Means                                                                                     |
-|-----------------------|-------------------------------------------------------------------------------------------|
-| `Review completed`    | The bot reviewed this sha. With zero unresolved threads, that is a genuine clean round      |
-| `Review rate limited` | The bucket was empty: **this sha was never reviewed**. Nothing is queued -- when the window reopens, only a fresh trigger starts a review |
+| `state`   | `description`         | Means                                                                          |
+|-----------|-----------------------|--------------------------------------------------------------------------------|
+| `pending` | `Review in progress`  | A review is running on this sha right now -- wait, and never trigger over it     |
+| `success` | `Review completed`    | The bot reviewed this sha. With zero unresolved threads, that is a genuine clean round |
+| `success` | `Review rate limited` | The bucket was empty: **this sha was never reviewed**. Nothing is queued -- when the window reopens, only a fresh trigger starts a review |
+
+`state` separates only "running" from "finished" -- it is `success` for **both** finished outcomes, which is why the description is the verdict. Match the description loosely: the wording is short and CodeRabbit adds variants over time.
 
 Read it with `description` explicitly requested -- and beware which surface you ask:
 
@@ -105,7 +112,7 @@ Read it with `description` explicitly requested -- and beware which surface you 
 gh pr checks {pr} --json name,state,bucket,description --jq '.[] | select(.name|ascii_downcase|startswith("coderabbit"))'
 
 # HEAD-pinned, authoritative: the commit status API
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --jq '[.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | {state, description, updated_at}'
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --jq '[.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | if . == null then empty else {state, description, updated_at} end'
 ```
 
 - **It is a commit *status*, not a check *run*.** `gh api repos/{owner}/{repo}/commits/{sha}/check-runs` never lists it (on a PR whose only bot signal is this status, that endpoint returns `total_count: 0`) -- a check-runs-only detector sees nothing at all.
@@ -227,7 +234,9 @@ bot_status() {
 
   # 6) Commit status on HEAD (BOT_CHECK_* set): the sha-pinned record of what happened to THIS
   #    HEAD -- and the only one a silent bounce leaves (The Status Check Nobody Reads). Its state
-  #    is always success, so only the description is read, never the state/bucket.
+  #    is success for BOTH finished outcomes, so only the description is read, never the state.
+  #    "Review in progress" matches neither regex and falls through to the pending path, where
+  #    bot_requested reports it as in flight -- so no tick triggers over a running review.
   chk_desc=""; chk_at=0
   if [ -n "$BOT_CHECK_LIMIT_RE$BOT_CHECK_OK_RE" ]; then
     chk="$(gh api repos/{owner}/{repo}/commits/"$(gh pr view "$pr" --json headRefOid --jq .headRefOid)"/status --jq "[.statuses[] | select((.context|ascii_downcase)|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at|fromdateiso8601)|\(.description // \"\")\" end")"
@@ -250,16 +259,20 @@ bot_status() {
     echo "$BOT_THREAD_PREFIX status says HEAD was NOT reviewed ($chk_desc); window elapsed -- a bounced round is never queued, post a fresh trigger"
     return 3
   fi
+  # "Reviewed" on HEAD's own status outranks the generic quota timer, exactly as a clean notice
+  # naming HEAD does: a notice whose window is still open cannot un-review a sha the bot has
+  # already stamped as reviewed. Checked in this order, an hour-long window opened before the
+  # review would otherwise report rate-limited for an hour on an already-clean HEAD.
+  if [ -n "$chk_desc" ] && [ -n "$BOT_CHECK_OK_RE" ] && printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_OK_RE"; then
+    echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (HEAD's commit status reports it reviewed: $chk_desc)."; return 0
+  fi
   if [ -n "$lim_until" ] && [ "$(date +%s)" -lt "${lim_until%.*}" ]; then
     echo "$BOT_THREAD_PREFIX rate-limited -- next review available in ~$(( (${lim_until%.*} - $(date +%s)) / 60 + 1 )) min"
     return 6
   fi
-  if [ -n "$chk_desc" ] && [ -n "$BOT_CHECK_OK_RE" ] && printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_OK_RE"; then
-    echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (HEAD's commit status reports it reviewed: $chk_desc)."; return 0
-  fi
   [ "${clean_at:-0}" -gt "${lim_at:-0}" ] && { echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (trigger ack covers HEAD; no review object expected)."; return 0; }
   if bot_requested "$pr"; then
-    echo "$BOT_THREAD_PREFIX review already requested (auto-review or an earlier request) -- waiting, no re-request needed"
+    echo "$BOT_THREAD_PREFIX review already in flight (requested, or the commit status says it is running) -- waiting, no re-request needed"
   else
     echo "No $BOT_THREAD_PREFIX review yet for current HEAD (not requested)"
   fi
@@ -267,16 +280,20 @@ bot_status() {
 }
 ```
 
-## bot_requested (pending-request check)
+## bot_requested (already-in-flight check)
 
-Auto-review (and any earlier request) leaves the bot as a pending requested reviewer until its review lands. Re-requesting on top of that is the collision to avoid. **The pending entry is only visible on the REST endpoint** -- `gh pr view --json reviewRequests` omits bot reviewers entirely (verified: it stays `[]` while REST shows the request), so never use it for this check:
+Auto-review (and any earlier request) leaves the bot as a pending requested reviewer until its review lands. Re-requesting on top of that is the collision to avoid. **The pending entry is only visible on the REST endpoint** -- `gh pr view --json reviewRequests` omits bot reviewers entirely (verified: it stays `[]` while REST shows the request), so never use it for this check. CodeRabbit is comment-triggered and never appears there at all; its equivalent evidence is the commit status reading `Review in progress` (state `pending`), so the check covers both surfaces:
 
 ```bash
-# Usage: bot_requested <PR_NUMBER>   (read-only; exit 0 = a request for this bot is pending)
-bot_requested() { [ "$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" = "true" ]; }
+# Usage: bot_requested <PR_NUMBER>   (read-only; exit 0 = a review for this bot is already in flight)
+bot_requested() {
+  [ "$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" = "true" ] && return 0
+  [ -n "$BOT_CHECK_RUNNING_RE" ] || return 1
+  gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/status --jq "[.statuses[] | select((.context|ascii_downcase)|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | (.description // \"\")" 2>/dev/null | grep -iqE "$BOT_CHECK_RUNNING_RE"
+}
 ```
 
-(Copilot appears there as login `Copilot` -- yet another identity form; the lowercase prefix match covers it. CodeRabbit is comment-triggered and never appears as a requested reviewer -- for it this check is simply always false, which is correct.)
+(Copilot appears in `requested_reviewers` as login `Copilot` -- yet another identity form; the lowercase prefix match covers it, and with `BOT_CHECK_RUNNING_RE` empty the second half is skipped. For CodeRabbit the first half is always false and the status is the whole answer: without it, a tick fired while a review was already running would post a redundant trigger.)
 
 ## bot_tick (re-request only if needed + one bounded poll)
 

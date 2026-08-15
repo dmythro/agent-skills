@@ -100,7 +100,7 @@ The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are curren
 |------|--------------------------|----------|
 | CLI (`--agent`) | Exit `1` with zero findings -- identical to a failure by exit status, and "no findings" reads as clean | `{"type":"error","errorType":"rate_limit",...,"metadata":{"waitTime":"7 minutes"}}` -- branch on `errorType`, never on the findings count |
 | CLI (default output) | The run ends with a limit message and no findings | Read the message; do not treat the empty result as a passing review |
-| PR-side | Often **nothing at all** -- no review, no threads, no comment -- plus a green `CodeRabbit` check in the PR's checks list | That check's `description` reads `Review rate limited` (state is `SUCCESS` either way): `gh pr checks --json name,state,description`. `Review completed` is the reviewed case |
+| PR-side | Often **nothing at all** -- no review, no threads, no comment -- plus a green `CodeRabbit` check in the PR's checks list | That check's `description` reads `Review rate limited` (state is `SUCCESS` for every finished outcome): `gh pr checks --json name,state,description`. `Review completed` is the reviewed case, and `Review in progress` (state `PENDING`) means it is still running -- wait rather than trigger |
 
 The PR-side row is the one that misleads most: the checks list shows a tick next to CodeRabbit between passing CI jobs, so the PR reads as reviewed-and-green when the code was never looked at. PR-side handling (windows, re-triggers, the loop) lives in the `git-pr` skill.
 

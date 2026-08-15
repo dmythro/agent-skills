@@ -70,10 +70,13 @@ glab ci get             # full detail for the branch's pipeline
 gh pr checks --json name,state,bucket,description --jq '.[] | select(.name|ascii_downcase|startswith("coderabbit"))'
 ```
 
-| `description`         | Reality                                                                        |
-|-----------------------|--------------------------------------------------------------------------------|
-| `Review completed`    | The bot reviewed this commit                                                   |
-| `Review rate limited` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
+| `state`   | `description`         | Reality                                                             |
+|-----------|-----------------------|----------------------------------------------------------------------|
+| `pending` | `Review in progress`  | Running right now -- the PR is not reviewed *yet*                    |
+| `success` | `Review completed`    | The bot reviewed this commit                                         |
+| `success` | `Review rate limited` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
+
+`state` tells running from finished, nothing more: both finished outcomes are `success`.
 
 Two surfaces make this invisible, so avoid both for bot checks: `gh pr view --json statusCheckRollup` returns `context`/`state`/`targetUrl` only (no description), and `gh api repos/{owner}/{repo}/commits/{sha}/check-runs` does not list it at all -- it is a commit *status*, readable per sha via `gh api repos/{owner}/{repo}/commits/{sha}/status`. Handling the rate-limited case (windows, re-triggers, the review loop) is the `git-pr` skill's `references/bot-review-loop.md`.
 
