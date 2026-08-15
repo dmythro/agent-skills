@@ -70,12 +70,14 @@ glab ci get             # full detail for the branch's pipeline
 gh pr checks --json name,state,bucket,description --jq '.[] | select(.name|ascii_downcase|startswith("coderabbit"))'
 ```
 
-| `state`   | `description`         | Reality                                                             |
-|-----------|-----------------------|----------------------------------------------------------------------|
-| `pending` | `Review in progress`  | Running right now -- the PR is not reviewed *yet*                    |
-| `success` | `Review completed`    | The bot reviewed this commit                                         |
-| `success` | `Review rate limited` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
-| `success` | `Review skipped: ...` | Excluded by config (e.g. `draft pull request`) -- nothing was reviewed |
+| `state` / `bucket`     | `description`         | Reality                                             |
+|------------------------|-----------------------|------------------------------------------------------|
+| `PENDING` / `pending`  | `Review in progress`  | Running right now -- the PR is not reviewed *yet*    |
+| `SUCCESS` / `pass`     | `Review completed`    | The bot reviewed this commit                         |
+| `SUCCESS` / `pass`     | `Review rate limited` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
+| `SUCCESS` / `pass`     | `Review skipped: <reason>` | Excluded by config (`draft pull request`, `reviews are disabled for this base branch`) -- nothing was reviewed |
+
+`gh pr checks` uppercases `state` and adds the lowercase `bucket`; the underlying REST commit status returns lowercase (`success`) and no bucket at all. Across 25 PRs of one account, 15 of 62 rounds came back `Review rate limited` -- a green check next to the CI jobs meaning nothing was reviewed, roughly a quarter of the time.
 
 `state` tells running from finished, nothing more: both finished outcomes are `success`.
 
