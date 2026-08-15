@@ -155,12 +155,13 @@ The conversion leaves `bun.lockb` in place, and **deleting it is the user's call
 Confirm the working tree matches the lockfile before drawing any conclusion from it:
 
 ```bash
-bun install --frozen-lockfile --dry-run    # bun and npm (npm ci --dry-run) check without writing
+bun install --frozen-lockfile --dry-run          # bun   -- validates, writes nothing
+npm ci --dry-run                                 # npm   -- validates, writes nothing
+pnpm install --frozen-lockfile --lockfile-only   # pnpm  -- validates without linking
+yarn install --immutable                         # yarn  -- validates, but installs
 ```
 
-pnpm has both, and they answer different questions: `pnpm install --dry-run` reports what an install would change while writing nothing (no lockfile, no `node_modules`), whereas `pnpm install --frozen-lockfile` is the validation -- it fails when `package.json` and the lockfile disagree, but installs as a side effect. Pair them as preview-then-validate, or use `--frozen-lockfile --lockfile-only` to check without linking.
-
-Yarn's `yarn install --immutable` likewise fails fast on drift and installs while doing it. Run it only where installing is acceptable.
+Bun and npm give a true dry run: both fail when `package.json` and the lockfile disagree, and neither touches disk. pnpm splits the job -- `pnpm install --dry-run` previews what an install would change while writing nothing, while `--frozen-lockfile` is the validation and installs as a side effect; pairing it with `--lockfile-only` checks without linking `node_modules`. Yarn has no dry run here: `yarn install --immutable` fails fast on drift and installs while doing it, so run it only where installing is acceptable.
 
 ## Phase 1: Static Integrity
 
