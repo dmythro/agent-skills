@@ -390,11 +390,13 @@ bun test --only-failures          # Print failures and the summary only
 bun test --pass-with-no-tests     # Exit 0 when nothing matches (monorepos)
 ```
 
-**`--filter` is not a test-name filter.** `-F`/`--filter` selects **workspaces**, and a
-positional argument selects **files**. Passing a test name to either matches nothing, and
-`bun test` then exits **1** ("no tests found") -- so the mistake fails the run rather than
-passing it silently, but it still tests nothing. Use `-t` / `--test-name-pattern` / `--grep`
-for test names. `--pass-with-no-tests` turns that exit 1 into 0, which is what would hide it.
+**`--filter` is not a test-name filter.** In `bun test`, `--filter` is another **file path**
+filter, identical to a positional argument; `-F` is rejected. (Workspace selection is a
+package-manager feature: `bun run --filter '*' test`.) Passing a test name usually matches
+no files, and `bun test` then exits **1** ("did not match any test files") -- so the mistake
+fails the run rather than passing it silently, but it still tests nothing. Use `-t` /
+`--test-name-pattern` / `--grep` for test names. `--pass-with-no-tests` turns that exit 1
+into 0, which is what would hide it.
 
 ### Coverage
 
@@ -657,7 +659,7 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 8. **TypeScript**: Bun runs TypeScript natively with no compilation step. Uses its own transpiler (not tsc)
 9. **Auto-install**: Bun can auto-install missing packages on import (disabled by default, enable with `[install] auto = true` in bunfig.toml)
 10. **`bun run` vs `bun`**: `bun run script` runs a package.json script; `bun file.ts` runs a file directly. `bun script` tries script first, then falls back to file
-11. **`--filter` is not a name filter for tests.** It selects workspaces. `bun test -t <regex>` (or `--grep`) filters test names; a positional argument filters file paths. Getting this wrong matches nothing and exits 1 -- unless `--pass-with-no-tests` is set, which turns it into a green run that tested nothing
+11. **`--filter` is not a name filter for tests.** In `bun test` it filters **file paths**, same as a positional argument (`-F` is rejected; workspace selection is `bun run --filter '*' test`). `bun test -t <regex>` (or `--grep`) filters test names. Getting this wrong matches nothing and exits 1 -- unless `--pass-with-no-tests` is set, which turns it into a green run that tested nothing
 12. **Coverage reporters are `text` and `lcov` only** -- `--coverage-reporter=json` is rejected
 13. **`bunfig.toml` is strict TOML as of v1.4.** Unquoted values, missing newlines between pairs, and integers past `Number.MAX_SAFE_INTEGER` now fail at startup with a `SyntaxError`. `linker = isolated` must be `linker = "isolated"`
 14. **Bun invoked as `node` no longer loads `.env` (v1.4+).** Under `bun --bun`, `bunx --bun`, or a `node` symlink, a script calling `node` sees those variables as `undefined`. Pass `--env-file`, matching Node's behavior

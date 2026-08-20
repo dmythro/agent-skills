@@ -14,16 +14,16 @@ MySQL/MariaDB, so audit any offset-correction or `JSON.parse()` you added as a w
 - MariaDB 10.5+ `JSON` columns and JSON function results (`JSON_OBJECT()`, `JSON_EXTRACT()`)
   are **parsed into objects**. They returned JSON text before -- remove the `JSON.parse()`.
 
-Also new or changed in 1.4: Postgres `infinity`/`-infinity` decode to the numbers `Infinity`
-and `-Infinity` instead of an invalid `Date`; `PGSSLMODE` is honored from the environment
+Also new or changed in 1.4: Postgres `infinity`/`-infinity` **dates/timestamps** decode to
+the numbers `Infinity` and `-Infinity` instead of an invalid `Date`; `PGSSLMODE` is honored from the environment
 (`PGSSLMODE=require` against a non-TLS server now fails rather than connecting in plaintext);
 `connectionTimeout` bounds the entire handshake rather than restarting per packet; and
 `sql.unsafe()` / `sql.file()` accept an object of named parameters for `:name`, `$name`, and
 `@name` placeholders on SQLite (an object previously bound nothing and returned no rows).
 
 For PgBouncer transaction pooling, construct with `new Bun.SQL({ prepare: false })` -- since
-v1.3.11 Bun sends each such query in a single round-trip, so PgBouncer can no longer split it
-across connections and return the wrong result.
+v1.3.11 Bun sends each such query's Parse+Bind+Execute as one atomic batch, so PgBouncer can
+no longer split it across connections and return the wrong result.
 
 ## Prerequisites
 

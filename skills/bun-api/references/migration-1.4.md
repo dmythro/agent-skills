@@ -93,8 +93,8 @@ Check `bun --version` before applying any of this. On 1.3.x the pre-1.4 behavior
   `.simple()` is UTC too; `timestamptz` is unaffected.
 - **`Bun.sql` parses MariaDB 10.5+ `JSON` columns** and JSON function results into objects.
   Remove the `JSON.parse()`.
-- **Postgres `infinity` / `-infinity`** decode to the numbers `Infinity` / `-Infinity`, not an
-  invalid `Date`. Check before calling `Date` methods.
+- **Postgres `infinity` / `-infinity` dates/timestamps** decode to the numbers `Infinity` /
+  `-Infinity`, not an invalid `Date`. Check before calling `Date` methods.
 - **`PGSSLMODE` is honored** from the environment (a `?sslmode=` in the URL still wins).
   `PGSSLMODE=require` against a non-TLS server now fails instead of connecting in plaintext.
 - **`connectionTimeout` bounds the whole handshake** instead of restarting per packet.

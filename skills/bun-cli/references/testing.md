@@ -14,7 +14,7 @@ bun test [flags] [file/dir patterns...]
 |---|---|
 | `-t, --test-name-pattern regex` | **Filter by test name.** `--grep` is an alias (v1.3.6+) |
 | positional args | Filter by **file path**, not test name (`bun test foo bar`) |
-| `-F, --filter pattern` | Selects **workspaces**, not tests -- see the warning below |
+| `--filter pattern` | Extra **file path** filter, same as a positional arg -- see the warning below |
 | `--timeout ms` | Per-test timeout in milliseconds (default: 5000) |
 | `--bail [count]` | Stop after N failures (default: 1 if no count) |
 | `--rerun-each N` | Re-run each test **file** N times |
@@ -50,10 +50,12 @@ bun test [flags] [file/dir patterns...]
 | `--update-timings` | Write measured durations to the first `--timings` file (v1.4+) |
 | `--changed[=ref]` | Only run test files affected by git changes; optional ref (commit/branch/tag) (v1.3.13+) |
 
-**`--filter` does not filter test names.** `-F`/`--filter` selects workspaces and a positional
-argument selects files. Passing a test name to either matches nothing, and `bun test` exits
-**1** with "no tests found" -- the mistake fails the run rather than passing it, but it still
-tested nothing. Use `-t`, `--test-name-pattern`, or `--grep`. Note that
+**`--filter` does not filter test names.** In `bun test`, `--filter <pattern>` is another
+**file path** filter, identical to a positional argument; `-F` is rejected as an invalid
+argument, and neither selects workspaces (workspace selection is a package-manager feature:
+`bun run --filter '*' test`). Passing a test name usually matches no files, and `bun test`
+exits **1** ("did not match any test files") -- the mistake fails the run rather than passing
+it, but it still tested nothing. Use `-t`, `--test-name-pattern`, or `--grep`. Note that
 `--pass-with-no-tests` converts that exit 1 to 0, so combining the two does hide it.
 
 > `bun test --help` is authoritative and matches the installed binary. Concepts:
@@ -418,7 +420,11 @@ In `bunfig.toml`:
 coverage = true
 coverageReporter = ["text", "lcov"]
 coverageDir = "./coverage"
-coverageThreshold = { line = 80, function = 80, statement = 80 }
+
+# Fractions 0-1, PLURAL keys. Singular keys (line/function) are silently ignored -- the
+# gate never fires. `statements` is accepted but not enforced. A bare number
+# (coverageThreshold = 0.8) sets lines and functions at once.
+coverageThreshold = { lines = 0.8, functions = 0.8 }
 
 # Ignore patterns for coverage
 coveragePathIgnorePatterns = ["node_modules", "test", "**/*.test.ts"]

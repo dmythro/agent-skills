@@ -1,7 +1,7 @@
 # HTTP Server Reference
 
-> Full API: `node_modules/bun-types/docs/runtime/http/server.mdx`,
-> `http/routing.mdx`, `http/websockets.mdx`, `http/tls.mdx`, `http/error-handling.mdx`.
+> Full API: `node_modules/bun-types/docs/runtime/http/server.mdx`, `runtime/http/routing.mdx`,
+> `runtime/http/websockets.mdx`, `runtime/http/tls.mdx`, `runtime/http/error-handling.mdx`.
 > Behavior that changed in 1.4 is collected in `migration-1.4.md`.
 
 ## Routes
@@ -35,17 +35,18 @@ Bun.serve({
     '/static/*': { dir: './public' },
 
     '/api/*': Response.json({ error: 'not found' }, { status: 404 }),
-    '/*': () => new Response('Not Found', { status: 404 }),
   },
 
   fetch(req) {
-    return new Response('Unmatched', { status: 404 })
+    return new Response('Unmatched', { status: 404 })   // no '/*' route above, so this runs
   },
 })
 ```
 
 **Precedence**: exact (`/users/all`) > parameter (`/users/:id`) > wildcard (`/users/*`) >
-global catch-all (`/*`). Route parameters are percent-decoded automatically.
+global catch-all (`/*`). A registered `'/*'` route catches every unmatched path, so `fetch`
+never runs alongside one -- use either `'/*'` or `fetch` as the fallback, not both. Route
+parameters are percent-decoded automatically.
 
 **Per-method objects answer `HEAD` with the `GET` handler** when no `HEAD` key is set (v1.4+;
 before, the request fell through to the next route or 404).

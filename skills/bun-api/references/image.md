@@ -12,7 +12,8 @@ Do not assume parity across platforms -- an unsupported format rejects with
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| JPEG, PNG, WebP, GIF, BMP | yes | yes | yes |
+| JPEG, PNG, WebP | yes | yes | yes |
+| GIF, BMP (decode only) | built-in | ImageIO | WIC |
 | HEIC / AVIF | not supported | ImageIO | WIC + Store codec |
 | TIFF (decode) | not supported | ImageIO | WIC |
 | Clipboard | returns `null` | NSPasteboard | Win32 |
@@ -26,7 +27,8 @@ Both OS-backed formats carry an extra condition, and they differ per platform:
 
 JPEG, PNG, and WebP go through statically-linked codecs on every platform, so their encoded
 output is byte-identical across Linux, macOS, and Windows. Formats handled by the system
-backend inherit the OS's patch level.
+backend inherit the OS's patch level. GIF, BMP, and TIFF are decode-only -- there are no
+`.gif()`/`.bmp()`/`.tiff()` encoder methods; re-encode those decodes as JPEG/PNG/WebP.
 
 ## Clipboard (v1.4+)
 

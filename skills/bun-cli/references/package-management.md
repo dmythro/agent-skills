@@ -26,7 +26,7 @@ bun install [flags]
 | `--ignore-scripts` | Skip lifecycle scripts |
 | `--trust` | Run lifecycle scripts for new dependencies |
 | `--concurrent-scripts N` | Max parallel lifecycle scripts |
-| `--backend` | Install backend: `clonefile` (default on macOS), `hardlink`, `symlink`, `copyfile` |
+| `--backend` | Install backend: `clonefile` (macOS default, macOS-only), `hardlink` (Linux/Windows default), `clonefile_each_dir` (macOS-only), `copyfile` (fallback when the others fail), `symlink` (mostly internal for `file:` deps; needs `--preserve-symlinks` at runtime) |
 | `--linker hoisted\|isolated` | Dependency layout. The default comes from the lockfile's `configVersion`, not the Bun version: `isolated` only when `configVersion = 1` **and** the project uses workspaces; `hoisted` otherwise, including every pre-v1.3.2 lockfile |
 | `--cwd path` | Set working directory |
 | `-g, --global` | Install globally |
@@ -62,7 +62,7 @@ Since v1.3.13, `bun install` streams tarballs to disk during download instead of
 **Bun 1.3 cannot read `lockfileVersion: 3`** — verify no CI job or teammate is pinned to an
 older Bun before committing one. Version 2 adds two parse-time checks: an npm package resolved
 to a tarball outside the configured registry must carry an integrity hash, and git dependency
-entries are rejected if they contain `/`, `\`, or `..`. v0/v1 lockfiles keep loading without
+entries are validated against path traversal. v0/v1 lockfiles keep loading without
 those checks; `bun install` migrates them.
 
 `configVersion` is why upgrading Bun does not silently relayout an existing project: the linker

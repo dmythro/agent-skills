@@ -9,8 +9,13 @@ previously wrapped or truncated into range. Hashes produced by Bun 1.3 with a lo
 
 ## Post-Quantum Algorithms (v1.4+)
 
+> Documented in `docs/runtime/nodejs-compat.mdx` (`node:crypto` and `SubtleCrypto`
+> sections), not `hashing.mdx`.
+
 NIST ML-DSA (FIPS 204 signatures, parameter sets 44/65/87) and ML-KEM (FIPS 203 key
-encapsulation, 768/1024) are available in both Web Crypto and `node:crypto`.
+encapsulation, 768/1024) are available in Web Crypto. `node:crypto` covers ML-DSA
+sign/verify and ML-KEM key generation/import, but has no `encapsulate`/`decapsulate` --
+encapsulation goes through `crypto.subtle`, even for keys created with `node:crypto`.
 
 ```typescript
 // Web Crypto -- key encapsulation

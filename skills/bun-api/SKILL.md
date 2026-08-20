@@ -54,13 +54,13 @@ for; the shipped docs cover exact signatures and options.
 | Task | Doc path (under `node_modules/bun-types/docs/`) |
 |---|---|
 | HTTP server, routes, WebSockets | `runtime/http/server.mdx`, `runtime/http/routing.mdx`, `runtime/http/websockets.mdx` |
-| `fetch`, TCP, UDP, DNS | `runtime/networking/fetch.mdx`, `networking/tcp.mdx`, `networking/udp.mdx`, `networking/dns.mdx` |
+| `fetch`, TCP, UDP, DNS | `runtime/networking/fetch.mdx`, `runtime/networking/tcp.mdx`, `runtime/networking/udp.mdx`, `runtime/networking/dns.mdx` |
 | File I/O, streams, binary data | `runtime/file-io.mdx`, `runtime/streams.mdx`, `runtime/binary-data.mdx` |
 | Shell, subprocesses, PTY | `runtime/shell.mdx`, `runtime/child-process.mdx` |
 | SQL, SQLite, Redis, S3 | `runtime/sql.mdx`, `runtime/sqlite.mdx`, `runtime/redis.mdx`, `runtime/s3.mdx` |
-| Parsers | `runtime/json5.mdx`, `jsonl.mdx`, `xml.mdx`, `toml.mdx`, `yaml.mdx`, `markdown.mdx`, `file-types.mdx` |
-| Images, WebView, cron, secrets, archives | `runtime/image.mdx`, `webview.mdx`, `cron.mdx`, `secrets.mdx`, `archive.mdx` |
-| Hashing, utils, semver, glob, cookies, CSRF | `runtime/hashing.mdx`, `utils.mdx`, `semver.mdx`, `glob.mdx`, `cookies.mdx`, `csrf.mdx` |
+| Parsers | `runtime/json5.mdx`, `runtime/jsonl.mdx`, `runtime/xml.mdx`, `runtime/toml.mdx`, `runtime/yaml.mdx`, `runtime/markdown.mdx`, `runtime/file-types.mdx` |
+| Images, WebView, cron, secrets, archives | `runtime/image.mdx`, `runtime/webview.mdx`, `runtime/cron.mdx`, `runtime/secrets.mdx`, `runtime/archive.mdx` |
+| Hashing, utils, semver, glob, cookies, CSRF | `runtime/hashing.mdx`, `runtime/utils.mdx`, `runtime/semver.mdx`, `runtime/glob.mdx`, `runtime/cookies.mdx`, `runtime/csrf.mdx` |
 | Node.js compatibility | `runtime/nodejs-compat.mdx` |
 
 ## When to Use
@@ -93,7 +93,6 @@ const server = Bun.serve({
       POST: async req => Response.json(await req.json()),
     },
     '/static/*': { dir: './public' },                 // serve a directory (v1.4+)
-    '/*': Response.json({ error: 'not found' }, { status: 404 }),
   },
 
   fetch(req: Request): Response | Promise<Response> {  // unmatched requests
@@ -108,14 +107,16 @@ const server = Bun.serve({
 console.log(`Listening on ${server.url}`)
 ```
 
-Route precedence: exact > `:param` > `*` > global `/*`. Handlers receive a `BunRequest`
-(a `Request` plus `params` and `cookies`).
+Route precedence: exact > `:param` > `*` > global `/*`. A registered `'/*'` route catches
+every unmatched path, so `fetch` only runs when no `'/*'` route exists -- use one or the
+other as the fallback, not both. Handlers receive a `BunRequest` (a `Request` plus `params`
+and `cookies`).
 
 Key methods: `server.stop()`, `server.reload()` (hot-swap handler), `server.requestIP(req)`, `server.upgrade(req)` (WebSocket).
 
 > **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming
 > responses, static file serving, and 1.4 behavior changes. Full API in
-> `node_modules/bun-types/docs/runtime/http/server.mdx` and `http/routing.mdx`.
+> `node_modules/bun-types/docs/runtime/http/server.mdx` and `runtime/http/routing.mdx`.
 
 ## TCP / UDP Sockets
 
@@ -551,7 +552,7 @@ TOML.stringify({ name: "app" })
 // Markdown -- built-in CommonMark + GFM parser (replaces marked, remark, etc.)
 const html = markdown.html("# Title\n\n**Bold** text.")
 const ansi = markdown.ansi("# Title")        // ANSI terminal output (v1.3.12+)
-markdown.react(readme)                       // React elements (v1.4+)
+markdown.react(readme)                       // React elements (v1.3.12+)
 markdown.render(src, { heading: (c, { level }) => `<h${level}>${c}</h${level}>` })
 
 // Cron -- OS-level jobs, in-process scheduler, and expression parser
@@ -780,13 +781,16 @@ const pasted = Bun.Image.fromClipboard()      // v1.4+, macOS/Windows only, null
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| JPEG, PNG, WebP, GIF, BMP | yes | yes | yes |
+| JPEG, PNG, WebP | yes | yes | yes |
+| GIF, BMP (**decode only**) | built-in | ImageIO | WIC |
 | HEIC / AVIF | `ERR_IMAGE_FORMAT_UNSUPPORTED` | ImageIO (AVIF **encode** needs Apple Silicon M3+) | WIC + Microsoft Store codec (HEIF Image Extensions / AV1 Video Extension) |
 | TIFF decode | no | ImageIO | WIC |
 | Clipboard | returns `null` | yes | yes |
 
 JPEG/PNG/WebP use statically-linked codecs, so their encoded output is byte-identical across
-platforms; the rest go through the OS backend.
+platforms; HEIC/AVIF/TIFF (and GIF/BMP on macOS/Windows) go through the OS backend. There
+are no `.gif()`/`.bmp()`/`.tiff()` encoder methods -- re-encode those decodes as
+JPEG/PNG/WebP.
 
 > **Reference**: See `references/image.md`, and
 > `node_modules/bun-types/docs/runtime/image.mdx` for the full compatibility matrix.
@@ -818,17 +822,15 @@ Compact index — reach for these when the task fits, then read the linked doc b
 | `Bun.XML.parse()` / `.stringify()` | XML without `fast-xml-parser`/`xml2js`; `.xml` imports return the parsed doc | `runtime/xml.mdx` |
 | `Bun.TOML.stringify()` | Writing TOML (parser now TOML v1.1.0 conformant) | `runtime/toml.mdx` |
 | `Bun.secrets` | Storing credentials in the OS keychain instead of a dotfile (experimental) | `runtime/secrets.mdx` |
-| `Bun.Terminal` + `Bun.spawn({ terminal })` | Driving `bash`/`vim`/`htop` from JS; replaces `node-pty` | `runtime/child-process.mdx` |
 | `Bun.spawn({ cgroup })` | Capping a child's memory/PIDs on Linux before it starts | `runtime/child-process.mdx` |
-| `Bun.markdown.react()` | Rendering Markdown to React elements | `runtime/markdown.mdx` |
 | `Bun.Image.fromClipboard()` | Reading an image off the system pasteboard (macOS/Windows) | `runtime/image.mdx` |
-| `res.textStream()` / `req.textStream()` | Iterating a body as decoded UTF-8 strings, not bytes | `runtime/streams.mdx` |
+| `res.textStream()` / `req.textStream()` | Iterating a body as decoded UTF-8 strings, not bytes | no docs page -- see `bun-types/fetch.d.ts` |
 | `fetch(url, { compress: 'gzip' })` | Compressing a request body and setting `Content-Encoding` | `runtime/networking/fetch.mdx` |
 | `fetch(url, { protocol: 'http2' })` | HTTP/2 or HTTP/3 requests (experimental) | `runtime/networking/fetch.mdx` |
 | `routes: { '/x/*': { dir: './public' } }` | Serving a directory; replaces `express.static`/`sirv` | `runtime/http/routing.mdx` |
-| `process.on('memoryPressure', fn)` | Dropping caches when the OS reports low memory | `runtime/nodejs-compat.mdx` |
+| `process.on('memoryPressure', fn)` | Dropping caches when the OS reports low memory; the listener receives `'warning'` or `'critical'` | no docs page -- see `bun-types/overrides.d.ts` |
 | `Bun.isStandaloneExecutable` | Branching inside a `--compile` binary, allocation-free | `bundler/executables.mdx` |
-| ML-DSA / ML-KEM | Post-quantum signatures and key encapsulation | `runtime/hashing.mdx` |
+| ML-DSA / ML-KEM | Post-quantum signatures and key encapsulation | `runtime/nodejs-compat.mdx` |
 
 `ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
 backpressure automatically — `Bun.serve` pauses a request/response body when the socket

@@ -113,10 +113,12 @@ smol = false                        # Reduce memory usage
 
 # Coverage
 coverage = false
-coverageReporter = ["text"]         # "text", "lcov", "json"
+coverageReporter = ["text"]         # "text" and/or "lcov" -- "json" is rejected
 coverageDir = "./coverage"
 coveragePathIgnorePatterns = ["node_modules", "test"]
-coverageThreshold = { line = 0, function = 0, statement = 0 }
+# Fractions 0-1, PLURAL keys -- singular keys (line/function) are silently ignored.
+# `statements` is accepted but not enforced. A bare number sets lines and functions.
+coverageThreshold = { lines = 0.8, functions = 0.8 }
 ```
 
 ### Bundle Configuration
