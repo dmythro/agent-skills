@@ -826,7 +826,6 @@ Compact index — reach for these when the task fits, then read the linked doc b
 | `Bun.Image.fromClipboard()` | Reading an image off the system pasteboard (macOS/Windows) | `runtime/image.mdx` |
 | `res.textStream()` / `req.textStream()` | Iterating a body as decoded UTF-8 strings, not bytes | no docs page -- see `bun-types/fetch.d.ts` |
 | `fetch(url, { compress: 'gzip' })` | Compressing a request body and setting `Content-Encoding` | `runtime/networking/fetch.mdx` |
-| `fetch(url, { protocol: 'http2' })` | HTTP/2 or HTTP/3 requests (experimental) | `runtime/networking/fetch.mdx` |
 | `routes: { '/x/*': { dir: './public' } }` | Serving a directory; replaces `express.static`/`sirv` | `runtime/http/routing.mdx` |
 | `process.on('memoryPressure', fn)` | Dropping caches when the OS reports low memory; the listener receives `'warning'` or `'critical'` | no docs page -- see `bun-types/overrides.d.ts` |
 | `Bun.isStandaloneExecutable` | Branching inside a `--compile` binary, allocation-free | `bundler/executables.mdx` |

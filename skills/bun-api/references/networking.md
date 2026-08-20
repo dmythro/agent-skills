@@ -110,16 +110,19 @@ const ws = new WebSocket('ws+unix:///tmp/app.sock:/realtime')
 The `protocol` option in `RequestInit` pins the HTTP version for a request. Accepted values: `'http1.1'`/`'h1'`, `'http2'`/`'h2'`, `'http3'`/`'h3'`. The HTTP/2 and HTTP/3 clients are **experimental** in this release.
 
 ```typescript
-// HTTP/2 per request works standalone -- no flag required
+// Each works standalone, per request -- no flag required (verified on v1.4.0)
 await fetch(url, { protocol: 'http2' })
-
-// HTTP/3 also needs the client enabled globally first:
-//   bun --experimental-http3-fetch app.ts
-//   (or BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP3_CLIENT=1)
 await fetch(url, { protocol: 'http3' })
 ```
 
-Enable HTTP/2 globally (instead of per request) with `--experimental-http2-fetch`, or `BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP2_CLIENT=1`.
+The global switches do something different: `--experimental-http2-fetch` (or
+`BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP2_CLIENT=1`) enables HTTP/2 globally instead of per
+request, and `--experimental-http3-fetch` (or `BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP3_CLIENT=1`)
+enables the Alt-Svc auto-upgrade, where a response advertising HTTP/3 upgrades later
+requests to that origin automatically.
+
+`bun-types` 1.4.0 types the option as `"http2" | "http1.1" | "h2" | "h1"` -- `'http3'`/`'h3'`
+are missing from the union but accepted by the runtime; cast if TypeScript rejects them.
 
 ### Request Compression (v1.4+)
 
