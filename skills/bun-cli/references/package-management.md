@@ -286,7 +286,7 @@ bun pm cache rm         # Clear global cache (and the global virtual store)
 bun pm pack [--dry-run] [--destination dir] [--gzip-level 0-9]  # Create tarball
 bun pm licenses         # Group dependencies by license (v1.4+)
 bun pm diff <pkg>       # Diff two versions of a package (v1.4+)
-bun pm scan             # Scan lockfile packages for vulnerabilities
+bun pm scan             # Scan lockfile packages -- requires a security scanner in bunfig.toml
 bun pm version [patch|minor|major|...]  # Bump package.json version and tag
 bun pm pkg get|set|delete|fix           # Read/write package.json fields
 bun pm whoami           # Current npm username
