@@ -1,7 +1,7 @@
 # Package Management Reference
 
 > `bun <command> --help` is authoritative for flags. Concepts and behavior:
-> `node_modules/bun-types/docs/pm/**.mdx` (`cli/install.mdx`, `lockfile.mdx`,
+> `node_modules/bun-types/docs/pm/**/*.mdx` (`cli/install.mdx`, `lockfile.mdx`,
 > `isolated-installs.mdx`, `global-store.mdx`, `workspaces.mdx`, `catalogs.mdx`,
 > `overrides.mdx`, `lifecycle.mdx`, `npmrc.mdx`). 1.4 changes: `migration-1.4.md`.
 
@@ -65,8 +65,9 @@ to a tarball outside the configured registry must carry an integrity hash, and g
 entries are rejected if they contain `/`, `\`, or `..`. v0/v1 lockfiles keep loading without
 those checks; `bun install` migrates them.
 
-`configVersion` is why upgrading Bun does not silently relayout an existing project: existing
-lockfiles stay on the hoisted linker regardless of the Bun version.
+`configVersion` is why upgrading Bun does not silently relayout an existing project: the linker
+follows the lockfile, not the binary. `configVersion = 0` (any project) stays hoisted;
+`configVersion = 1` is isolated for workspaces and hoisted for single-package projects.
 
 Since v1.3.10, `bun.lock` records a SHA-512 hash for GitHub and tarball dependencies, the way
 it always has for npm packages. Existing lockfiles pick the hashes up on the next install.
@@ -411,7 +412,9 @@ patched packages, packages in `trustedDependencies`, and anything depending on a
 ### Consequences
 
 1. **`node_modules` is mostly symlinks.** `find node_modules -name '<pattern>'` and
-   `rg <pattern> node_modules` return nothing, and `du -sh node_modules` reports `0B`. Address
+   `rg <pattern> node_modules` return nothing, and `du -sh node_modules` reports ~`0B` --
+   it measures the symlinks, not their targets. The tree really is only a few MB of links;
+   `du -sh -L` follows them and reports the target sizes. Address
    files by explicit path; `find -L` follows links but double-counts through the layers.
 2. **Projects share the same inode.** Editing a file under `node_modules/` changes it for every
    project on the machine. Use `bun patch`.

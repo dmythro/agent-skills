@@ -442,9 +442,11 @@ import { secrets } from "bun"
 await secrets.set({ service: "my-cli", name: "github-token", value: token })
 const token = await secrets.get({ service: "my-cli", name: "github-token" })  // string | null
 const removed = await secrets.delete({ service: "my-cli", name: "github-token" })  // boolean
-
-await secrets.get("my-cli", "github-token")   // positional form also works
 ```
+
+Use the options-object form. Bun's prose docs also show a positional
+`secrets.get("service", "name")`, but the 1.4.0 type definitions declare only
+`get(options)`, so the positional call fails typecheck.
 
 All operations are async and run on Bun's threadpool. Intended for local development tools,
 not production deployment secrets.

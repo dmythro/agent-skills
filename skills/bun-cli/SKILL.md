@@ -30,9 +30,9 @@ For everything beyond flags, Bun ships its full docs inside `bun-types`, version
 the runtime, in any project that has `bun-types` or `@types/bun` installed:
 
 ```text
-node_modules/bun-types/docs/pm/**.mdx        # install, lockfile, workspaces, catalogs, linkers
-node_modules/bun-types/docs/test/**.mdx      # test runner
-node_modules/bun-types/docs/bundler/**.mdx   # bun build, executables, loaders, plugins
+node_modules/bun-types/docs/pm/**/*.mdx        # install, lockfile, workspaces, catalogs, linkers
+node_modules/bun-types/docs/test/**/*.mdx      # test runner
+node_modules/bun-types/docs/bundler/**/*.mdx   # bun build, executables, loaders, plugins
 node_modules/bun-types/docs/runtime/bunfig.mdx
 node_modules/bun-types/CLAUDE.md             # Bun's own agent rules
 ```
@@ -278,7 +278,9 @@ bun pm cache rm                                            # clears the store to
 Consequences worth knowing before enabling it:
 
 1. **`node_modules` is mostly symlinks.** `find node_modules -name '*.mdx'` and
-   `rg <pattern> node_modules` return nothing; `du -sh node_modules` reports `0B`. Address
+   `rg <pattern> node_modules` return nothing, and `du -sh node_modules` reports ~`0B`
+   because it measures the symlinks rather than their targets (the real tree is a few MB of
+   links; `du -sh -L` shows the target sizes, counted once per link). Address
    files by explicit path, or pass `find -L` (which double-counts through the link layers).
    Tools that scan `node_modules` without following symlinks behave differently -- the same
    caveat as any pnpm-style layout.
@@ -389,8 +391,10 @@ bun test --pass-with-no-tests     # Exit 0 when nothing matches (monorepos)
 ```
 
 **`--filter` is not a test-name filter.** `-F`/`--filter` selects **workspaces**, and a
-positional argument selects **files**. Passing a test name to either matches nothing and
-exits 0 -- a silently green run. Use `-t` / `--test-name-pattern` / `--grep` for test names.
+positional argument selects **files**. Passing a test name to either matches nothing, and
+`bun test` then exits **1** ("no tests found") -- so the mistake fails the run rather than
+passing it silently, but it still tests nothing. Use `-t` / `--test-name-pattern` / `--grep`
+for test names. `--pass-with-no-tests` turns that exit 1 into 0, which is what would hide it.
 
 ### Coverage
 
@@ -482,7 +486,7 @@ bun build ... --react-compiler      # React auto-memoization, no Babel/SWC (v1.4
 bun build ... --metafile meta.json  # esbuild-format build metadata
 bun build ... --metafile-md meta.md # Module graph as Markdown, for reading or an LLM (v1.3.8+)
 bun build ... --feature=FLAG        # Compile-time flag for `feature()` from bun:bundle
-bun build --compile --asset ./public --asset ./templates   # Embed files/dirs (v1.4+)
+bun build ./src/cli.ts --compile --asset ./public --asset ./templates   # Embed files/dirs (v1.4+)
 ```
 
 `--asset` (v1.4+) embeds a file or directory into a `--compile` executable keeping original
@@ -494,7 +498,8 @@ inside the binary -- static file servers that enumerate a directory at startup r
 `package.json` from the runtime working directory (opt back in with
 `--compile-autoload-tsconfig` / `--compile-autoload-package-json`); `.env` and `bunfig.toml`
 still auto-load.
-`--bytecode` now supports ES modules with `--format=esm --compile`, enabling top-level await,
+`--bytecode` gained ES module support back in **v1.3.9** (`--format=esm`, requires
+`--compile`), enabling top-level await,
 `import.meta`, dynamic imports, and code splitting -- it previously forced CommonJS.
 
 > **Reference**: See `references/bundling-and-compilation.md` for complete options.
@@ -652,7 +657,7 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 8. **TypeScript**: Bun runs TypeScript natively with no compilation step. Uses its own transpiler (not tsc)
 9. **Auto-install**: Bun can auto-install missing packages on import (disabled by default, enable with `[install] auto = true` in bunfig.toml)
 10. **`bun run` vs `bun`**: `bun run script` runs a package.json script; `bun file.ts` runs a file directly. `bun script` tries script first, then falls back to file
-11. **`--filter` is not a name filter for tests.** It selects workspaces. `bun test -t <regex>` (or `--grep`) filters test names; a positional argument filters file paths. Getting this wrong produces a green run that tested nothing
+11. **`--filter` is not a name filter for tests.** It selects workspaces. `bun test -t <regex>` (or `--grep`) filters test names; a positional argument filters file paths. Getting this wrong matches nothing and exits 1 -- unless `--pass-with-no-tests` is set, which turns it into a green run that tested nothing
 12. **Coverage reporters are `text` and `lcov` only** -- `--coverage-reporter=json` is rejected
 13. **`bunfig.toml` is strict TOML as of v1.4.** Unquoted values, missing newlines between pairs, and integers past `Number.MAX_SAFE_INTEGER` now fail at startup with a `SyntaxError`. `linker = isolated` must be `linker = "isolated"`
 14. **Bun invoked as `node` no longer loads `.env` (v1.4+).** Under `bun --bun`, `bunx --bun`, or a `node` symlink, a script calling `node` sees those variables as `undefined`. Pass `--env-file`, matching Node's behavior

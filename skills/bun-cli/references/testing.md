@@ -17,7 +17,7 @@ bun test [flags] [file/dir patterns...]
 | `-F, --filter pattern` | Selects **workspaces**, not tests -- see the warning below |
 | `--timeout ms` | Per-test timeout in milliseconds (default: 5000) |
 | `--bail [count]` | Stop after N failures (default: 1 if no count) |
-| `--rerun-each N` | Run each test N times |
+| `--rerun-each N` | Re-run each test **file** N times |
 | `--retry N` | Default retry count for all tests; per-test `{ retry: N }` wins (v1.3.3+) |
 | `--only` | Only run tests marked with `.only` |
 | `--todo` | Include `.todo` tests |
@@ -51,11 +51,13 @@ bun test [flags] [file/dir patterns...]
 | `--changed[=ref]` | Only run test files affected by git changes; optional ref (commit/branch/tag) (v1.3.13+) |
 
 **`--filter` does not filter test names.** `-F`/`--filter` selects workspaces and a positional
-argument selects files; passing a test name to either matches nothing and exits **0**, which
-reads as a passing run. Use `-t`, `--test-name-pattern`, or `--grep`.
+argument selects files. Passing a test name to either matches nothing, and `bun test` exits
+**1** with "no tests found" -- the mistake fails the run rather than passing it, but it still
+tested nothing. Use `-t`, `--test-name-pattern`, or `--grep`. Note that
+`--pass-with-no-tests` converts that exit 1 to 0, so combining the two does hide it.
 
 > `bun test --help` is authoritative and matches the installed binary. Concepts:
-> `node_modules/bun-types/docs/test/**.mdx`. 1.4 changes: `migration-1.4.md`.
+> `node_modules/bun-types/docs/test/**/*.mdx`. 1.4 changes: `migration-1.4.md`.
 
 ### Test File Discovery
 
@@ -266,12 +268,18 @@ expect.objectContaining(obj)
 ### Retries and Repeats (v1.3.3+)
 
 ```typescript
-test('flaky network call', async () => { await fetch(url) }, { retry: 5 })
-test('stress', () => { if (Math.random() < 0.1) throw new Error('uh oh') }, { repeats: 20 })
+test('flaky network call', async () => {
+  await fetch('https://example.com/health')
+}, { retry: 5 })
+
+test('stress', () => {
+  if (Math.random() < 0.1) throw new Error('uh oh')
+}, { repeats: 20 })
 ```
 
-`{ retry: n }` re-runs a failing test up to `n` times; `{ repeats: n }` runs it `n` times and
-fails if any run fails. `bun test --retry <N>` sets a suite-wide default.
+`{ retry: n }` re-runs a failing test up to `n` times. `{ repeats: n }` runs it `n` **more**
+times after the initial run -- `repeats: 20` is 21 executions -- and fails if any run fails.
+`bun test --retry <N>` sets a suite-wide default.
 
 Lifecycle hooks (`beforeAll`, `beforeEach`, `afterAll`, `afterEach`) accept a numeric timeout
 or `{ timeout }` as their second argument (v1.3.2+) instead of throwing.
@@ -413,7 +421,7 @@ coverageDir = "./coverage"
 coverageThreshold = { line = 80, function = 80, statement = 80 }
 
 # Ignore patterns for coverage
-coverageIgnore = ["node_modules", "test", "**/*.test.ts"]
+coveragePathIgnorePatterns = ["node_modules", "test", "**/*.test.ts"]
 ```
 
 Or via CLI:
@@ -437,7 +445,7 @@ smol = false                    # Reduce memory usage
 coverage = false
 coverageReporter = ["text"]     # "text" and/or "lcov" -- "json" is rejected
 coverageDir = "./coverage"
-coverageIgnore = []
+coveragePathIgnorePatterns = []
 
 # Discovery
 pathIgnorePatterns = ["**/e2e/**"]   # Exclude test files by glob (v1.3.11+)

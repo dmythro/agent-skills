@@ -224,10 +224,13 @@ Or per-run: `bun --install=fallback file.ts`
 
 ## Environment Loading
 
-Bun auto-loads `.env` files in this order (first match wins per variable):
-1. `.env.local` (not loaded when `NODE_ENV=test`)
-2. `.env.{NODE_ENV}` (e.g., `.env.production`)
-3. `.env`
+Bun auto-loads these files in order of **increasing** precedence -- each one overrides the
+values above it:
+
+1. `.env`
+2. `.env.{NODE_ENV}` (`.env.production`, `.env.development`, `.env.test`)
+3. `.env.local` (not loaded when `NODE_ENV=test`)
+4. `.env.{NODE_ENV}.local` (`.env.production.local`, and so on)
 
 Override with `--env-file`:
 ```bash
@@ -253,8 +256,10 @@ env = false
 ```
 
 **Changed in 1.4 -- Bun as `node` skips `.env`.** Under `bun --bun`, `bunx --bun`, or a `node`
-symlink to Bun, `.env`, `.env.local`, and `.env.{development,production,test}` are **not**
-loaded, matching Node.js. `bun file.js` still loads them. A `package.json` script calling
+symlink to Bun, none of the four files above are loaded -- `.env`, `.env.{NODE_ENV}`,
+`.env.local`, `.env.{NODE_ENV}.local` -- matching Node.js. This lets tools with their own
+mode-aware resolution (Vite's `loadEnv`) pick the right file instead of seeing Bun's
+pre-populated values as shell overrides. `bun file.js` still loads them. A `package.json` script calling
 `node` under `bun --bun run` now sees those variables as `undefined`:
 
 ```json

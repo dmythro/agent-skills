@@ -781,7 +781,7 @@ const pasted = Bun.Image.fromClipboard()      // v1.4+, macOS/Windows only, null
 | | Linux | macOS | Windows |
 |---|---|---|---|
 | JPEG, PNG, WebP, GIF, BMP | yes | yes | yes |
-| HEIC / AVIF | `ERR_IMAGE_FORMAT_UNSUPPORTED` | ImageIO (AVIF **encode** needs Apple Silicon M3+) | WIC |
+| HEIC / AVIF | `ERR_IMAGE_FORMAT_UNSUPPORTED` | ImageIO (AVIF **encode** needs Apple Silicon M3+) | WIC + Microsoft Store codec (HEIF Image Extensions / AV1 Video Extension) |
 | TIFF decode | no | ImageIO | WIC |
 | Clipboard | returns `null` | yes | yes |
 
@@ -833,7 +833,8 @@ Compact index — reach for these when the task fits, then read the linked doc b
 `ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
 backpressure automatically — `Bun.serve` pauses a request/response body when the socket
 cannot accept more, and `fetch()` pauses the socket when nothing is consuming the body.
-Streaming code that previously buffered whole payloads no longer needs manual throttling.
+Streaming code that previously buffered whole payloads no longer needs hand-rolled
+throttling, provided every stage of the pipeline honors backpressure.
 
 > **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4 --
 > the one thing Bun's shipped docs do not cover, since they describe only the current state.
@@ -926,7 +927,7 @@ db.close()
 24. **Use `Bun.Terminal`** instead of `node-pty` for pseudo-terminals
 25. **Use `URLPattern`** instead of `path-to-regexp`
 26. **Use `CompressionStream`/`DecompressionStream`** for streaming compression
-27. **Read `node_modules/bun-types/docs/**.mdx`** before writing non-trivial Bun code --
+27. **Read `node_modules/bun-types/docs/**/*.mdx`** before writing non-trivial Bun code --
     open by explicit path, and never edit anything under `node_modules/`
 
 ## References

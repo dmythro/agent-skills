@@ -273,7 +273,9 @@ return `412` when the precondition fails (both were ignored before 1.4).
 
 `ReadableStream`, `WritableStream`, and `TransformStream` are native in 1.4, and `Bun.serve`
 pauses a streaming request or response body when the connection cannot accept more data --
-a slow client holds at most one buffer's worth of server memory. The same applies to
+a slow client no longer forces the whole body into memory. This bounds the read side, not
+total memory: stream queues, socket buffers, transforms, and any chunks your handler holds
+still count. The same applies to
 `fetch()` response bodies, `TransformStream` (including `CompressionStream`), `HTMLRewriter`,
 `Bun.spawn`, `Bun.file(path).stream()`, and `Blob.stream()`.
 
@@ -290,7 +292,8 @@ Bun.serve({
 })
 ```
 
-Manual throttling written for 1.3 can usually be removed. Buffered consumers (`.text()`,
+Manual throttling written for 1.3 can usually be removed where every stage of the pipeline
+honors backpressure. Buffered consumers (`.text()`,
 `.json()`, `.arrayBuffer()`) opt out and still receive the whole body at once.
 
 ## TLS / HTTPS

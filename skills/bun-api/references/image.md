@@ -13,12 +13,16 @@ Do not assume parity across platforms -- an unsupported format rejects with
 | | Linux | macOS | Windows |
 |---|---|---|---|
 | JPEG, PNG, WebP, GIF, BMP | yes | yes | yes |
-| HEIC / AVIF | not supported | ImageIO | WIC |
+| HEIC / AVIF | not supported | ImageIO | WIC + Store codec |
 | TIFF (decode) | not supported | ImageIO | WIC |
 | Clipboard | returns `null` | NSPasteboard | Win32 |
 
-AVIF **encode** additionally needs an OS AV1 encoder: Apple Silicon M3+ only. Intel and
-M1/M2 Macs reject it; AVIF decode works anywhere ImageIO does (macOS 13+).
+Both OS-backed formats carry an extra condition, and they differ per platform:
+
+- **Windows** needs the codec installed from the Microsoft Store -- **HEIF Image Extensions**
+  for HEIC, **AV1 Video Extension** for AVIF. With those present, AVIF encode works.
+- **macOS** can decode AVIF anywhere ImageIO does (macOS 13+), but AVIF **encode** needs an OS
+  AV1 encoder, which means **Apple Silicon M3+**; Intel and M1/M2 Macs reject it.
 
 JPEG, PNG, and WebP go through statically-linked codecs on every platform, so their encoded
 output is byte-identical across Linux, macOS, and Windows. Formats handled by the system

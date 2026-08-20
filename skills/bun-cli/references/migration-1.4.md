@@ -120,7 +120,9 @@ Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
   a runtime throw instead of failing the build with `Could not resolve`.
 - New: `--react-compiler`, `--asset`, `--metafile-md`, `--allow-unresolved`,
   `--reject-unresolved`, `--compile-executable-path`, `optimizeImports` and `files` in
-  `Bun.build()`, ESM support for `--bytecode`, and `--windows-*` executable metadata flags.
+  `Bun.build()`, and `--windows-*` executable metadata flags.
+- Landed earlier in the 1.3 line but easy to miss: `--bytecode` gained ES module support in
+  **v1.3.9** (`--bytecode --format=esm`, requires `--compile`).
 
 ## Platform
 

@@ -1,7 +1,7 @@
 # Bundling and Compilation Reference
 
 > `bun build --help` is authoritative for flags. Concepts: `node_modules/bun-types/docs/
-> bundler/**.mdx` (`index.mdx`, `executables.mdx`, `loaders.mdx`, `plugins.mdx`,
+> bundler/**/*.mdx` (`index.mdx`, `executables.mdx`, `loaders.mdx`, `plugins.mdx`,
 > `bytecode.mdx`, `macros.mdx`, `standalone-html.mdx`). 1.4 changes: `migration-1.4.md`.
 
 ## bun build

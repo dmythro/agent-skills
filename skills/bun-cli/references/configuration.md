@@ -115,7 +115,7 @@ smol = false                        # Reduce memory usage
 coverage = false
 coverageReporter = ["text"]         # "text", "lcov", "json"
 coverageDir = "./coverage"
-coverageIgnore = ["node_modules", "test"]
+coveragePathIgnorePatterns = ["node_modules", "test"]
 coverageThreshold = { line = 0, function = 0, statement = 0 }
 ```
 
