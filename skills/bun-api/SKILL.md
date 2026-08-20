@@ -505,7 +505,8 @@ const files = await extracted.files()              // -> Map<string, File>
 **Gotcha (verified on v1.4.0):** `Bun.write(path, archive)` ignores the constructor's
 `compress` option and writes an uncompressed tar under your `.tar.gz` filename. Bun's own
 docs show `Bun.write(path, archive)` as compressing -- it does not. Always pass
-`await archive.bytes()` (or `await archive.blob()`), which do honor `compress`.
+`await archive.bytes()` (or `await archive.blob()`), which do honor `compress`
+(tracked upstream: oven-sh/bun#30234).
 
 An `Archive` is **not iterable** -- `for (const [name, contents] of archive)` throws.
 Use `await archive.files()` for a `Map<string, File>`, or `await archive.extract(dir)`.

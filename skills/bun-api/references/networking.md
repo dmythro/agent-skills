@@ -122,7 +122,8 @@ enables the Alt-Svc auto-upgrade, where a response advertising HTTP/3 upgrades l
 requests to that origin automatically.
 
 `bun-types` 1.4.0 types the option as `"http2" | "http1.1" | "h2" | "h1"` -- `'http3'`/`'h3'`
-are missing from the union but accepted by the runtime; cast if TypeScript rejects them.
+are missing from the union but accepted by the runtime; cast if TypeScript rejects them
+(reported: oven-sh/bun#39773).
 
 ### Request Compression (v1.4+)
 
