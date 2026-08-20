@@ -12,30 +12,54 @@ bun test [flags] [file/dir patterns...]
 
 | Flag | Description |
 |---|---|
-| `--filter pattern` | Filter by test name (string or /regex/) |
+| `-t, --test-name-pattern regex` | **Filter by test name.** `--grep` is an alias (v1.3.6+) |
+| positional args | Filter by **file path**, not test name (`bun test foo bar`) |
+| `--filter pattern` | Extra **file path** filter, same as a positional arg -- see the warning below |
 | `--timeout ms` | Per-test timeout in milliseconds (default: 5000) |
 | `--bail [count]` | Stop after N failures (default: 1 if no count) |
-| `--rerun-each N` | Run each test N times |
+| `--rerun-each N` | Re-run each test **file** N times |
+| `--retry N` | Default retry count for all tests; per-test `{ retry: N }` wins (v1.3.3+) |
 | `--only` | Only run tests marked with `.only` |
 | `--todo` | Include `.todo` tests |
+| `--only-failures` | Print failures and the summary only (v1.3.1+) |
+| `--pass-with-no-tests` | Exit 0 when nothing matches (v1.3.1+) |
+| `--concurrent` | Treat every test as `test.concurrent()` |
+| `--max-concurrency N` | Max concurrent tests (default 20) |
+| `--randomize` / `--seed N` | Randomize test order / fix the seed |
 | `--watch` | Re-run on file changes |
 | `--update-snapshots` | Update snapshot files |
 | `--preload module` | Preload script before tests |
 | `--coverage` | Enable code coverage |
-| `--coverage-reporter type` | Reporter: `text`, `lcov`, `json` |
+| `--coverage-reporter type` | `text` and/or `lcov` only -- **there is no `json`** |
 | `--coverage-dir path` | Coverage output directory |
-| `--reporter name` | Test reporter: `default`, `spec`, `tap`, `junit`, `json` |
+| `--reporter name` | `junit` (requires `--reporter-outfile`) or `dots` only -- **not** `default`, `spec`, `tap`, or `json` |
+| `--reporter-outfile path` | Output file, required with `--reporter=junit` |
+| `--dots` | Shorthand for `--reporter=dots` |
 | `--verbose` | Verbose output |
 | `--silent` | Suppress output |
 | `--no-color` | Disable color output |
 | `--env-file path` | Load env file |
 | `--cwd path` | Set working directory |
-| `--grep pattern` | Filter tests by pattern (v1.3.6+) |
 | `--path-ignore-patterns pattern` | Exclude paths from test discovery (v1.3.11+) |
 | `--isolate` | Run each test file in a fresh global environment within the same process (v1.3.13+) |
-| `--parallel[=N]` | Distribute test files across N worker processes (default: CPU count) (v1.3.13+) |
+| `--no-isolate` | With `--parallel`, let each worker reuse one global across its files |
+| `--parallel[=N]` | Distribute test files across N worker processes (default: CPU count). Implies `--isolate` (v1.3.13+) |
+| `--parallel-delay ms` | How long the first worker must stay busy before the rest spawn (default 5) |
 | `--shard=M/N` | Run shard M of N -- split test files across CI runners, round-robin (v1.3.13+) |
+| `--timings path` | Read per-file durations to balance `--shard`/`--parallel` by wall time (v1.4+) |
+| `--update-timings` | Write measured durations to the first `--timings` file (v1.4+) |
 | `--changed[=ref]` | Only run test files affected by git changes; optional ref (commit/branch/tag) (v1.3.13+) |
+
+**`--filter` does not filter test names.** In `bun test`, `--filter <pattern>` is another
+**file path** filter, identical to a positional argument; `-F` is rejected as an invalid
+argument, and neither selects workspaces (workspace selection is a package-manager feature:
+`bun run --filter '*' test`). Passing a test name usually matches no files, and `bun test`
+exits **1** ("did not match any test files") -- the mistake fails the run rather than passing
+it, but it still tested nothing. Use `-t`, `--test-name-pattern`, or `--grep`. Note that
+`--pass-with-no-tests` converts that exit 1 to 0, so combining the two does hide it.
+
+> `bun test --help` is authoritative and matches the installed binary. Concepts:
+> `node_modules/bun-types/docs/test/**/*.mdx`. 1.4 changes: `migration-1.4.md`.
 
 ### Test File Discovery
 
@@ -69,7 +93,41 @@ bun test --changed=main          # since a branch/tag/commit
 bun test --changed --watch       # re-run affected tests on save
 ```
 
-`--shard=M/N` matches the syntax used by Jest, Vitest, and Playwright.
+`--shard=M/N` matches the syntax used by Jest, Vitest, and Playwright, and is 1-based. An
+empty shard exits 0 rather than failing. Works alongside `--changed` and `--randomize`.
+
+### Balancing by Time (v1.4+)
+
+Sharding by file count leaves fast runners idle. `--timings` reads per-file durations recorded
+by a previous run and partitions by wall time instead.
+
+```bash
+bun test --parallel --timings=timings.json --update-timings   # record
+bun test --parallel --shard=1/3 --timings=timings.json        # use, per CI machine
+```
+
+Several timings files are merged, so one per CI shard works. `--parallel` starts each worker on
+its slowest file first, and files sharing imports stay together so the module cache stays warm.
+The file is written slowest-first, so it doubles as a slow-test report.
+
+### What `--isolate` Actually Does
+
+Between files, Bun creates a new `globalThis`, clears the ESM and CommonJS module registries,
+closes servers/sockets/watchers/subprocesses the file left open, cancels its timers, restores
+fake timers, and re-runs `--preload` scripts. Transpiled source and bytecode are cached at the
+process level and shared across globals, so the second file to import a module skips reading,
+transpiling, and parsing it -- only top-level code re-runs.
+
+Workers expose their 1-indexed slot as `JEST_WORKER_ID` and `BUN_TEST_WORKER_ID`, so Jest
+setups keying a database or port off `JEST_WORKER_ID` work unchanged. Preload scripts with
+top-level `await` complete before any worker starts. Coverage and JUnit output are merged
+across workers, and `--bail` stops every worker.
+
+Bun 1.4 fixed several 1.3-era `--isolate` bugs: leaked fake timers, module-scope subprocesses
+outliving the file, `process.chdir()` bleeding into the next file, leaked handles pinning the
+previous global in memory, N-API addons pointing at the old global, unresolved debugger
+breakpoints, and a GC crash during the swap between files. If `--isolate` was ruled out on
+1.3.x, it is worth retrying on 1.4.
 
 ## Test API
 
@@ -209,7 +267,49 @@ expect.arrayContaining(arr)
 expect.objectContaining(obj)
 ```
 
+### Retries and Repeats (v1.3.3+)
+
+```typescript
+test('flaky network call', async () => {
+  await fetch('https://example.com/health')
+}, { retry: 5 })
+
+test('stress', () => {
+  if (Math.random() < 0.1) throw new Error('uh oh')
+}, { repeats: 20 })
+```
+
+`{ retry: n }` re-runs a failing test up to `n` times. `{ repeats: n }` runs it `n` **more**
+times after the initial run -- `repeats: 20` is 21 executions -- and fails if any run fails.
+`bun test --retry <N>` sets a suite-wide default.
+
+Lifecycle hooks (`beforeAll`, `beforeEach`, `afterAll`, `afterEach`) accept a numeric timeout
+or `{ timeout }` as their second argument (v1.3.2+) instead of throwing.
+
 ## Mocking
+
+**Changed in 1.4 -- `resetAllMocks()` drops implementations.** `jest.resetAllMocks()` and
+`vi.resetAllMocks()` now reset each mock's implementation as well as its call history, matching
+Jest. After a reset, `jest.fn(() => 42)` returns `undefined`, and a `spyOn()` spy returns
+`undefined` until `mockRestore()`. On 1.3.x they behaved like `clearAllMocks()`.
+
+```typescript
+afterEach(() => {
+  jest.clearAllMocks()    // history only -- what the 1.3 resetAllMocks() did
+})
+```
+
+**Changed in 1.4 -- `toContain()` uses `===`**, not `Object.is`, matching Jest. So
+`expect([-0]).toContain(0)` passes and `expect([NaN]).toContain(NaN)` fails. `toBe()` still uses
+`Object.is`, and `toContainEqual()` still uses deep equality. For NaN membership:
+
+```typescript
+expect([...values].some(Number.isNaN)).toBe(true)
+```
+
+`spyOn()` and `mock()` implement `Symbol.dispose` (v1.3.9+), so `using spy = spyOn(obj, 'm')`
+restores the original at scope exit -- no `mockRestore()` or `afterEach` needed. The `vi`
+global is defined without importing (v1.3.1+).
 
 ```typescript
 import { mock, spyOn, jest } from 'bun:test'
@@ -320,10 +420,14 @@ In `bunfig.toml`:
 coverage = true
 coverageReporter = ["text", "lcov"]
 coverageDir = "./coverage"
-coverageThreshold = { line = 80, function = 80, statement = 80 }
+
+# Fractions 0-1, PLURAL keys. Singular keys (line/function) are silently ignored -- the
+# gate never fires. `statements` is accepted but not enforced. A bare number
+# (coverageThreshold = 0.8) sets lines and functions at once.
+coverageThreshold = { lines = 0.8, functions = 0.8 }
 
 # Ignore patterns for coverage
-coverageIgnore = ["node_modules", "test", "**/*.test.ts"]
+coveragePathIgnorePatterns = ["node_modules", "test", "**/*.test.ts"]
 ```
 
 Or via CLI:
@@ -345,7 +449,13 @@ smol = false                    # Reduce memory usage
 
 # Coverage
 coverage = false
-coverageReporter = ["text"]
+coverageReporter = ["text"]     # "text" and/or "lcov" -- "json" is rejected
 coverageDir = "./coverage"
-coverageIgnore = []
+coveragePathIgnorePatterns = []
+
+# Discovery
+pathIgnorePatterns = ["**/e2e/**"]   # Exclude test files by glob (v1.3.11+)
 ```
+
+`bunfig.toml` is strict TOML as of v1.4 -- every string value must be quoted, or Bun fails at
+startup with a `SyntaxError`.

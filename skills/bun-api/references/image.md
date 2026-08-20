@@ -1,6 +1,46 @@
 # Bun.Image
 
-Built-in image processing -- decode, transform, and re-encode images with no native dependencies. Replaces `sharp` and `jimp`. Available as `Bun.Image` (v1.3.14+). Supported formats: JPEG, PNG, WebP, GIF, BMP, HEIC, AVIF, TIFF.
+Built-in image processing -- decode, transform, and re-encode images with no native dependencies. Replaces `sharp` and `jimp`. Available as `Bun.Image` (v1.3.14+).
+
+> Full API and the authoritative compatibility matrix:
+> `node_modules/bun-types/docs/runtime/image.mdx`.
+
+## Format Support Is Platform-Dependent
+
+Do not assume parity across platforms -- an unsupported format rejects with
+`ERR_IMAGE_FORMAT_UNSUPPORTED`.
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| JPEG, PNG, WebP | yes | yes | yes |
+| GIF, BMP (decode only) | built-in | ImageIO | WIC |
+| HEIC / AVIF | not supported | ImageIO | WIC + Store codec |
+| TIFF (decode) | not supported | ImageIO | WIC |
+| Clipboard | returns `null` | NSPasteboard | Win32 |
+
+Both OS-backed formats carry an extra condition, and they differ per platform:
+
+- **Windows** needs the codec installed from the Microsoft Store -- **HEIF Image Extensions**
+  for HEIC, **AV1 Video Extension** for AVIF. With those present, AVIF encode works.
+- **macOS** can decode AVIF anywhere ImageIO does (macOS 13+), but AVIF **encode** needs an OS
+  AV1 encoder, which means **Apple Silicon M3+**; Intel and M1/M2 Macs reject it.
+
+JPEG, PNG, and WebP go through statically-linked codecs on every platform, so their encoded
+output is byte-identical across Linux, macOS, and Windows. Formats handled by the system
+backend inherit the OS's patch level. GIF, BMP, and TIFF are decode-only -- there are no
+`.gif()`/`.bmp()`/`.tiff()` encoder methods; re-encode those decodes as JPEG/PNG/WebP.
+
+## Clipboard (v1.4+)
+
+```typescript
+const img = Bun.Image.fromClipboard()      // null when there is no image, always null on Linux
+Bun.Image.hasClipboardImage()
+Bun.Image.clipboardChangeCount()           // poll this integer; call hasClipboardImage() when it moves
+```
+
+macOS has no clipboard-change notification, so polling `clipboardChangeCount()` is the
+documented pattern. On Linux, shell out to `wl-paste`/`xclip` and pass the bytes to the
+constructor.
 
 ## Constructing
 

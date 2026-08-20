@@ -1,5 +1,25 @@
 # Running and Execution Reference
 
+> `bun --help` and `bun run --help` are authoritative for flags. Concepts:
+> `node_modules/bun-types/docs/runtime/` (`environment-variables.mdx`, `watch-mode.mdx`,
+> `debugger.mdx`, `repl.mdx`, `bunfig.mdx`) and `docs/pm/bunx.mdx`.
+
+## bun repl
+
+Native REPL, built into the binary since v1.3.10 (it used to download an npm package on first
+run). Syntax highlighting, persistent history at `~/.bun_repl_history`, tab completion,
+multi-line continuation, `.help`/`.load`/`.save`/`.editor`, top-level `await`, and the `_` /
+`_error` variables. Bare object literals need no wrapping parens.
+
+```bash
+bun repl
+bun repl -e 'console.log(1 + 1)'      # evaluate
+bun repl -p '{ a: 1, b: 2 }'          # evaluate and print
+bun repl -p 'await fetch("https://bun.sh").then(r => r.status)'
+```
+
+`bun --interactive` starts a Node.js-compatible REPL instead.
+
 ## bun run
 
 Run package.json scripts or files.
@@ -176,11 +196,19 @@ Running `bun ./index.html` serves this with all linked assets automatically bund
 Run multiple scripts concurrently or in strict order:
 
 ```bash
-bun --parallel run build lint typecheck    # Run all three concurrently
-bun --sequential run clean build deploy    # Run one after another
+bun run --parallel build lint typecheck    # Run all three concurrently
+bun run --parallel 'build:*'               # Glob-match script names
+bun run --parallel --filter '*' build      # Fan out across every workspace
+bun run --parallel --no-exit-on-error --filter '*' test   # Keep going past failures
+bun run --sequential clean build deploy    # One at a time, same prefixed output
 ```
 
-Useful for task orchestration without external tools like `concurrently` or `npm-run-all`.
+Replaces `concurrently` and `npm-run-all`. Each output line is prefixed with the script name,
+or `package:script` under `--filter`, and `pre*`/`post*` hooks stay grouped with their main
+script so dependency order is preserved.
+
+The flag may also precede `run` (`bun --parallel run build lint`) -- both forms work, but
+`bun run --parallel` is the documented one.
 
 ## Auto-Install
 
@@ -196,10 +224,13 @@ Or per-run: `bun --install=fallback file.ts`
 
 ## Environment Loading
 
-Bun auto-loads `.env` files in this order (first match wins per variable):
-1. `.env.local` (not loaded when `NODE_ENV=test`)
-2. `.env.{NODE_ENV}` (e.g., `.env.production`)
-3. `.env`
+Bun auto-loads these files in order of **increasing** precedence -- each one overrides the
+values above it:
+
+1. `.env`
+2. `.env.{NODE_ENV}` (`.env.production`, `.env.development`, `.env.test`)
+3. `.env.local` (not loaded when `NODE_ENV=test`)
+4. `.env.{NODE_ENV}.local` (`.env.production.local`, and so on)
 
 Override with `--env-file`:
 ```bash
@@ -209,4 +240,32 @@ bun --env-file .env.staging file.ts
 Multiple files (left takes priority):
 ```bash
 bun --env-file .env.local --env-file .env file.ts
+```
+
+Disable automatic loading entirely (v1.3.3+) -- useful in production and CI, where variables
+come from the environment and a stray `.env` should be ignored. Explicit `--env-file` arguments
+are still honored.
+
+```bash
+bun --no-env-file server.ts
+```
+
+```toml
+# bunfig.toml
+env = false
+```
+
+**Changed in 1.4 -- Bun as `node` skips `.env`.** Under `bun --bun`, `bunx --bun`, or a `node`
+symlink to Bun, none of the four files above are loaded -- `.env`, `.env.{NODE_ENV}`,
+`.env.local`, `.env.{NODE_ENV}.local` -- matching Node.js. This lets tools with their own
+mode-aware resolution (Vite's `loadEnv`) pick the right file instead of seeing Bun's
+pre-populated values as shell overrides. `bun file.js` still loads them. A `package.json` script calling
+`node` under `bun --bun run` now sees those variables as `undefined`:
+
+```json
+{
+  "scripts": {
+    "check": "node --env-file=.env ./check.js"
+  }
+}
 ```

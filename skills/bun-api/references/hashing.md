@@ -1,5 +1,41 @@
 # Hashing Reference
 
+> Full API: `node_modules/bun-types/docs/runtime/hashing.mdx`.
+
+**Changed in 1.4 -- `Bun.password` argon2.** `hash()` with argon2 requires `memoryCost` of at
+least 8 and throws on out-of-range `cost`, `timeCost`, or `memoryCost` values that were
+previously wrapped or truncated into range. Hashes produced by Bun 1.3 with a lower
+`memoryCost` still verify. `Bun.CryptoHasher#update()` now throws on odd-length hex input.
+
+## Post-Quantum Algorithms (v1.4+)
+
+> Documented in `docs/runtime/nodejs-compat.mdx` (`node:crypto` and `SubtleCrypto`
+> sections), not `hashing.mdx`.
+
+NIST ML-DSA (FIPS 204 signatures, parameter sets 44/65/87) and ML-KEM (FIPS 203 key
+encapsulation, 768/1024) are available in Web Crypto. `node:crypto` covers ML-DSA
+sign/verify and ML-KEM key generation/import, but has no `encapsulate`/`decapsulate` --
+encapsulation goes through `crypto.subtle`, even for keys created with `node:crypto`.
+
+```typescript
+// Web Crypto -- key encapsulation
+const { publicKey, privateKey } = await crypto.subtle.generateKey(
+  'ML-KEM-768', true, ['encapsulateBits', 'decapsulateBits'],
+)
+const { sharedKey, ciphertext } = await crypto.subtle.encapsulateBits({ name: 'ML-KEM-768' }, publicKey)
+const secret = await crypto.subtle.decapsulateBits({ name: 'ML-KEM-768' }, privateKey, ciphertext)
+
+// node:crypto -- signatures
+import { generateKeyPairSync, sign, verify } from 'node:crypto'
+const keys = generateKeyPairSync('ml-dsa-65')
+const sig = sign(undefined, Buffer.from('hello'), keys.privateKey)
+verify(undefined, Buffer.from('hello'), keys.publicKey, sig)   // true
+```
+
+`SubtleCrypto` gains `encapsulateBits`, `encapsulateKey`, `decapsulateBits`, and
+`decapsulateKey`. Keys import/export as `spki`, `pkcs8`, `jwk` (`kty: "AKP"`), `raw-public`,
+and `raw-seed`, and survive `structuredClone`. ML-KEM-512 and SLH-DSA are not available yet.
+
 ## Bun.hash (Non-Cryptographic)
 
 Fast hashing for non-security purposes: hash tables, checksums, deduplication, content fingerprinting.

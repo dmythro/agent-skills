@@ -2,6 +2,29 @@
 
 Built-in SQL client for PostgreSQL, MySQL, and SQLite. Zero dependencies, tagged template literals, automatic prepared statements, connection pooling.
 
+> Full API: `node_modules/bun-types/docs/runtime/sql.mdx`.
+
+**Changed in 1.4 -- date and JSON decoding.** Two changes silently alter values read from
+MySQL/MariaDB, so audit any offset-correction or `JSON.parse()` you added as a workaround:
+
+- MySQL `DATETIME` and `TIMESTAMP` decode as **UTC**, matching how `Bun.sql` encodes them, so
+  a `Date` round-trips unchanged. Before 1.4 they came back shifted by the host's UTC offset
+  on any machine not running in UTC. Postgres `timestamp` read through `.simple()` is UTC too;
+  `timestamptz` is unaffected.
+- MariaDB 10.5+ `JSON` columns and JSON function results (`JSON_OBJECT()`, `JSON_EXTRACT()`)
+  are **parsed into objects**. They returned JSON text before -- remove the `JSON.parse()`.
+
+Also new or changed in 1.4: Postgres `infinity`/`-infinity` **dates/timestamps** decode to
+the numbers `Infinity` and `-Infinity` instead of an invalid `Date`; `PGSSLMODE` is honored from the environment
+(`PGSSLMODE=require` against a non-TLS server now fails rather than connecting in plaintext);
+`connectionTimeout` bounds the entire handshake rather than restarting per packet; and
+`sql.unsafe()` / `sql.file()` accept an object of named parameters for `:name`, `$name`, and
+`@name` placeholders on SQLite (an object previously bound nothing and returned no rows).
+
+For PgBouncer transaction pooling, construct with `new Bun.SQL({ prepare: false })` -- since
+v1.3.11 Bun sends each such query's Parse+Bind+Execute as one atomic batch, so PgBouncer can
+no longer split it across connections and return the wrong result.
+
 ## Prerequisites
 
 A project can use `Bun.sql()` when it has a database connection URL:

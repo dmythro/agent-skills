@@ -1,5 +1,77 @@
 # HTTP Server Reference
 
+> Full API: `node_modules/bun-types/docs/runtime/http/server.mdx`, `runtime/http/routing.mdx`,
+> `runtime/http/websockets.mdx`, `runtime/http/tls.mdx`, `runtime/http/error-handling.mdx`.
+> Behavior that changed in 1.4 is collected in `migration-1.4.md`.
+
+## Routes
+
+`routes` is the primary routing API. Reach for it before hand-parsing `req.url` -- it gives
+params, per-method dispatch, and zero-allocation static responses. `fetch` remains the
+fallback for unmatched requests.
+
+```typescript
+Bun.serve({
+  routes: {
+    // Static Response -- optimized for zero-allocation dispatch
+    '/health': new Response('OK'),
+    '/old': Response.redirect('/new'),
+    '/favicon.ico': Bun.file('./favicon.ico'),
+
+    // Handler receives a BunRequest: Request + params + cookies
+    '/users/:id': req => Response.json({ id: req.params.id }),
+    '/orgs/:orgId/repos/:repoId': req => {
+      const { orgId, repoId } = req.params        // typed from the literal
+      return Response.json({ orgId, repoId })
+    },
+
+    // Per-method dispatch
+    '/api/posts': {
+      GET: () => Response.json(listPosts()),
+      POST: async req => Response.json(await req.json()),
+    },
+
+    // Serve a directory (v1.4+)
+    '/static/*': { dir: './public' },
+
+    '/api/*': Response.json({ error: 'not found' }, { status: 404 }),
+  },
+
+  fetch(req) {
+    return new Response('Unmatched', { status: 404 })   // no '/*' route above, so this runs
+  },
+})
+```
+
+**Precedence**: exact (`/users/all`) > parameter (`/users/:id`) > wildcard (`/users/*`) >
+global catch-all (`/*`). A registered `'/*'` route catches every unmatched path, so `fetch`
+never runs alongside one -- use either `'/*'` or `fetch` as the fallback, not both. Route
+parameters are percent-decoded automatically.
+
+**Per-method objects answer `HEAD` with the `GET` handler** when no `HEAD` key is set (v1.4+;
+before, the request fell through to the next route or 404).
+
+### Directory Routes (v1.4+)
+
+```typescript
+Bun.serve({
+  routes: { '/static/*': { dir: './public' } },
+})
+```
+
+Replaces `express.static`, `serve-static`, and `sirv`. Files stream with `sendfile`, and Bun
+handles `Content-Type`, `Last-Modified`, a weak `ETag`, `If-None-Match`/`If-Modified-Since`
+(`304`), and `Range` (`206`). A directory without a trailing slash gets a `301`; with one,
+`index.html` is served. Missing files return `404`.
+
+Paths are percent-decoded once and opened relative to `dir`; non-canonical paths (`.`, `..`,
+empty segments, `%2F`) are rejected with `404`, and on Linux the open uses
+`openat2(RESOLVE_IN_ROOT)` so symlinks cannot escape. Pass `statCache: false` to drop the
+per-path `Last-Modified` cache (~20 KB per route).
+
+Routing is case-sensitive but macOS/Windows filesystems are not -- keep access-controlled
+content outside `dir` rather than gating it with an overlapping route.
+
 ## Bun.serve()
 
 Built-in HTTP server with zero dependencies. Replaces Express, Fastify, or `http.createServer`.
@@ -139,12 +211,16 @@ const server = Bun.serve({
 
 ## Static File Serving
 
+Prefer a directory route (see above) or `routes` entries. The older `static` option still
+works at runtime but is no longer in Bun's public types or docs -- treat it as legacy and use
+`routes` in new code.
+
 ```typescript
 const server = Bun.serve({
-  // Serve static files from a directory (Bun v1.1.27+)
-  static: {
+  routes: {
     '/': new Response(Bun.file('public/index.html')),
     '/style.css': new Response(Bun.file('public/style.css')),
+    '/assets/*': { dir: './public/assets' },       // v1.4+
   },
 
   fetch(req) {
@@ -152,6 +228,9 @@ const server = Bun.serve({
     return new Response('Not Found', { status: 404 })
   },
 })
+
+// Legacy equivalent (pre-1.2.3 codebases):
+// Bun.serve({ static: { '/': new Response(Bun.file('public/index.html')) }, fetch })
 ```
 
 Or dynamic static serving:
@@ -184,6 +263,39 @@ Bun.serve({
   },
 })
 ```
+
+### Conditional Requests (v1.4+)
+
+Static routes, directory routes, and `Bun.file()` bodies also handle conditional requests:
+`If-None-Match` / `If-Modified-Since` return `304`, and `If-Match` / `If-Unmodified-Since`
+return `412` when the precondition fails (both were ignored before 1.4).
+
+## Backpressure (v1.4+)
+
+`ReadableStream`, `WritableStream`, and `TransformStream` are native in 1.4, and `Bun.serve`
+pauses a streaming request or response body when the connection cannot accept more data --
+a slow client no longer forces the whole body into memory. This bounds the read side, not
+total memory: stream queues, socket buffers, transforms, and any chunks your handler holds
+still count. The same applies to
+`fetch()` response bodies, `TransformStream` (including `CompressionStream`), `HTMLRewriter`,
+`Bun.spawn`, `Bun.file(path).stream()`, and `Blob.stream()`.
+
+```typescript
+Bun.serve({
+  routes: {
+    '/': () => new Response(new ReadableStream({
+      pull(controller) {
+        // pauses automatically when the socket's send buffer fills
+        controller.enqueue(new Uint8Array(65536))
+      },
+    })),
+  },
+})
+```
+
+Manual throttling written for 1.3 can usually be removed where every stage of the pipeline
+honors backpressure. Buffered consumers (`.text()`,
+`.json()`, `.arrayBuffer()`) opt out and still receive the whole body at once.
 
 ## TLS / HTTPS
 

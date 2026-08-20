@@ -218,32 +218,63 @@ const archive = new Bun.Archive({
 // Write uncompressed tar
 await Bun.write("archive.tar", archive)
 
-// Create with gzip compression
+// Create with gzip compression -- write the bytes, not the Archive (see below)
 const compressed = new Bun.Archive(
   { "hello.txt": "Hello, World!" },
   { compress: "gzip" }
 )
-await Bun.write("archive.tar.gz", compressed)
+await Bun.write("archive.tar.gz", await compressed.bytes())
 
-// Gzip with custom compression level (1-12)
+// Gzip with custom compression level (1-12, default 6)
 const maxCompressed = new Bun.Archive(
   { "hello.txt": "Hello, World!" },
   { compress: "gzip", level: 12 }
 )
 ```
 
+File contents may be `string`, `Blob` (including `Bun.file()`), `ArrayBufferView`, or `ArrayBuffer`.
+
+### Compression Gotcha
+
+**`Bun.write(path, archive)` ignores the constructor's `compress` option** and writes a plain
+tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0: the output carries a POSIX
+tar header, not the gzip magic bytes. Bun's own docs show this form as compressing -- it does
+not. `.bytes()` and `.blob()` do honor `compress`:
+
+```typescript
+await Bun.write("out.tar.gz", archive)                 // WRONG -- uncompressed tar
+await Bun.write("out.tar.gz", await archive.bytes())   // correct -- real gzip
+```
+
 ### Reading Archives
+
+An `Archive` is **not iterable** -- `for (const [name, content] of archive)` throws
+`TypeError: {} is not iterable`. Use `files()` or `extract()`.
 
 ```typescript
 // Read from file (auto-detects gzip)
 const tarball = await Bun.file("archive.tar.gz").bytes()
 const archive = new Bun.Archive(tarball)
 
-// Extract all files
-for (const [filename, content] of archive) {
-  await Bun.write(`output/${filename}`, content)
+// Read contents into memory -- Map<string, File>
+const files = await archive.files()
+for (const [path, file] of files) {
+  console.log(path, file.size, await file.text())
 }
+
+// Filter with globs (negative patterns supported)
+const tsFiles = await archive.files(["**/*.ts", "!**/*.test.ts"])
+
+// Extract straight to disk -- returns the number of entries written
+const count = await archive.extract("./output")
+await archive.extract("./output", { glob: ["src/**", "!node_modules/**"] })
 ```
+
+`extract()` creates the target directory, rejects absolute paths and unsafe symlink targets,
+and normalizes away `..` traversal. Windows always skips symlinks. `files()` loads contents
+into memory and returns regular files only -- prefer `extract()` for large archives.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/archive.mdx`
 
 ## Bun.markdown
 
@@ -304,21 +335,31 @@ const records = JSONL.parse('{"a":1}\n{"a":2}\n{"a":3}')
 
 ## cron / Bun.cron
 
-In-process cron scheduler and expression parser. The named `cron` import is the same value as `Bun.cron`. Schedules use 5 fields (`minute hour day month weekday`) -- seconds are not supported.
+Cron scheduler and expression parser. The named `cron` import is the same value as `Bun.cron`.
+Schedules use 5 fields (`minute hour day month weekday`) -- seconds are not supported. Named
+months/weekdays (`MON-FRI`, `JAN`) and nicknames (`@daily`, `@hourly`) work.
 
-### Scheduling (v1.3.12+)
+`Bun.cron` has two distinct scheduling forms plus a parser. Pick by whether the job must
+survive process exit:
+
+| | In-process `cron(schedule, handler)` | OS-level `cron(path, schedule, title)` |
+|---|---|---|
+| Survives exit/reboot | No | Yes |
+| Shared state between runs | Yes | No -- fresh process each time |
+| Requires | Nothing | crontab / launchd / Task Scheduler |
+| Returns | `CronJob` (sync) | `Promise<void>` |
+
+### In-Process Scheduling (v1.3.12+)
 
 ```typescript
 import { cron } from "bun"
 
 // Run a callback on a schedule (in-process -- no external cron daemon)
 const job = cron("0 9 * * 1-5", async () => {
-  await sendDailyReport()          // weekdays at 09:00
+  await sendDailyReport()          // weekdays at 09:00 LOCAL time (see below)
 })
 
-// Overlapping runs are skipped automatically; errors surface via
-// process 'unhandledRejection'.
-
+job.cron          // "0 9 * * 1-5"
 job.stop()        // stop the job
 job.unref()       // don't keep the process alive
 job.ref()         // keep the process alive (default)
@@ -329,12 +370,126 @@ job.ref()         // keep the process alive (default)
 }  // job disposed here
 ```
 
+Runs never overlap: Bun computes the next fire time only after the handler (and any promise
+it returns) settles, so a handler that overruns its interval delays the next fire rather than
+stacking. A synchronous `throw` surfaces as `process.on("uncaughtException")`; a rejected
+promise as `process.on("unhandledRejection")`. With a listener installed the job keeps
+running. Under `bun --hot`, jobs are stopped before the module graph re-evaluates and
+re-registered from source, so edits do not leak timers. `jest.useFakeTimers()` drives them.
+
+### OS-Level Jobs (v1.3.11+)
+
+Registers a real crontab/launchd/Task Scheduler entry that runs a script on a schedule. The
+script exports a `scheduled()` handler, matching Cloudflare Workers Cron Triggers.
+
+```typescript
+await Bun.cron("./worker.ts", "30 2 * * MON", "weekly-report")
+await Bun.cron.remove("weekly-report")     // takes the TITLE string, not a job handle
+
+// worker.ts
+export default {
+  async scheduled(controller: Bun.CronController) {
+    controller.cron           // "30 2 * * 1"
+    controller.scheduledTime  // epoch ms at invocation
+    await doWork()
+  },
+}
+```
+
+Re-registering the same `title` replaces the existing job in place. Removing a job that does
+not exist resolves without error.
+
 ### Parsing
 
 ```typescript
-cron.parse("0 9 * * 1-5")   // '2026-05-29T09:00:00.000Z' -- next run as ISO string
-cron.remove(job)            // remove a scheduled job
+cron.parse("0 9 * * 1-5")                        // -> Date (next match) | null
+cron.parse("0 * * * *", cursor)                  // search from a Date | epoch ms
+cron.parse("0 9 * * *", Date.now(), { tz: "UTC" })
+cron.parse("0 0 30 2 *")                         // null -- no match within 8 years
 ```
+
+`parse()` returns a **`Date`**, not a string. It returns `null` when the expression can never
+match (February 30th, for example).
+
+### Time Zone -- Changed in 1.4
+
+**On v1.4+**, `cron.parse()` and the in-process `cron(schedule, handler)` read schedules in
+the process's **local** time zone, matching the OS-level form. **On v1.3.x they used UTC.**
+Both accept `{ tz }` as a final argument:
+
+```typescript
+cron("0 9 * * *", handler, { tz: "UTC" })              // pre-1.4 behavior on 1.4+
+cron.parse("0 9 * * *", Date.now(), { tz: "America/New_York" })
+```
+
+Code written against 1.3 that assumed UTC will fire at a different wall-clock time after
+upgrading unless `{ tz: "UTC" }` is added.
+
+When both day-of-month and day-of-week are set (neither is `*`), the expression matches when
+**either** is true, per POSIX cron.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/cron.mdx` -- DST handling, per-platform
+> registration details, and log locations.
+
+## Bun.secrets (v1.4+)
+
+Store credentials in the OS credential manager instead of a plaintext dotfile: Keychain on
+macOS, libsecret on Linux, Credential Manager on Windows. Experimental -- the API may change.
+
+```typescript
+import { secrets } from "bun"
+
+await secrets.set({ service: "my-cli", name: "github-token", value: token })
+const token = await secrets.get({ service: "my-cli", name: "github-token" })  // string | null
+const removed = await secrets.delete({ service: "my-cli", name: "github-token" })  // boolean
+```
+
+Use the options-object form. Bun's prose docs also show a positional
+`secrets.get("service", "name")`, but the 1.4.0 type definitions declare only
+`get(options)`, so the positional call fails typecheck.
+
+All operations are async and run on Bun's threadpool. Intended for local development tools,
+not production deployment secrets.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/secrets.mdx`
+
+## Bun.XML (v1.4+)
+
+SIMD XML parser and serializer -- replaces `fast-xml-parser` and `xml2js`. `.xml` files can be
+imported directly in both the runtime and the bundler.
+
+```typescript
+import { XML } from "bun"
+
+// Compact shape (default): @attr / #text convention
+XML.parse('<order id="A1"><item>Tea</item><item>Mug</item><paid/></order>')
+// { order: { "@id": "A1", item: ["Tea", "Mug"], paid: "" } }
+
+// Document tree -- preserves order, comments, processing instructions
+XML.parse("<p>Hi <b>you</b></p>", { compact: false })
+// { name: "p", attributes: {}, children: ["Hi ", { name: "b", ... }] }
+
+XML.stringify({ order: { "@id": "A1", item: "Tea" } })
+XML.parse(await Bun.file("feed.xml").bytes())   // bytes honor BOM / encoding declaration
+```
+
+Every value is a **string** -- nothing is coerced to number, boolean, or `null`. In the compact
+shape a repeated child name becomes an array and a single one does not, so read defensively:
+
+```typescript
+const entries = [feed.entry ?? []].flat()      // an array either way
+for (const e of entries) {
+  const title = typeof e.title === "string" ? e.title : (e.title?.["#text"] ?? "")
+}
+```
+
+`parse()` throws `SyntaxError` on malformed input (no lenient mode) and `RangeError` on
+pathological nesting.
+
+**Changed in 1.4:** importing a `.xml` file now returns the parsed document. Before, it
+returned the file's path. Pass `--loader .xml:file` to get the path back.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/xml.mdx`
 
 ## Explicit Resource Management (using / await using)
 

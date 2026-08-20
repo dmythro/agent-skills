@@ -4,6 +4,18 @@
 
 Built-in S3 client with Web standard Blob API compatibility. Zero dependencies, works with any S3-compatible service (AWS S3, Cloudflare R2, MinIO, DigitalOcean Spaces, etc.).
 
+> Full API: `node_modules/bun-types/docs/runtime/s3.mdx`.
+
+Added since v1.3.14: `requestPayer: true` on the client or per operation sends
+`x-amz-request-payer` for Requester Pays buckets (including each part of a multipart upload);
+`write()` and `writer()` accept `contentDisposition` and `contentEncoding`; `presign()` honors
+`contentDisposition` and `type`; `slice(0, N).stream()` sends the correct `Range` header; and
+`queueSize` is respected rather than being overridden to 255.
+
+**Changed in 1.4:** `S3Client.list()` entries expose `checksumAlgorithm`. The misspelled
+`checksumAlgorithme` still resolves but is non-enumerable, so it no longer appears in
+`Object.keys()` or `JSON.stringify()` output.
+
 ### Credentials
 
 Bun reads S3 credentials from environment variables automatically:
