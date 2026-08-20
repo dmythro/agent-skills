@@ -90,7 +90,7 @@ These modify project state and should go through the approval flow:
 - `bun audit fix` — upgrades packages and installs; may rewrite exact pins (and ranges with `--latest`)
 - `bun dedupe` — rewrites `bun.lock` and installs (`--check` / `--dry-run` are safe)
 - `bun prune` — deletes from node_modules (`--dry-run` is safe)
-- `bun pm trust` / `bun pm untrusted --all` — enables lifecycle scripts
+- `bun pm trust <names>` / `bun pm trust --all` — enables lifecycle scripts
 - `bun pm cache rm` — clears the shared cache and the global virtual store for every project
 - `bun pm version` / `bun pm pkg set|delete|fix` — edits package.json and can create a git tag
 - `bun pm migrate` — writes a new lockfile

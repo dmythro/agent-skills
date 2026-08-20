@@ -6,8 +6,10 @@ Headless browser automation built into the runtime -- navigate pages, run JavaSc
 Chromium, or Edge on macOS, Linux, and Windows. Clicks and scrolls are delivered as real user
 input, not synthetic DOM events.
 
-`Bun.WebView` extends `EventTarget`, returns `Blob` screenshots, and exposes
-`.cdp(method, params?)` as an escape hatch for raw Chrome DevTools Protocol commands.
+`Bun.WebView` extends `EventTarget` and returns `Blob` screenshots. With
+`backend: "chrome"` it also exposes `.cdp(method, params?)` as an escape hatch for raw Chrome
+DevTools Protocol commands -- call `navigate()` first, which sets up the CDP session. The
+WebKit backend has no CDP.
 
 > Full API -- input simulation, console capture, CDP events, persistent storage, lifecycle:
 > `node_modules/bun-types/docs/runtime/webview.mdx`.

@@ -9,7 +9,9 @@ Built-in SQLite3 with zero dependencies. Faster than `better-sqlite3`. Bundles S
 **Changed in 1.4 -- `db.close()` finalizes statements.** `close()` now finalizes every
 `db.query()` statement, not only cached ones; it previously threw `database is locked`.
 A statement finalized by `close()` throws when used afterwards. `db.prepare()` statements keep
-working until finalized -- `db.close(true)` finalizes those too. A column aliased `AS ""` is
+working until finalized -- `db.close(true)` finalizes those too, releases the connection
+immediately, and throws if SQLite fails to close it. `using db = new Database(...)` calls
+`close(true)`. A column aliased `AS ""` is
 now kept in row objects and `stmt.columnNames` (it was dropped, and a trailing one made
 `.all()` return a number); `columnNames` throws after `finalize()`.
 
@@ -164,7 +166,7 @@ interface Database {
   run(sql: string, params?: any[]): void
   query(sql: string): Statement          // Alias for prepare
   transaction(fn: Function): Function
-  close(): void
+  close(throwOnError?: boolean): void    // true: finalize every outstanding statement now
   serialize(): Uint8Array                // Serialize database to buffer
 
   readonly filename: string

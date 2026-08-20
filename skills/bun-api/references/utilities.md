@@ -475,8 +475,10 @@ Every value is a **string** -- nothing is coerced to number, boolean, or `null`.
 shape a repeated child name becomes an array and a single one does not, so read defensively:
 
 ```typescript
-const entries = [feed.entry ?? []].flat()
-const title = typeof e.title === "string" ? e.title : (e.title["#text"] ?? "")
+const entries = [feed.entry ?? []].flat()      // an array either way
+for (const e of entries) {
+  const title = typeof e.title === "string" ? e.title : (e.title?.["#text"] ?? "")
+}
 ```
 
 `parse()` throws `SyntaxError` on malformed input (no lenient mode) and `RangeError` on

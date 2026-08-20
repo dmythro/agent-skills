@@ -250,7 +250,7 @@ Two settings decide how `node_modules` is laid out. Both matter more than they l
 |---|---|---|
 | Layout | npm-style flat `node_modules` | symlinks into `node_modules/.bun/` (pnpm-style) |
 | Phantom dependencies | resolve silently | fail, as they should |
-| Default for | new single-package projects, and **all existing projects** | **new workspace projects only** |
+| Default when | `configVersion = 0` (any project), or `configVersion = 1` without workspaces | `configVersion = 1` **and** the project uses workspaces |
 
 The default depends on the lockfile's `configVersion`, not on the Bun version: isolated only
 when `configVersion = 1` **and** the project uses workspaces. Lockfiles created before v1.3.2
@@ -490,9 +490,10 @@ filenames, so `path.join(import.meta.dir, ...)` resolves the same as on disk. `n
 `/$bunfs/` as a real tree, so `readdirSync` (including `recursive`/`withFileTypes`) works
 inside the binary -- static file servers that enumerate a directory at startup run unmodified.
 
-**Changed in 1.4:** `--compile` binaries no longer auto-load `tsconfig.json` or `package.json`
-from the runtime working directory (opt back in with `--compile-autoload-tsconfig` /
-`--compile-autoload-package-json`); `.env` and `bunfig.toml` still auto-load.
+**Changed in v1.3.4:** `--compile` binaries no longer auto-load `tsconfig.json` or
+`package.json` from the runtime working directory (opt back in with
+`--compile-autoload-tsconfig` / `--compile-autoload-package-json`); `.env` and `bunfig.toml`
+still auto-load.
 `--bytecode` now supports ES modules with `--format=esm --compile`, enabling top-level await,
 `import.meta`, dynamic imports, and code splitting -- it previously forced CommonJS.
 
