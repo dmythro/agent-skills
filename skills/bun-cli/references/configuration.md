@@ -1,5 +1,19 @@
 # Configuration Reference
 
+> Full key-by-key reference: `node_modules/bun-types/docs/runtime/bunfig.mdx`.
+
+**Changed in 1.4 -- `bunfig.toml` is strict TOML.** The rewritten parser throws `SyntaxError`
+at startup (rather than a `BuildMessage`) on input the old one accepted:
+
+- unquoted string values -- `linker = isolated` must be `linker = "isolated"`
+- missing newlines between key/value pairs
+- integers past `Number.MAX_SAFE_INTEGER`
+
+A `bunfig.toml` that loaded fine on 1.3.x can stop Bun from starting on 1.4 with
+`TOML Parse error: Strings must be quoted`. Also new in 1.4: a project's `bunfig.toml` takes
+precedence over any `.npmrc` setting for the same key (`.npmrc`-only settings such as
+`//host/:_authToken` still attach to registries declared in `bunfig.toml`).
+
 ## bunfig.toml
 
 Bun's configuration file. Located in the project root or `$HOME/.bunfig.toml` for global config.
@@ -12,6 +26,21 @@ Bun's configuration file. Located in the project root or `$HOME/.bunfig.toml` fo
 bun = true                          # Always use Bun runtime (not Node.js)
 shell = "bun"                       # Default shell: "bun" or "system"
 silent = false                      # Suppress script name echo
+noOrphans = true                    # Exit when the parent dies; SIGKILL descendants on exit
+```
+
+Top-level (not under a section):
+
+```toml
+env = false                         # Disable automatic .env loading (v1.3.3+)
+```
+
+Serving static assets from `Bun.serve` HTML routes (v1.4+):
+
+```toml
+[serve.static]
+sourcemap = "linked"                # Production no longer serves HTML-route sourcemaps
+                                    #   by default; set this to opt back in
 ```
 
 ### Package Installation
@@ -29,7 +58,16 @@ globalDir = "~/.bun/install/global" # Global install location
 globalBinDir = "~/.bun/bin"         # Global bin location
 concurrentScripts = 8               # Max parallel lifecycle scripts
 saveTextLockfile = true             # Use text lockfile (bun.lock)
-globalStore = false                 # Share the package store across projects via symlinks (v1.3.14+)
+linker = "isolated"                 # "isolated" or "hoisted"; default comes from the
+                                    #   lockfile's configVersion, not the Bun version
+globalStore = false                 # Share package files across projects via symlinks
+                                    #   (v1.3.14+). Off by default and IGNORED unless
+                                    #   linker = "isolated". See pm/global-store.mdx
+publicHoistPattern = []             # Globs hoisted to the root node_modules (isolated linker)
+hoistPattern = ["*"]                # Globs hoisted into node_modules/.bun/node_modules
+hoist = true                        # false: skip that fallback dir entirely, so undeclared
+                                    #   requires fail with MODULE_NOT_FOUND (v1.4+)
+minimumReleaseAge = 0               # Only install packages published at least N seconds ago
 
 [install.cache]
 dir = "~/.bun/install/cache"        # Cache directory

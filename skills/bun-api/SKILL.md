@@ -31,7 +31,7 @@ version-tagged item.
 Bun ships its complete documentation inside `bun-types`, version-matched to the runtime.
 In any project with `bun-types` or `@types/bun` installed:
 
-```
+```text
 node_modules/bun-types/docs/**/*.mdx   # full docs, plus ~180 task-shaped guides/
 node_modules/bun-types/*.d.ts          # richest API surface (bun.d.ts, serve.d.ts, sql.d.ts)
 node_modules/bun-types/CLAUDE.md       # Bun's own agent rules

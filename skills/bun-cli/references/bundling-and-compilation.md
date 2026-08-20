@@ -1,5 +1,9 @@
 # Bundling and Compilation Reference
 
+> `bun build --help` is authoritative for flags. Concepts: `node_modules/bun-types/docs/
+> bundler/**.mdx` (`index.mdx`, `executables.mdx`, `loaders.mdx`, `plugins.mdx`,
+> `bytecode.mdx`, `macros.mdx`, `standalone-html.mdx`). 1.4 changes: `migration-1.4.md`.
+
 ## bun build
 
 Bundle TypeScript/JavaScript for distribution.
@@ -96,10 +100,56 @@ Default: `[dir]/[name].[ext]`
 | `--ignore-dce-annotations` | Ignore `/* @__PURE__ */` and `sideEffects` |
 | `--tree-shaking` | Enable/disable tree shaking (default: true for production) |
 | `--manifest` | Generate build manifest file |
-| `--metafile` | Generate bundle analysis metadata (v1.3.6+) |
+| `--metafile [path]` | Bundle metadata in esbuild's format -- works with esbuild's analyzer (v1.3.6+) |
+| `--metafile-md [path]` | Module graph as a Markdown report: summary, largest inputs, per-entry breakdown, dependency chains (v1.3.8+) |
 | `--server-components` | Enable React Server Components support |
 | `--css-chunking` | Enable CSS code splitting |
 | `--emit-dce-annotations` | Emit dead code elimination annotations |
+| `--react-compiler` | Run React's auto-memoization compiler inside Bun's parser -- no Babel or SWC (v1.4+) |
+| `--react-fast-refresh` | React Fast Refresh transform |
+| `--feature NAME` | Compile-time flag for `feature()` from `bun:bundle`; the dead branch is removed |
+| `--allow-unresolved glob` | Permit unresolved dynamic `import()`/`require()` specifiers (default `*`) |
+| `--reject-unresolved` | Fail the build on any unresolvable dynamic specifier |
+| `--banner`, `--footer` | Prepend/append text (e.g. `"use client"`) |
+| `--keep-names` | Preserve function and class names when minifying |
+| `--packages external\|bundle` | Keep dependencies external or bundle them |
+
+**Changed in 1.4:** `--metafile` now sets a bundled import's `path` to the imported file's
+`inputs` key, so `metafile.inputs[path]` matches (it was the raw specifier or an absolute path).
+`--minify` no longer emits a bare `$` identifier, which shadowed jQuery in classic scripts. A
+bundled `import * as ns` namespace enumerates its exports in sorted order -- update snapshots
+that pinned the old order.
+
+### Bun.build() Options Without a CLI Flag
+
+```typescript
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  reactCompiler: true,                          // same as --react-compiler (v1.4+)
+  optimizeImports: ['antd', '@mui/material'],   // prune barrel files (v1.3.10+)
+  metafile: true,                               // result.metafile, esbuild format
+  files: {                                      // bundle from memory (v1.3.6+)
+    '/app/index.ts': `import { greet } from "./greet.ts"; greet("World")`,
+    '/app/greet.ts': `export function greet(n: string) { return "Hello, " + n }`,
+  },
+})
+```
+
+`optimizeImports` skips the hundreds of files behind names you did not import from a barrel
+package. Packages declaring `"sideEffects": false` get this automatically; everything else
+needs the opt-in. `files` maps paths to strings, `Blob`s, or `TypedArray`s, and virtual paths
+take precedence over real ones -- handy for codegen and for stubbing a module in tests.
+
+### Compile-Time Feature Flags
+
+```typescript
+import { feature } from 'bun:bundle'
+
+if (feature('SUPER_SECRET')) { /* removed unless --feature=SUPER_SECRET */ }
+```
+
+Works in `bun build`, `bun run`, and `bun test`. Set via `--feature=FLAG` or `features: [...]`
+in `Bun.build()`.
 
 ## Standalone Executables (--compile)
 
@@ -113,10 +163,42 @@ bun build --compile [flags] <entrypoint>
 
 | Flag | Description |
 |---|---|
-| `--compile` | Create standalone executable |
+| `--compile` | Create standalone executable (implies `--production`) |
 | `--target platform` | Cross-compile target (see below) |
 | `--outfile name` | Output executable name |
 | `--minify` | Minify bundled code |
+| `--asset path` | Embed a file or directory, preserving relative paths (v1.4+) |
+| `--bytecode` | Bytecode cache; supports ES modules with `--format=esm` as of v1.3.9 |
+| `--compile-exec-argv args` | Prepend arguments to the executable's `execArgv` |
+| `--compile-executable-path path` | Use a local Bun binary instead of downloading one when cross-compiling (v1.3.6+) |
+| `--compile-autoload-tsconfig` | Re-enable runtime `tsconfig.json` loading (**off by default since v1.3.4**) |
+| `--compile-autoload-package-json` | Re-enable runtime `package.json` loading (**off by default since v1.3.4**) |
+| `--no-compile-autoload-dotenv` | Disable `.env` autoloading (on by default) |
+| `--no-compile-autoload-bunfig` | Disable `bunfig.toml` autoloading (on by default) |
+| `--windows-icon`, `--windows-title`, `--windows-publisher`, `--windows-version`, `--windows-description`, `--windows-copyright`, `--windows-hide-console` | Windows executable metadata |
+
+**Changed in v1.3.4:** compiled binaries no longer auto-load `tsconfig.json` or `package.json`
+from the runtime working directory, so a binary can no longer pick up unrelated config from
+wherever it happens to run. `.env` and `bunfig.toml` still auto-load.
+
+### Embedding Assets (v1.4+)
+
+`--asset` embeds a file or a whole directory into the executable with original filenames, so
+`path.join(import.meta.dir, ...)` resolves the same as on disk.
+
+```bash
+bun build ./build/index.js --compile \
+  --asset ./build/client --asset ./build/prerendered \
+  --outfile server
+```
+
+`node:fs` treats `/$bunfs/` as a real directory tree -- `existsSync`, `statSync`, `lstatSync`,
+`accessSync`, `readdirSync`, and `fs.promises.readdir` (including `withFileTypes` and
+`recursive`) all work on embedded paths. Static file servers that enumerate a directory at
+startup run unmodified inside the binary.
+
+Check whether you are inside one with `Bun.isStandaloneExecutable` (v1.4+) -- unlike
+`Bun.embeddedFiles.length > 0`, reading it allocates nothing.
 
 ### Cross-Compilation Targets
 
