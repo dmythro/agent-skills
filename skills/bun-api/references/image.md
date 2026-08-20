@@ -1,6 +1,40 @@
 # Bun.Image
 
-Built-in image processing -- decode, transform, and re-encode images with no native dependencies. Replaces `sharp` and `jimp`. Available as `Bun.Image` (v1.3.14+). Supported formats: JPEG, PNG, WebP, GIF, BMP, HEIC, AVIF, TIFF.
+Built-in image processing -- decode, transform, and re-encode images with no native dependencies. Replaces `sharp` and `jimp`. Available as `Bun.Image` (v1.3.14+).
+
+> Full API and the authoritative compatibility matrix:
+> `node_modules/bun-types/docs/runtime/image.mdx`.
+
+## Format Support Is Platform-Dependent
+
+Do not assume parity across platforms -- an unsupported format rejects with
+`ERR_IMAGE_FORMAT_UNSUPPORTED`.
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| JPEG, PNG, WebP, GIF, BMP | yes | yes | yes |
+| HEIC / AVIF | not supported | ImageIO | WIC |
+| TIFF (decode) | not supported | ImageIO | WIC |
+| Clipboard | returns `null` | NSPasteboard | Win32 |
+
+AVIF **encode** additionally needs an OS AV1 encoder: Apple Silicon M3+ only. Intel and
+M1/M2 Macs reject it; AVIF decode works anywhere ImageIO does (macOS 13+).
+
+JPEG, PNG, and WebP go through statically-linked codecs on every platform, so their encoded
+output is byte-identical across Linux, macOS, and Windows. Formats handled by the system
+backend inherit the OS's patch level.
+
+## Clipboard (v1.4+)
+
+```typescript
+const img = Bun.Image.fromClipboard()      // null when there is no image, always null on Linux
+Bun.Image.hasClipboardImage()
+Bun.Image.clipboardChangeCount()           // poll this integer; call hasClipboardImage() when it moves
+```
+
+macOS has no clipboard-change notification, so polling `clipboardChangeCount()` is the
+documented pattern. On Linux, shell out to `wl-paste`/`xclip` and pass the bytes to the
+constructor.
 
 ## Constructing
 

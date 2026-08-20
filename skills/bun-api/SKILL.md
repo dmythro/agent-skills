@@ -5,7 +5,8 @@ description: >-
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
   via DATABASE_URL, Bun.s3 for S3-compatible storage, Bun.redis for Redis/Valkey,
   Bun.Archive for tarballs, Bun.Image image processing, Bun.WebView headless browser
-  automation, Bun.cron in-process scheduler, JSONC/JSON5/JSONL/markdown (named imports),
+  automation, Bun.cron scheduling, Bun.secrets OS credential storage, Bun.Terminal PTYs,
+  JSONC/JSON5/JSONL/XML/TOML/YAML/markdown parsers,
   Bun.hash, Bun.password, compression, and scripting utilities. Use when writing scripts,
   automating tasks, querying databases, working with S3 storage, Redis caching, processing
   images, automating a headless browser, parsing markdown/JSON variants, or doing file
@@ -20,7 +21,47 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 
 **Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
 
-**Verified against Bun v1.3.14** (2026-05-28).
+**Verified against Bun v1.4.0** (2026-08-20). Features are tagged with the version that
+introduced them (`v1.4+`). Where 1.4 changed existing behavior, both behaviors are stated
+so this skill stays correct on 1.3.x projects -- check `bun --version` before relying on a
+version-tagged item.
+
+## Read Bun's Own Docs First
+
+Bun ships its complete documentation inside `bun-types`, version-matched to the runtime.
+In any project with `bun-types` or `@types/bun` installed:
+
+```
+node_modules/bun-types/docs/**/*.mdx   # full docs, plus ~180 task-shaped guides/
+node_modules/bun-types/*.d.ts          # richest API surface (bun.d.ts, serve.d.ts, sql.d.ts)
+node_modules/bun-types/CLAUDE.md       # Bun's own agent rules
+```
+
+**Consult them before writing non-trivial Bun code.** This skill covers which API to reach
+for; the shipped docs cover exact signatures and options.
+
+1. **Check the version.** Compare `bun --version` against `node_modules/bun-types/package.json`.
+   `bun init` installs `@types/bun@latest`, which lags behind the runtime -- correct it with
+   `bun add -d bun-types@<runtime-version>`.
+2. **Open by explicit path.** With Bun's global virtual store enabled, `node_modules/bun-types`
+   is a symlink: `find node_modules -name '*.mdx'` and `rg <pattern> node_modules` return
+   nothing, while `find node_modules/bun-types/docs -name '*.mdx'` works.
+3. **Never edit files under `node_modules/`.** Under the global store, every project on the
+   machine shares the same inode -- a write there hits all of them. Use `bun patch`.
+4. **Not installed?** The same path works online: `docs/runtime/sql.mdx` is
+   `https://bun.com/docs/runtime/sql`.
+
+| Task | Doc path (under `node_modules/bun-types/docs/`) |
+|---|---|
+| HTTP server, routes, WebSockets | `runtime/http/server.mdx`, `runtime/http/routing.mdx`, `runtime/http/websockets.mdx` |
+| `fetch`, TCP, UDP, DNS | `runtime/networking/fetch.mdx`, `networking/tcp.mdx`, `networking/udp.mdx`, `networking/dns.mdx` |
+| File I/O, streams, binary data | `runtime/file-io.mdx`, `runtime/streams.mdx`, `runtime/binary-data.mdx` |
+| Shell, subprocesses, PTY | `runtime/shell.mdx`, `runtime/child-process.mdx` |
+| SQL, SQLite, Redis, S3 | `runtime/sql.mdx`, `runtime/sqlite.mdx`, `runtime/redis.mdx`, `runtime/s3.mdx` |
+| Parsers | `runtime/json5.mdx`, `jsonl.mdx`, `xml.mdx`, `toml.mdx`, `yaml.mdx`, `markdown.mdx`, `file-types.mdx` |
+| Images, WebView, cron, secrets, archives | `runtime/image.mdx`, `webview.mdx`, `cron.mdx`, `secrets.mdx`, `archive.mdx` |
+| Hashing, utils, semver, glob, cookies, CSRF | `runtime/hashing.mdx`, `utils.mdx`, `semver.mdx`, `glob.mdx`, `cookies.mdx`, `csrf.mdx` |
+| Node.js compatibility | `runtime/nodejs-compat.mdx` |
 
 ## When to Use
 
@@ -37,22 +78,25 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 
 Built-in HTTP server — replaces Express, Fastify, or `http.createServer`.
 
+Prefer `routes` over hand-rolled `URL` parsing -- it gives you params, per-method handlers,
+and zero-allocation static responses. `fetch` is the fallback for unmatched requests.
+
 ```typescript
 const server = Bun.serve({
   port: 3000,
 
-  fetch(req: Request): Response | Promise<Response> {
-    const url = new URL(req.url)
+  routes: {
+    '/health': new Response('OK'),                    // static, zero-allocation
+    '/api/users/:id': req => Response.json({ id: req.params.id }),
+    '/api/posts': {                                   // per-method handlers
+      GET: () => Response.json(listPosts()),
+      POST: async req => Response.json(await req.json()),
+    },
+    '/static/*': { dir: './public' },                 // serve a directory (v1.4+)
+    '/*': Response.json({ error: 'not found' }, { status: 404 }),
+  },
 
-    if (url.pathname === '/api/health') {
-      return Response.json({ status: 'ok' })
-    }
-
-    if (url.pathname === '/api/data' && req.method === 'POST') {
-      const body = await req.json()
-      return Response.json({ received: body })
-    }
-
+  fetch(req: Request): Response | Promise<Response> {  // unmatched requests
     return new Response('Not Found', { status: 404 })
   },
 
@@ -64,9 +108,14 @@ const server = Bun.serve({
 console.log(`Listening on ${server.url}`)
 ```
 
+Route precedence: exact > `:param` > `*` > global `/*`. Handlers receive a `BunRequest`
+(a `Request` plus `params` and `cookies`).
+
 Key methods: `server.stop()`, `server.reload()` (hot-swap handler), `server.requestIP(req)`, `server.upgrade(req)` (WebSocket).
 
-> **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming responses, static file serving, and full server API.
+> **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming
+> responses, static file serving, and 1.4 behavior changes. Full API in
+> `node_modules/bun-types/docs/runtime/http/server.mdx` and `http/routing.mdx`.
 
 ## TCP / UDP Sockets
 
@@ -437,17 +486,30 @@ const archive = new Bun.Archive({
 })
 await Bun.write("archive.tar", archive)
 
-// With gzip compression
+// With gzip compression -- write the BYTES, not the Archive (see gotcha below)
 const compressed = new Bun.Archive(
   { "hello.txt": "Hello, World!" },
-  { compress: "gzip", level: 9 }
+  { compress: "gzip", level: 9 }        // level 1-12, default 6
 )
-await Bun.write("archive.tar.gz", compressed)
+await Bun.write("archive.tar.gz", await compressed.bytes())
 
 // Extract (auto-detects gzip)
 const tarball = await Bun.file("archive.tar.gz").bytes()
 const extracted = new Bun.Archive(tarball)
+await extracted.extract("./out")                   // -> number of entries
+await extracted.extract("./out", { glob: ["src/**", "!**/*.test.ts"] })
+const files = await extracted.files()              // -> Map<string, File>
 ```
+
+**Gotcha (verified on v1.4.0):** `Bun.write(path, archive)` ignores the constructor's
+`compress` option and writes an uncompressed tar under your `.tar.gz` filename. Bun's own
+docs show `Bun.write(path, archive)` as compressing -- it does not. Always pass
+`await archive.bytes()` (or `await archive.blob()`), which do honor `compress`.
+
+An `Archive` is **not iterable** -- `for (const [name, contents] of archive)` throws.
+Use `await archive.files()` for a `Map<string, File>`, or `await archive.extract(dir)`.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/archive.mdx`
 
 ## JSONC (JSON with Comments)
 
@@ -468,27 +530,62 @@ Bun automatically uses JSONC parsing for `tsconfig.json`, `jsconfig.json`, `pack
 ## Additional Parsing and Utilities (v1.3+)
 
 ```typescript
-import { JSON5, JSONL, markdown, cron } from "bun"
+import { JSON5, JSONL, XML, TOML, markdown, cron, secrets } from "bun"
 
 // JSON5 -- superset of JSON (comments, unquoted keys, trailing commas)
 const config = JSON5.parse(`{ unquoted: 'value', /* comment */ }`)
 
 // JSONL -- newline-delimited JSON
 const records = JSONL.parse('{"a":1}\n{"a":2}\n')
+JSONL.parseChunk(partial)                    // { values, read, done, error } for streams
 
-// Markdown -- built-in CommonMark parser (replaces marked, remark, etc.)
+// XML -- SIMD parser + serializer (v1.4+), replaces fast-xml-parser / xml2js
+const order = XML.parse('<order id="A1"><item>Tea</item></order>')
+// { order: { "@id": "A1", item: "Tea" } }   -- @attr / #text convention, values are strings
+XML.parse(doc, { compact: false })           // { name, attributes, children } document tree
+
+// TOML -- rewritten for TOML v1.1.0; stringify() added in v1.4
+const cfg = TOML.parse('name = "app"')
+TOML.stringify({ name: "app" })
+
+// Markdown -- built-in CommonMark + GFM parser (replaces marked, remark, etc.)
 const html = markdown.html("# Title\n\n**Bold** text.")
 const ansi = markdown.ansi("# Title")        // ANSI terminal output (v1.3.12+)
+markdown.react(readme)                       // React elements (v1.4+)
+markdown.render(src, { heading: (c, { level }) => `<h${level}>${c}</h${level}>` })
 
-// Cron -- in-process scheduler + expression parser
-const job = cron("0 9 * * 1-5", runReport)   // scheduler (v1.3.12+)
-const next = cron.parse("0 9 * * 1-5")       // next run as ISO string
+// Cron -- OS-level jobs, in-process scheduler, and expression parser
+const job = cron("0 9 * * 1-5", runReport)   // in-process (v1.3.12+)
+const next = cron.parse("0 9 * * 1-5")       // -> Date | null  (NOT a string)
+
+// Secrets -- OS credential store: Keychain / libsecret / Credential Manager (experimental)
+await secrets.set({ service: "my-cli", name: "token", value: t })
+const token = await secrets.get({ service: "my-cli", name: "token" })  // string | null
 
 // ANSI-aware string utilities (replace wrap-ansi, slice-ansi npm packages)
 const coloredText = "\x1b[31mHello, World!\x1b[0m"
 Bun.wrapAnsi(coloredText, 80)              // Wrap to column width
 Bun.sliceAnsi(coloredText, 0, 5)           // Grapheme-aware slice
 ```
+
+**Changed in 1.4 -- `Bun.cron` time zone.** `cron.parse()` and the in-process
+`cron(schedule, handler)` read schedules in the process's **local** time zone. Before 1.4
+they used UTC. Pass `{ tz: "UTC" }` as the final argument to restore the old behavior:
+
+```typescript
+cron("0 9 * * *", handler, { tz: "UTC" })
+cron.parse("0 9 * * *", Date.now(), { tz: "UTC" })
+```
+
+`cron.parse()` returns a `Date`, or `null` when the expression has no match within 8 years
+(e.g. February 30th). `cron.remove(title)` takes the **string title** of an OS-level job --
+it does not accept a job handle. Stop an in-process job with `job.stop()` or `using`.
+
+**Changed in 1.4 -- stricter parsers.** `TOML.parse()` and `bunfig.toml` now throw
+`SyntaxError` on unquoted string values, missing newlines between pairs, and integers past
+`Number.MAX_SAFE_INTEGER`. `JSONC.parse()` throws `SyntaxError` on invalid input and on `""`
+(it returned `{}` before). `YAML.parse()` follows YAML 1.2, so `yes`/`no`/`on`/`off` are
+strings, not booleans -- an `on:` key in a GitHub Actions workflow parses as `"on"`.
 
 > **Reference**: See `references/utilities.md` for full details on all parsing and utility APIs.
 
@@ -661,33 +758,85 @@ Faster than `JSON.stringify`/`JSON.parse` for complex objects. Supports types JS
 
 ## Image Processing (Bun.Image)
 
-Built-in image decode/transform/encode (v1.3.14+) — replaces `sharp` and `jimp`. Supports JPEG, PNG, WebP, GIF, BMP, HEIC, AVIF, TIFF.
+Built-in image decode/transform/encode (v1.3.14+) — replaces `sharp` and `jimp`.
 
 ```typescript
 const thumb = await Bun.file('upload.jpg')
   .image()
   .resize(400, 400, { fit: 'cover' })
+  .rotate(90).flip().flop()
+  .modulate({ brightness: 1.1 })
   .webp({ quality: 82 })
   .bytes()
 
+await Bun.file('hero.jpg').image().resize(1024).webp().write('thumb.webp')
 const { width, height, format } = await new Bun.Image(buffer).metadata()
 const blur = await Bun.file('hero.jpg').image().placeholder()  // thumbhash data URL
+
+const pasted = Bun.Image.fromClipboard()      // v1.4+, macOS/Windows only, null on Linux
 ```
 
-> **Reference**: See `references/image.md` for transforms, output formats, and metadata.
+**Format support is platform-dependent** — do not assume parity:
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| JPEG, PNG, WebP, GIF, BMP | yes | yes | yes |
+| HEIC / AVIF | `ERR_IMAGE_FORMAT_UNSUPPORTED` | ImageIO (AVIF **encode** needs Apple Silicon M3+) | WIC |
+| TIFF decode | no | ImageIO | WIC |
+| Clipboard | returns `null` | yes | yes |
+
+JPEG/PNG/WebP use statically-linked codecs, so their encoded output is byte-identical across
+platforms; the rest go through the OS backend.
+
+> **Reference**: See `references/image.md`, and
+> `node_modules/bun-types/docs/runtime/image.mdx` for the full compatibility matrix.
 
 ## Browser Automation (Bun.WebView)
 
-Headless browser automation (v1.3.12+) — navigate, click, type, run JS, and screenshot without Playwright or Puppeteer (WebKit on macOS, Chrome backend elsewhere).
+Headless browser automation (v1.3.12+) — navigate, click, type, scroll, run JS, and
+screenshot without Playwright or Puppeteer (system WebKit on macOS, or an installed
+Chrome/Chromium/Edge on macOS, Linux, and Windows). Clicks and scrolls are real user input.
 
 ```typescript
 await using view = new Bun.WebView({ width: 1280, height: 720 })
 await view.navigate('https://bun.sh')
+await view.click("a[href='/docs']")
 const title = await view.evaluate('document.title')
-await Bun.write('page.png', await view.screenshot())
+await Bun.write('page.png', await view.screenshot())   // returns a Blob
+await view.cdp('Page.captureScreenshot', {})           // raw CDP escape hatch
 ```
 
-> **Reference**: See `references/webview.md` for the full method list and CDP access.
+> **Reference**: See `references/webview.md`, and
+> `node_modules/bun-types/docs/runtime/webview.mdx` for input simulation and CDP events.
+
+## New in Bun 1.4
+
+Compact index — reach for these when the task fits, then read the linked doc before writing code.
+
+| API | Use it for | Doc (`node_modules/bun-types/docs/`) |
+|---|---|---|
+| `Bun.XML.parse()` / `.stringify()` | XML without `fast-xml-parser`/`xml2js`; `.xml` imports return the parsed doc | `runtime/xml.mdx` |
+| `Bun.TOML.stringify()` | Writing TOML (parser now TOML v1.1.0 conformant) | `runtime/toml.mdx` |
+| `Bun.secrets` | Storing credentials in the OS keychain instead of a dotfile (experimental) | `runtime/secrets.mdx` |
+| `Bun.Terminal` + `Bun.spawn({ terminal })` | Driving `bash`/`vim`/`htop` from JS; replaces `node-pty` | `runtime/child-process.mdx` |
+| `Bun.spawn({ cgroup })` | Capping a child's memory/PIDs on Linux before it starts | `runtime/child-process.mdx` |
+| `Bun.markdown.react()` | Rendering Markdown to React elements | `runtime/markdown.mdx` |
+| `Bun.Image.fromClipboard()` | Reading an image off the system pasteboard (macOS/Windows) | `runtime/image.mdx` |
+| `res.textStream()` / `req.textStream()` | Iterating a body as decoded UTF-8 strings, not bytes | `runtime/streams.mdx` |
+| `fetch(url, { compress: 'gzip' })` | Compressing a request body and setting `Content-Encoding` | `runtime/networking/fetch.mdx` |
+| `fetch(url, { protocol: 'http2' })` | HTTP/2 or HTTP/3 requests (experimental) | `runtime/networking/fetch.mdx` |
+| `routes: { '/x/*': { dir: './public' } }` | Serving a directory; replaces `express.static`/`sirv` | `runtime/http/routing.mdx` |
+| `process.on('memoryPressure', fn)` | Dropping caches when the OS reports low memory | `runtime/nodejs-compat.mdx` |
+| `Bun.isStandaloneExecutable` | Branching inside a `--compile` binary, allocation-free | `bundler/executables.mdx` |
+| ML-DSA / ML-KEM | Post-quantum signatures and key encapsulation | `runtime/hashing.mdx` |
+
+`ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
+backpressure automatically — `Bun.serve` pauses a request/response body when the socket
+cannot accept more, and `fetch()` pauses the socket when nothing is consuming the body.
+Streaming code that previously buffered whole payloads no longer needs manual throttling.
+
+> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4 --
+> the one thing Bun's shipped docs do not cover, since they describe only the current state.
 
 ## Script Patterns
 
@@ -772,3 +921,18 @@ db.close()
 19. **Use `Bun.wrapAnsi()`** instead of `wrap-ansi` npm package
 20. **Use `Bun.sliceAnsi()`** instead of `slice-ansi` npm package
 21. **Use `Bun.Image`** instead of `sharp` or `jimp` for image processing
+22. **Use `Bun.XML`** instead of `fast-xml-parser` or `xml2js` (v1.4+)
+23. **Use `Bun.secrets`** instead of writing credentials to a dotfile (v1.4+)
+24. **Use `Bun.Terminal`** instead of `node-pty` for pseudo-terminals
+25. **Use `URLPattern`** instead of `path-to-regexp`
+26. **Use `CompressionStream`/`DecompressionStream`** for streaming compression
+27. **Read `node_modules/bun-types/docs/**.mdx`** before writing non-trivial Bun code --
+    open by explicit path, and never edit anything under `node_modules/`
+
+## References
+
+> - `references/migration-1.4.md` -- what changed between 1.3 and 1.4 (breaking behavior)
+> - `references/http-server.md` -- `Bun.serve` routes, TLS, WebSockets, static files
+> - `references/file-io.md`, `references/shell-and-process.md`, `references/networking.md`
+> - `references/sql-client.md`, `references/sqlite-and-data.md`, `references/redis-client.md`, `references/s3-client.md`
+> - `references/utilities.md`, `references/hashing.md`, `references/image.md`, `references/webview.md`

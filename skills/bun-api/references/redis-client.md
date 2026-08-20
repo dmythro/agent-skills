@@ -4,6 +4,16 @@
 
 Built-in Redis client with zero dependencies. Works with Redis and Valkey servers.
 
+> Full API: `node_modules/bun-types/docs/runtime/redis.mdx`.
+
+**Changed in 1.4 -- TLS and URL validation.** A `rediss://` client verifies the server
+certificate against the host in the URL, as the Postgres and MySQL clients do, and rejects the
+first command with `ERR_TLS_CERT_ALTNAME_INVALID` on mismatch. Reaching Redis by IP or through
+a port-forward to `localhost` now fails -- connect by the name on the certificate, or pass
+`tls: { rejectUnauthorized: false }`. `new Bun.RedisClient("redis://host/notadb")` throws
+instead of silently connecting to database `0`, and `expire()` throws on `NaN`/`undefined`
+seconds instead of sending `EXPIRE key 0`.
+
 ### Connection
 
 ```typescript

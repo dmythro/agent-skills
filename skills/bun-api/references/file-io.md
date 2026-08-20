@@ -1,5 +1,15 @@
 # File I/O Reference
 
+> Full API: `node_modules/bun-types/docs/runtime/file-io.mdx`,
+> `runtime/streams.mdx`, `runtime/binary-data.mdx`, plus ~40 task-shaped pages under
+> `docs/guides/read-file/`, `guides/write-file/`, and `guides/streams/`.
+
+**Changed in 1.4:** `fs.rmdir` no longer accepts `{ recursive: true }` -- it throws
+`ERR_INVALID_ARG_VALUE`, matching Node. Use `fs.rm(path, { recursive: true, force: true })`.
+Exceptions thrown inside `node:fs` callbacks now reach `process.on("uncaughtException")`
+rather than `unhandledRejection`. Errors from async native APIs (`fs.promises`, `Bun.file()`,
+S3, DNS, crypto, `fetch`) now carry async stack traces pointing at the `await` in your code.
+
 ## Bun.file()
 
 Creates a lazy `BunFile` reference. No I/O happens until you call a read method.

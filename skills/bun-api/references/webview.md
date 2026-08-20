@@ -1,6 +1,19 @@
 # Bun.WebView
 
-Headless browser automation built into the runtime -- navigate pages, run JavaScript, click, type, and capture screenshots without Playwright or Puppeteer. Available as `Bun.WebView` (v1.3.12+). Backed by WebKit on macOS and a Chrome backend elsewhere; useful for scraping, screenshot generation, and end-to-end checks.
+Headless browser automation built into the runtime -- navigate pages, run JavaScript, click, type, scroll, and capture screenshots without Playwright or Puppeteer. Available as `Bun.WebView` (v1.3.12+, improved in 1.4). Useful for scraping, screenshot generation, and end-to-end checks.
+
+**Backends**: the system WebKit on macOS (nothing to install), or an installed Chrome,
+Chromium, or Edge on macOS, Linux, and Windows. Clicks and scrolls are delivered as real user
+input, not synthetic DOM events.
+
+`Bun.WebView` extends `EventTarget`, returns `Blob` screenshots, and exposes
+`.cdp(method, params?)` as an escape hatch for raw Chrome DevTools Protocol commands.
+
+> Full API -- input simulation, console capture, CDP events, persistent storage, lifecycle:
+> `node_modules/bun-types/docs/runtime/webview.mdx`.
+
+If Playwright is a hard requirement, note that it now runs on Bun as of 1.4
+(`connectOverCDP()`, `playwright test`, `--ui`, Chromium on Windows).
 
 ## Launching
 

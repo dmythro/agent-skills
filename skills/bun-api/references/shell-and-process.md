@@ -1,8 +1,24 @@
 # Shell and Process Reference
 
+> Full API: `node_modules/bun-types/docs/runtime/shell.mdx` and
+> `runtime/child-process.mdx`. 1.4 behavior changes: `migration-1.4.md`.
+
 ## Bun.$ (Shell API)
 
 Tagged template literal for shell commands with automatic escaping.
+
+**Changed in 1.4 -- globbing.** Only `*`, `**`, and braces written **directly in the
+template** expand. Glob characters arriving through `${...}`, a shell variable, command
+substitution, or quoted text are literal. `?`, `[...]`, and a leading `!` are literal
+everywhere. On 1.3.x an interpolated pattern still expanded.
+
+```typescript
+await $`echo ${"**/"}*`     // 1.3: matched recursively. 1.4: "no matches found"
+await $`echo **/*`          // correct on both -- pattern is in the template
+```
+
+A redirect target that expands to more than one word (`> *.txt`) now fails with
+`ambiguous redirect`; the words were joined into one path before.
 
 ```typescript
 import { $ } from 'bun'
@@ -311,9 +327,29 @@ process.execve('/usr/bin/node', ['node', 'script.js'], {
 // Nothing after a successful execve() runs -- Bun has been replaced by node.
 ```
 
-## Bun.Terminal (v1.3.14+)
+## Bun.Terminal (v1.3.5+, improved in 1.4)
 
-Pseudo-terminal (PTY) for driving interactive programs with a real TTY. On Windows this is backed by the ConPTY API.
+Pseudo-terminal (PTY) for driving interactive programs with a real TTY -- replaces `node-pty`.
+Works on Linux, macOS, and Windows (ConPTY). Drive `bash`, `vim`, or `htop` from JavaScript.
+
+The usual entry point is the `terminal` option on `Bun.spawn`:
+
+```typescript
+const proc = Bun.spawn(['bash'], {
+  terminal: {
+    cols: 80,
+    rows: 24,
+    data(term, data) {
+      process.stdout.write(data)      // colored output, as a real TTY would produce
+    },
+  },
+})
+
+proc.terminal.write('echo Hello from PTY!\n')
+proc.terminal.resize(120, 40)
+```
+
+Standalone construction and control:
 
 ```typescript
 const term = new Bun.Terminal(options)
@@ -324,3 +360,31 @@ term.setRawMode(true)       // toggle raw mode
 term.ref(); term.unref()    // control event-loop liveness
 term.close()
 ```
+
+**Changed in 1.4:** `write()` returns the full input length because the whole input is
+buffered. It previously returned only the bytes flushed synchronously, so re-sending the
+remainder duplicated input. `drain` now fires on POSIX.
+
+## Bun.spawn({ cgroup }) (v1.4+, Linux)
+
+Place a child in an existing cgroup **before** it starts, so limits such as `memory.max` and
+`pids.max` apply from its first instruction and anything it forks stays inside.
+
+```typescript
+import { mkdirSync, writeFileSync } from 'node:fs'
+
+const dir = '/sys/fs/cgroup/build-jobs'
+mkdirSync(dir, { recursive: true })
+writeFileSync(`${dir}/memory.max`, String(2 * 1024 ** 3))
+
+const proc = Bun.spawn({ cmd: ['make', '-j8'], cgroup: dir })
+```
+
+Takes a path or an open file descriptor. Bun only joins the cgroup -- create, configure, and
+remove it yourself. A missing directory fails the spawn; a frozen cgroup is refused with
+`EBUSY`. `node:child_process` forwards the option; other platforms ignore it.
+
+**Argument validation changed in 1.4.** `Bun.spawn()` / `spawnSync()` now throw rather than
+silently coercing: `ERR_INVALID_ARG_VALUE` for a NUL byte in `argv0` or `cwd`,
+`ERR_OUT_OF_RANGE` for `timeout: NaN`, `ERR_UNKNOWN_SIGNAL` for `killSignal: 0`, and
+`AbortError` for an already-aborted `signal` (no process is created).
