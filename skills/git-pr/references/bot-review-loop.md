@@ -59,7 +59,11 @@ bot_fail_diag() { gh run view "$(gh run list --workflow Copilot --commit "$(gh p
 #       "Action not completed / Review rate limited." -> bounced, with a "Next review available
 #         in: N minutes" window. A bounced request is NEVER queued: when the window reopens,
 #         nothing runs until a fresh trigger is posted -- schedule the re-trigger at window
-#         + 1-2 min slack, then read ITS ack too.
+#         + 1-2 min slack, then read ITS ack too. The re-trigger after a bounce must be
+#         "@coderabbitai full review": the bounce still marked the commits as reviewed, so a
+#         plain "review" answers "Review finished." without reviewing anything. And a bounce
+#         is itself a counted attempt -- under fair-usage throttling it shrinks the
+#         trailing-7-day allowance (coderabbit skill), so retry once per window, never hammer.
 #     Quota-limited per plan (hourly buckets): instead of a review it may post "Review limit
 #     reached ... Next review available in: N minutes" -- the quota refills over time. Auto-reviews
 #     also silently pause after 5 reviewed commits by default (auto_pause_after_reviewed_commits)
@@ -107,7 +111,7 @@ Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL 
 |-----------|-----------------------|--------------------------------------------------------------------------------|
 | `pending` | `Review in progress`  | A review is running on this sha right now -- wait, and never trigger over it     |
 | `success` | `Review completed`    | The bot reviewed this sha. With zero unresolved threads, that is a genuine clean round |
-| `success` | `Review rate limited` | The bucket was empty: **this sha was never reviewed**. Nothing is queued -- when the window reopens, only a fresh trigger starts a review |
+| `success` | `Review rate limited` | The bucket was empty: **this sha was never reviewed** -- yet the bounce marked it as reviewed, so an incremental push/`review` will not revisit it. Nothing is queued -- when the window reopens, only a fresh `@coderabbitai full review` starts a review |
 | `success` | `Review skipped: <reason>` | A config decision, not quota: observed reasons are `draft pull request` (`auto_review.drafts`) and `reviews are disabled for this base branch` (`auto_review.base_branches`). Nothing is coming until the config or the PR changes -- `bot_status` returns `5` |
 
 Sampled across 25 PRs of one account (62 stamped rounds): 44 completed, **15 rate limited**, 2 skipped, 1 in progress. Roughly **one round in four was refused**, every one of them behind a green check -- this is the normal case, not an edge case. (Measured on a Pro+ trial, where adaptive throttling applies: read the *ratio* as the warning, not the rate as a plan figure.)

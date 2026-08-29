@@ -136,7 +136,7 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai configuration` | Dump the resolved config with per-setting sources |
 | `@coderabbitai generate configuration` | Open a PR adding a `.coderabbit.yaml` |
 
-Every review run -- automatic incremental on push, `@coderabbitai review`, or `full review` -- consumes one PR review from the hourly allowance. Prefer incremental; reserve `full review` for after large refactors/rebases or when earlier reviews predate significant context.
+Every review run -- automatic incremental on push, `@coderabbitai review`, or `full review` -- consumes one PR review from the hourly allowance. Prefer incremental; reserve `full review` for after large refactors/rebases, when earlier reviews predate significant context -- or **after a rate-limit bounce**: a bounced attempt still marks its commits as reviewed, so a plain `review` no-ops and only `full review` actually runs (SKILL.md, Key Gotchas).
 
 ## Knowledge Base
 
