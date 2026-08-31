@@ -88,8 +88,8 @@ Two passes (review, fix, verify) is the normal shape. More than three passes mea
 | Plan | CLI reviews | PR reviews | Files/review |
 |------|-------------|------------|--------------|
 | Free | 3 | 1 (summary only) | 150 |
-| OSS (public repos) | 3 | 1--10, by repo popularity | 150 |
-| Pro | 5 | 5 | 300 |
+| OSS (public repos) | 3 | 1--10, by repo popularity | 100--300, by popularity |
+| Pro | 5 | 5 | 150 |
 | Pro+ | 10 | 10 | 300 |
 | Enterprise | 12 | 12 | 300 |
 
@@ -143,7 +143,7 @@ What *does* answer it: a `@coderabbitai rate limit` comment (remaining allowance
 8. **A PR-side rate limit is silent and green** -- no review, no threads, usually no comment, and a passing `CodeRabbit` check whose `description` reads `Review rate limited`. Nothing about the PR looks wrong, so an unreviewed PR gets reported as reviewed. Read that description before concluding anything from a quiet PR-side round (Where a Bounce Shows Up).
 9. **A quoted retry window is an estimate, and it is not durable** -- it is edited into the summary comment and a later edit can remove it, while different PRs quote wildly different numbers at the same moment. Capture it when you see it, take the smallest one visible across your PRs, and treat a sibling PR's `Review completed` as the real all-clear (Where a Bounce Shows Up). Don't wait out the largest number you can find.
 10. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs.
-11. **A rate-limited attempt still marks its commits as reviewed** -- so once the window reopens, a plain `@coderabbitai review` no-ops ("does not re-review already reviewed commits") and the round silently never happens. The recovery trigger after any bounce is **`@coderabbitai full review`**. The same forcing form is the fix for a wedged **"Review queued"** (observed stuck 2+ hours): nudge after ~1 hour instead of waiting it out.
+11. **A rate-limited attempt can leave its commits looking reviewed** -- once the window reopens, a plain `@coderabbitai review` over unchanged commits answers "does not re-review already reviewed commits" and the round silently never happens, so the recovery trigger after a bounce is **`@coderabbitai full review`**. It does not always stick, though: observed on this repo, the *next push* after a bounce resumed its incremental range from the last **completed** review and did re-cover the two skipped commits unprompted. Read the review's own "Commits" block to see which range it actually took, rather than assuming either way. The same forcing form is the fix for a wedged **"Review queued"** (observed stuck 2+ hours): nudge after ~1 hour instead of waiting it out.
 
 > **Reference**: See `references/configuration.md` for `.coderabbit.yaml` tuning and PR commands
 > **Reference**: See `references/allowlist.md` for auto-approval patterns
