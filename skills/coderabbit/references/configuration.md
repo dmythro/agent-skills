@@ -133,10 +133,11 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai ignore` | In the PR **description**: permanently disable auto-review for the PR |
 | `@coderabbitai resolve` | Resolve all CodeRabbit review threads |
 | `@coderabbitai autofix` | Apply fixes for unresolved findings (commit or stacked PR) |
+| `@coderabbitai rate limit` | Remaining PR review allowance + next availability -- **consumes no review** (aliases `rate-limit`, `limits`, `quota`) |
 | `@coderabbitai configuration` | Dump the resolved config with per-setting sources |
 | `@coderabbitai generate configuration` | Open a PR adding a `.coderabbit.yaml` |
 
-Every review run -- automatic incremental on push, `@coderabbitai review`, or `full review` -- consumes one PR review from the hourly allowance. Prefer incremental; reserve `full review` for after large refactors/rebases or when earlier reviews predate significant context.
+Every review run -- automatic incremental on push, `@coderabbitai review`, or `full review` -- consumes one PR review from the hourly allowance. Prefer incremental; reserve `full review` for after large refactors/rebases, when earlier reviews predate significant context -- or **after a rate-limit bounce**: a bounced attempt still marks its commits as reviewed, so a plain `review` no-ops and only `full review` actually runs (SKILL.md, Key Gotchas).
 
 ## Knowledge Base
 
