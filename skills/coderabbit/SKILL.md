@@ -68,8 +68,8 @@ Defaults (CLI v0.7): all tracked changes, base = repository default branch, plai
 - `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end.
 - `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review.
 - `coderabbit stats` -- review statistics (`--rebuild` rescans review history).
-- `coderabbit usage` -- the current billing period: organization, whether usage billing (overage) is active, your review count, and the period reset date. **Billing totals only** -- it does not report the hourly bucket, and no CLI command reveals a PR-side retry window. That question is answered on the PR instead, by `@coderabbitai rate limit` (below). Present in CLI v0.7 (`coderabbit --help`) even though the online command reference omits it: **the installed binary is the source of truth, not the docs page** -- verify with `--help` before "removing an unsupported command".
-- `@coderabbitai rate limit` -- **not a CLI command: a PR comment**, and the only on-demand read of the PR-side bucket. Reports the remaining allowance and when the next review becomes available, and [does not consume a review](https://docs.coderabbit.ai/reference/review-commands) (aliases `rate-limit`, `limits`, `quota`). Post it before opening a loop, and after a bounce instead of probing with triggers.
+- `coderabbit usage` -- the current billing period: organization, whether usage billing (overage) is active, your review count, the usage-based spend so far, and the period reset date. **Billing totals only** -- it does not report the hourly bucket, and no CLI command reveals a PR-side retry window. That question is answered on the PR instead, by `@coderabbitai rate limit` (below). Present in CLI v0.7 (`coderabbit --help`) even though the online command reference omits it: **the installed binary is the source of truth, not the docs page** -- verify with `--help` before "removing an unsupported command".
+- `@coderabbitai rate limit` -- **not a CLI command: a PR comment**, and the only on-demand read of the PR-side bucket. Reports the remaining allowance and when the next review becomes available, and [does not consume a review](https://docs.coderabbit.ai/reference/review-commands) (aliases `rate-limit`, `limits`, `quota`). Post it before opening a loop, and after a bounce instead of probing with triggers. It spends no review, but it is still a PR comment -- a write, subject to the usual approval.
 
 ## The Local Review-Fix Loop
 
@@ -88,6 +88,7 @@ Two passes (review, fix, verify) is the normal shape. More than three passes mea
 | Plan | CLI reviews | PR reviews | Files/review |
 |------|-------------|------------|--------------|
 | Free | 3 | 1 (summary only) | 150 |
+| OSS (public repos) | 3 | 1--10, by repo popularity | 150 |
 | Pro | 5 | 5 | 300 |
 | Pro+ | 10 | 10 | 300 |
 | Enterprise | 12 | 12 | 300 |
