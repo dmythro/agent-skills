@@ -133,6 +133,7 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai ignore` | In the PR **description**: permanently disable auto-review for the PR |
 | `@coderabbitai resolve` | Resolve all CodeRabbit review threads |
 | `@coderabbitai autofix` | Apply fixes for unresolved findings (commit or stacked PR) |
+| `@coderabbitai rate limit` | Remaining PR review allowance + next availability -- **consumes no review** (aliases `rate-limit`, `limits`, `quota`) |
 | `@coderabbitai configuration` | Dump the resolved config with per-setting sources |
 | `@coderabbitai generate configuration` | Open a PR adding a `.coderabbit.yaml` |
 
