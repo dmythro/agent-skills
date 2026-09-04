@@ -222,12 +222,12 @@ matches Node byte-for-byte; `argon2d`, `argon2i`, and `argon2id` are supported, 
 form runs on the thread pool. There is no `crypto.promises.argon2` -- promisify it.
 
 ```typescript
-import { argon2, argon2Sync } from 'node:crypto'
+import { argon2, argon2Sync, randomBytes } from 'node:crypto'
 import { promisify } from 'node:util'
 
 const params = {
   message: 'password',
-  nonce: salt,          // >= 8 bytes; string or Buffer
+  nonce: randomBytes(16),  // >= 8 bytes; string or Buffer -- store it next to the tag
   parallelism: 1,
   tagLength: 32,        // output bytes
   memory: 65536,        // KiB

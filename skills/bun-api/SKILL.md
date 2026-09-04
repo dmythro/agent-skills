@@ -663,8 +663,8 @@ const hash = await Bun.password.hash('password', { algorithm: 'argon2id' })
 const valid = await Bun.password.verify('password', hash)
 
 // Raw Argon2 tag via node:crypto (v1.4.1+) -- interop with hashes stored as bytes, not PHC strings
-import { argon2Sync } from 'node:crypto'
-argon2Sync('argon2id', { message: 'pw', nonce: salt, parallelism: 1, tagLength: 32, memory: 65536, passes: 3 })  // Buffer
+import { argon2Sync, randomBytes } from 'node:crypto'
+argon2Sync('argon2id', { message: 'pw', nonce: randomBytes(16), parallelism: 1, tagLength: 32, memory: 65536, passes: 3 })  // Buffer
 ```
 
 > **Reference**: See `references/hashing.md` for all hash algorithms, CryptoHasher streaming API, and password hashing options (bcrypt vs argon2id, cost parameters).

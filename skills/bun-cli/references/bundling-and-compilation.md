@@ -182,7 +182,7 @@ bun build --compile [flags] <entrypoint>
 | `--minify` | Minify bundled code |
 | `--asset path` | Embed a file or directory, preserving relative paths (v1.4+) |
 | `--bytecode` | Bytecode cache; supports ES modules with `--format=esm` as of v1.3.9; about 3x source size as of v1.4.1 |
-| `--bytecode-depth N` | Compile only the top N nesting levels to bytecode ahead of time; `0` is top-level only, deeper functions compile on first call (v1.4.1+) |
+| `--bytecode-depth N` | Compile only the top N nesting levels to bytecode ahead of time; `0` is top-level only, deeper functions compile on first call. `bytecodeDepth` in `Bun.build()` with `bytecode: true` and `target: 'bun'` (v1.4.1+) |
 | `--compile-exec-argv args` | Prepend arguments to the executable's `execArgv` |
 | `--compile-executable-path path` | Use a local Bun binary instead of downloading one when cross-compiling (v1.3.6+) |
 | `--compile-autoload-tsconfig` | Re-enable runtime `tsconfig.json` loading (**off by default since v1.3.4**) |
@@ -266,7 +266,6 @@ const result = await Bun.build({
   modulePreload: true,         // default; false skips <link rel="modulepreload"> (v1.4.1+)
   splitRequire: true,          // default with target 'bun'; false inlines require()'d ESM (v1.4.1+)
   deprecatedNamespaceObjectSetters: false,  // getter-only namespace objects, the future default (v1.4.1+)
-  bytecodeDepth: 1,            // with bytecode: true; nesting levels compiled ahead of time (v1.4.1+)
   sourcemap: 'external',       // 'external' | 'inline' | 'linked' | 'none'
   minify: true,                // or { syntax: true, whitespace: true, identifiers: true }
   external: ['react'],
