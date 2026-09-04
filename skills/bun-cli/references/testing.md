@@ -129,6 +129,12 @@ previous global in memory, N-API addons pointing at the old global, unresolved d
 breakpoints, and a GC crash during the swap between files. If `--isolate` was ruled out on
 1.3.x, it is worth retrying on 1.4.
 
+1.4.1 closes the remaining leak: files using `mock()`, `spyOn()`, `mock.module()`, or
+`Bun.plugin()` kept the previous module graph alive, so memory grew with every file (80 mocked
+files: 1.6 GB, now 215 MB). `process.env.TZ`, proxy, and TLS settings also stop carrying into
+later files, and `--parallel --coverage` no longer under-reports function coverage for files
+split across workers.
+
 ## Test API
 
 ### Defining Tests

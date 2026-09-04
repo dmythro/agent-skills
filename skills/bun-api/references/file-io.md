@@ -74,6 +74,11 @@ Bun.write(
 ): Promise<number>  // Returns bytes written
 ```
 
+**Streaming (v1.4.1+).** A `Response`, `Request`, or `ReadableStream` input is streamed to the
+file; the whole body was buffered in memory before (a 128 MiB download added ~160 MB of RSS,
+now ~13 MB). `fetch()` and S3 reads pause the socket at 256 KiB of unread data, so backpressure
+reaches the network.
+
 ### Overload Examples
 
 ```typescript
@@ -86,7 +91,7 @@ await Bun.write('copy.txt', Bun.file('original.txt'))
 // ArrayBuffer/Uint8Array to path
 await Bun.write('binary.dat', new Uint8Array([0x00, 0x01, 0x02]))
 
-// Response body to path
+// Response body to path (streamed, v1.4.1+)
 const response = await fetch('https://example.com/image.png')
 await Bun.write('image.png', response)
 

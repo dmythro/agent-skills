@@ -101,6 +101,18 @@ const ws = new WebSocket('ws+unix:///tmp/app.sock:/realtime')
 
 `perMessageDeflate: false` now correctly omits the compression extension header in the upgrade request (v1.3.14+).
 
+### Pausing Reads (v1.4.1+)
+
+`pause()` stops reading from the underlying TCP socket: no `message` events fire and the peer
+sees TCP backpressure. `resume()` continues. Both return `true` on success. This is a Bun
+extension with no browser equivalent.
+
+```typescript
+ws.pause()             // true; ws.isPaused === true
+ws.resume()            // true
+ws.bufferedAmount      // bytes still queued to send
+```
+
 ## fetch()
 
 `fetch()` is the standard global; Bun adds several transport controls.
@@ -121,9 +133,8 @@ request, and `--experimental-http3-fetch` (or `BUN_FEATURE_FLAG_EXPERIMENTAL_HTT
 enables the Alt-Svc auto-upgrade, where a response advertising HTTP/3 upgrades later
 requests to that origin automatically.
 
-`bun-types` 1.4.0 types the option as `"http2" | "http1.1" | "h2" | "h1"` -- `'http3'`/`'h3'`
-are missing from the union but accepted by the runtime; cast if TypeScript rejects them
-(reported: oven-sh/bun#39773).
+`bun-types` 1.4.0 typed the option as `"http2" | "http1.1" | "h2" | "h1"`, so `'http3'`/`'h3'`
+needed a cast; 1.4.1 adds them to the union (oven-sh/bun#39773).
 
 ### Request Compression (v1.4+)
 
@@ -151,6 +162,22 @@ await fetch(url, {
 })
 ```
 
+### Unix Socket Requests (v1.4.1+)
+
+`fetch(url, { unix })` keeps the connection alive and reuses it like TCP -- three sequential
+requests use one connection instead of three. A custom CA in `tls: { ca }` is honored, and a
+relative `unix` path resolves against the current `cwd` at call time.
+
+```typescript
+await fetch('http://localhost/containers/json', { unix: '/var/run/docker.sock' })
+```
+
+**Changed in 1.4.1 -- TLS verification and `localhost`.** `fetch()` verifies the certificate
+against the URL hostname, not a custom `Host` header (matching Node and curl). To verify
+against a different name, pass `tls: { servername: 'internal.example' }`. `localhost` and
+`*.localhost` resolve to `::1` / `127.0.0.1` in `fetch()`, `WebSocket`, and `Bun.connect()`
+without a resolver query, so `http://app.localhost:3000` works on every OS and inside Docker.
+
 ### Response Streaming and Backpressure (v1.4+)
 
 `fetch()` pauses reading from the socket when a delivered chunk has not been consumed, instead
@@ -170,6 +197,7 @@ for await (const chunk of (await fetch(url)).textStream()) {
 - **HTTP/2 connection pooling** (v1.3.14+) -- concurrent fetches to the same origin share one multiplexed connection.
 - **HTTPS proxy tunneling** (v1.3.12+) -- `CONNECT` tunnels are reused across sequential proxied HTTPS requests, including requests carrying custom `tls` options.
 - **TLS session resumption** (v1.4+) -- a 32-entry per-origin LRU of BoringSSL client sessions lets a second cold connection resume at 1 RTT.
+- **Faster first HTTPS request** (v1.4.1+) -- root certificates are embedded as DER and only the relevant ones are parsed, so the first TLS connection starts up to 3x sooner; an expired root no longer hides a valid one from the same issuer.
 - **System CA** (v1.3.14+) -- run with `--use-system-ca`, or read the OS trust store via `tls.getCACertificates('system')` from `node:tls`.
 - **`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** (v1.3.12+) are re-read at runtime, not only at startup.
 - **Header casing** (v1.3.7+) is preserved on the wire rather than lowercased.

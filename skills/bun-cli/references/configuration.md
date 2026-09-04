@@ -68,6 +68,10 @@ hoistPattern = ["*"]                # Globs hoisted into node_modules/.bun/node_
 hoist = true                        # false: skip that fallback dir entirely, so undeclared
                                     #   requires fail with MODULE_NOT_FOUND (v1.4+)
 minimumReleaseAge = 0               # Only install packages published at least N seconds ago
+offline = false                     # true: never touch the network; every package must be
+                                    #   cached, a missing one errors by name (v1.4.1+)
+prefer = "online"                   # "offline": cached manifests regardless of age, fetch only
+                                    #   what is missing (v1.4.1+); "latest": always check the registry
 
 [install.cache]
 dir = "~/.bun/install/cache"        # Cache directory

@@ -1,7 +1,8 @@
 ---
 name: bun-api
 description: >-
-  Bun runtime API reference for TypeScript scripts. Covers Bun.file(), Bun.write(),
+  Bun runtime API reference for TypeScript scripts. Covers Bun.serve() HTTP/HTTP/2 server
+  with routes and WebSockets, fetch() transport options, Bun.file(), Bun.write(),
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
   via DATABASE_URL, Bun.s3 for S3-compatible storage, Bun.redis for Redis/Valkey,
   Bun.Archive for tarballs, Bun.Image image processing, Bun.WebView headless browser
@@ -21,10 +22,10 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 
 **Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
 
-**Verified against Bun v1.4.0** (2026-08-20). Features are tagged with the version that
-introduced them (`v1.4+`). Where 1.4 changed existing behavior, both behaviors are stated
-so this skill stays correct on 1.3.x projects -- check `bun --version` before relying on a
-version-tagged item.
+**Verified against Bun v1.4.1** (2026-09-04). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`). Where a release changed existing behavior, both
+behaviors are stated so this skill stays correct on older projects -- check `bun --version`
+before relying on a version-tagged item.
 
 ## Read Bun's Own Docs First
 
@@ -114,6 +115,12 @@ and `cookies`).
 
 Key methods: `server.stop()`, `server.reload()` (hot-swap handler), `server.requestIP(req)`, `server.upgrade(req)` (WebSocket).
 
+**HTTP/2 (v1.4.1+, experimental).** `http2: true` serves HTTP/2 and HTTP/1.1 on one port with
+the same `routes` and `fetch`: ALPN picks the protocol over TLS, and a cleartext connection
+that opens with the HTTP/2 preface (`curl --http2-prior-knowledge`, `node:http2`) gets HTTP/2.
+`http1: false` refuses HTTP/1.x clients. `server.upgrade()` (WebSockets) and response
+trailers are HTTP/1.1-only, so gRPC does not work over it yet.
+
 > **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming
 > responses, static file serving, and 1.4 behavior changes. Full API in
 > `node_modules/bun-types/docs/runtime/http/server.mdx` and `runtime/http/routing.mdx`.
@@ -175,7 +182,7 @@ await Bun.write('data.json', JSON.stringify(data, null, 2))
 // Write Uint8Array / ArrayBuffer
 await Bun.write('binary.dat', new Uint8Array([1, 2, 3]))
 
-// Write Response body
+// Write a Response body -- streamed to disk (v1.4.1+; the whole body was buffered before)
 await Bun.write('page.html', await fetch('https://example.com'))
 
 // Write to stdout
@@ -502,7 +509,7 @@ await extracted.extract("./out", { glob: ["src/**", "!**/*.test.ts"] })
 const files = await extracted.files()              // -> Map<string, File>
 ```
 
-**Gotcha (verified on v1.4.0):** `Bun.write(path, archive)` ignores the constructor's
+**Gotcha (verified on v1.4.0 and v1.4.1):** `Bun.write(path, archive)` ignores the constructor's
 `compress` option and writes an uncompressed tar under your `.tar.gz` filename. Bun's own
 docs show `Bun.write(path, archive)` as compressing -- it does not. Always pass
 `await archive.bytes()` (or `await archive.blob()`), which do honor `compress`
@@ -654,6 +661,10 @@ new Bun.CryptoHasher('sha256').update('data').digest('hex')
 const hash = await Bun.password.hash('password')
 const hash = await Bun.password.hash('password', { algorithm: 'argon2id' })
 const valid = await Bun.password.verify('password', hash)
+
+// Raw Argon2 tag via node:crypto (v1.4.1+) -- interop with hashes stored as bytes, not PHC strings
+import { argon2Sync } from 'node:crypto'
+argon2Sync('argon2id', { message: 'pw', nonce: salt, parallelism: 1, tagLength: 32, memory: 65536, passes: 3 })  // Buffer
 ```
 
 > **Reference**: See `references/hashing.md` for all hash algorithms, CryptoHasher streaming API, and password hashing options (bcrypt vs argon2id, cost parameters).
@@ -814,9 +825,10 @@ await view.cdp('Page.captureScreenshot', {})           // raw CDP escape hatch
 > **Reference**: See `references/webview.md`, and
 > `node_modules/bun-types/docs/runtime/webview.mdx` for input simulation and CDP events.
 
-## New in Bun 1.4
+## New in Bun 1.4.x
 
 Compact index — reach for these when the task fits, then read the linked doc before writing code.
+Untagged rows landed in 1.4.0.
 
 | API | Use it for | Doc (`node_modules/bun-types/docs/`) |
 |---|---|---|
@@ -831,6 +843,13 @@ Compact index — reach for these when the task fits, then read the linked doc b
 | `process.on('memoryPressure', fn)` | Dropping caches when the OS reports low memory; the listener receives `'warning'` or `'critical'` | no docs page -- see `bun-types/overrides.d.ts` |
 | `Bun.isStandaloneExecutable` | Branching inside a `--compile` binary, allocation-free | `bundler/executables.mdx` |
 | ML-DSA / ML-KEM | Post-quantum signatures and key encapsulation | `runtime/nodejs-compat.mdx` |
+| `Bun.serve({ http2: true })` (v1.4.1+) | HTTP/2 and HTTP/1.1 on one port; `http1: false` for HTTP/2-only | `runtime/http/server.mdx` |
+| `Bun.write(path, response)` streams (v1.4.1+) | Downloading to disk without buffering the body | `runtime/file-io.mdx` |
+| `WebSocket#pause()` / `resume()` / `isPaused` (v1.4.1+) | Client-side backpressure toward the peer (Bun extension) | no docs page -- see `bun-types/bun.d.ts` |
+| `crypto.argon2Sync()` / callback `argon2()` (v1.4.1+) | Raw Argon2 tags matching Node byte-for-byte; `Bun.password` for PHC strings | `runtime/nodejs-compat.mdx` |
+| `fetch(url, { unix })` keep-alive (v1.4.1+) | Reused Unix-socket connections; `tls: { ca }` honored | `runtime/networking/fetch.mdx` |
+| `binaryType: "blob"` on `ServerWebSocket` (v1.4.1+) | Receiving binary frames as `Blob`, as the client does | `runtime/http/websockets.mdx` |
+| `import x from "./f" with { type: "text" }` typed (v1.4.1+) | Loader-typed imports on TypeScript 7.1+ (`text`, `file`, `md`, `toml`, `yaml`, `jsonc`, `json5`, `xml`, `sqlite`, `html`) | `bun-types/ts7.1/import-attributes.d.ts` |
 
 `ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
 backpressure automatically — `Bun.serve` pauses a request/response body when the socket
@@ -838,8 +857,10 @@ cannot accept more, and `fetch()` pauses the socket when nothing is consuming th
 Streaming code that previously buffered whole payloads no longer needs hand-rolled
 throttling, provided every stage of the pipeline honors backpressure.
 
-> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4 --
-> the one thing Bun's shipped docs do not cover, since they describe only the current state.
+> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4 and
+> 1.4.1 (TLS verification against the URL hostname, `localhost` loopback resolution, `ws`
+> `ArrayBuffer` frames, and the 1.4.0 regressions 1.4.1 fixed) -- the one thing Bun's shipped
+> docs do not cover, since they describe only the current state.
 
 ## Script Patterns
 

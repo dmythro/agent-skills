@@ -1,8 +1,9 @@
 # Bun 1.3 to 1.4: Runtime Behavior Changes
 
 **What changed under existing code.** Bun's shipped docs describe the current state only --
-this file is for editing or upgrading a codebase written against 1.3.x. CLI and package
-manager changes live in the `bun-cli` skill's `references/migration-1.4.md`.
+this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1 changes
+at the end. CLI and package manager changes live in the `bun-cli` skill's
+`references/migration-1.4.md`.
 
 Check `bun --version` before applying any of this. On 1.3.x the pre-1.4 behavior still holds.
 
@@ -190,3 +191,48 @@ Check `bun --version` before applying any of this. On 1.3.x the pre-1.4 behavior
 - Odd-length hex to `Bun.CryptoHasher#update()`, a primitive `options` to `TextDecoder#decode()`,
   `NaN`/`undefined` seconds to `RedisClient#expire()`, out-of-range `Bun.password` cost values,
   and `Bun.openInEditor()` with no editor found all throw instead of being silently accepted.
+
+## 1.4.1
+
+Behavior changes on top of 1.4.0. A 1.4.0 project sees these on `bun upgrade`.
+
+- **`fetch()` verifies TLS against the URL hostname**, not a custom `Host` header, matching
+  Node's fetch and curl. A request that used `headers: { Host }` to pick the certificate name
+  now fails verification -- pass `tls: { servername: "internal.example" }` instead. The `Host`
+  header is still sent.
+- **`localhost` and `*.localhost` resolve to `::1` / `127.0.0.1` without the system resolver**
+  in `fetch()`, `WebSocket`, `Bun.connect()`, and `bun install`. An `/etc/hosts` entry pointing
+  `localhost` elsewhere no longer applies; `http://app.localhost:3000` works on every OS and
+  inside Docker.
+- **`fetch(url, { unix })` reuses connections.** Sequential requests share one socket where each
+  opened its own before. A relative `unix` path resolves against the current `cwd` at call
+  time, not the startup directory.
+- **`ws` servers in `binaryType: "arraybuffer"` mode emit `ArrayBuffer`**, not `Uint8Array`,
+  matching npm `ws`. `ServerWebSocket` and `ws` also accept `binaryType: "blob"`.
+- **`AsyncLocalStorage.enterWith()` inside a timer or I/O callback** no longer leaks the store
+  into unrelated callbacks, matching Node. Code that read context through that leak loses it.
+- **A failed `import()` is retried** on the next call instead of rejecting with the cached
+  error. `Promise.try` follows the updated spec. `WebAssembly.Module.imports()` / `exports()`
+  descriptors drop the non-standard `type` field.
+- **`util.inspect()` stops at `maxArrayLength`** instead of visiting every element.
+- **`process.exit()` skips N-API addon finalizers and cleanup hooks**, as Node does.
+- **Out-of-memory in `Blob.text()`, `Response.text()`, `TextDecoder.decode()`,
+  `buffer.toString()`, and `StringDecoder`** throws `ERR_MEMORY_ALLOCATION_FAILED`; it was
+  `ERR_STRING_TOO_LONG` or a crash.
+- **`--no-ffi-cc`** makes `cc()` from `bun:ffi` throw `ERR_FFI_CC_DISABLED`, and `--no-addons`
+  now disables `cc()` too. Workers inherit both flags.
+
+### 1.4.0 regressions fixed in 1.4.1
+
+Upgrade instead of working around these on a 1.4.0 runtime:
+
+- `fetch()` with a `timeout` of 4 seconds or less aborted early with `TimeoutError`.
+- `tls.checkServerIdentity` opened a new TLS connection per request.
+- A streamed response lost the end of its body with `ECONNRESET` when the server closed
+  during a client upload.
+- `dns.lookup()` on macOS failed for VPN / split-DNS hostnames.
+- `new Worker()` threw `port.on is not a function` when a library replaced
+  `globalThis.MessagePort`.
+- `assert.deepStrictEqual()` threw for objects with different prototypes.
+- `ws` `handleUpgrade()` threw after an `await`.
+- On Windows, `child_process`, `Bun.spawn`, and `Bun.which` could not find `.com` executables.
