@@ -330,7 +330,7 @@ bun --hot file.ts              # Hot reload (preserves state)
 bun --env-file .env file.ts    # Load env file
 bun --env-file .env.local --env-file .env file.ts  # Multiple env files
 bun --no-env-file file.ts      # Skip automatic .env loading (CI/prod; `env = false` in bunfig)
-bun --env-file=<(secrets export --dotenv) file.ts  # Pipes, FIFOs, /dev/stdin accepted (v1.4.1+)
+bun --env-file=<(op inject -i .env.tpl) file.ts   # 1Password CLI renders dotenv lines; any pipe/FIFO//dev/stdin works (v1.4.1+)
 bun --no-ffi-cc file.ts        # cc() from bun:ffi throws ERR_FFI_CC_DISABLED (v1.4.1+)
 bun --no-orphans run dev       # Die with the parent, SIGKILL every descendant on exit
 bun repl                       # Native REPL: highlighting, history, completion (v1.3.10+)

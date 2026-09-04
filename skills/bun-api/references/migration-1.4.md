@@ -198,8 +198,8 @@ Behavior changes on top of 1.4.0. A 1.4.0 project sees these on `bun upgrade`.
 
 - **`fetch()` verifies TLS against the URL hostname**, not a custom `Host` header, matching
   Node's fetch and curl. A request that used `headers: { Host }` to pick the certificate name
-  now fails verification -- pass `tls: { servername: "internal.example" }` instead. The `Host`
-  header is still sent.
+  now fails verification -- pass `tls: { serverName: "internal.example" }` instead (the typed
+  key; lowercase `servername` is accepted too). The `Host` header is still sent.
 - **`localhost` and `*.localhost` resolve to `::1` / `127.0.0.1` without the system resolver**
   in `fetch()`, `WebSocket`, `Bun.connect()`, and `bun install`. An `/etc/hosts` entry pointing
   `localhost` elsewhere no longer applies; `http://app.localhost:3000` works on every OS and

@@ -215,7 +215,8 @@ const hash = await Bun.password.hash('password', {
 
 ### Raw Argon2 via node:crypto (v1.4.1+)
 
-`Bun.password` produces PHC-format strings. For a raw Argon2 tag -- verifying a hash another
+`Bun.password` produces self-describing strings: PHC format for Argon2, Modular Crypt Format
+(`$2b$...`) for bcrypt. For a raw Argon2 tag -- verifying a hash another
 system stored as bytes, or deriving a key -- `node:crypto` implements Node's `argon2Sync()` and
 callback-style `argon2()`; both threw `ERR_CRYPTO_ARGON2_NOT_SUPPORTED` before 1.4.1. Output
 matches Node byte-for-byte; `argon2d`, `argon2i`, and `argon2id` are supported, and the async

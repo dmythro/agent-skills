@@ -199,9 +199,9 @@ Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
 
 ### Runtime Flags
 
-- **`--env-file` reads pipes, FIFOs, and `/dev/stdin`**: `bun --env-file=<(secrets export) app.ts`
-  or `echo A=1 | bun --env-file=/dev/stdin app.ts`. The default `.env*` lookup still skips
-  non-regular files.
+- **`--env-file` reads pipes, FIFOs, and `/dev/stdin`**: `echo A=1 | bun --env-file=/dev/stdin app.ts`,
+  or `bun --env-file=<(op inject -i .env.tpl) app.ts` with a secret-manager CLI that prints
+  dotenv lines. The default `.env*` lookup still skips non-regular files.
 - **`--no-ffi-cc`** disables `cc()` from `bun:ffi` (`ERR_FFI_CC_DISABLED`); `--no-addons`
   disables it too. Workers inherit both; bake it into an executable with
   `--compile-exec-argv="--no-ffi-cc"`.

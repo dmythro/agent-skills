@@ -248,8 +248,8 @@ Feed variables from a secret manager without writing them to disk (v1.4.1+). An 
 lookup still skips non-regular files:
 
 ```bash
-bun --env-file=<(secrets export --dotenv) app.ts
 echo A=1 | bun --env-file=/dev/stdin app.ts
+bun --env-file=<(op inject -i .env.tpl) app.ts   # 1Password CLI renders .env.tpl to dotenv lines
 ```
 
 Disable automatic loading entirely (v1.3.3+) -- useful in production and CI, where variables

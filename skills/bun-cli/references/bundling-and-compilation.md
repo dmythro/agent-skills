@@ -39,6 +39,18 @@ browser builds get `<link rel="modulepreload">` for every chunk an entry or `imp
 `const { x } = await import()` tree-shake unused exports. Details and the 1.4.0 diff:
 `migration-1.4.md`.
 
+### Bytecode
+
+| Flag | Description |
+|---|---|
+| `--bytecode` | Write a `.jsc` bytecode cache next to the output (`--target bun`); CommonJS output by default and needs no `--compile`. ES modules (`--format=esm`) need `--compile`, since v1.3.9. About 3x the source size as of v1.4.1 |
+| `--bytecode-depth N` | Compile only the top N nesting levels ahead of time; `0` is top-level only, deeper functions compile on first call. `bytecodeDepth` in `Bun.build()` with `bytecode: true` (v1.4.1+) |
+
+```bash
+bun build ./index.ts --target=bun --bytecode --outdir=./dist          # dist/index.js + dist/index.js.jsc
+bun build ./cli.ts --compile --bytecode --format=esm --outfile=mycli  # ESM bytecode: --compile required
+```
+
 ### Target and Format
 
 | Flag | Description |
@@ -181,8 +193,7 @@ bun build --compile [flags] <entrypoint>
 | `--outfile name` | Output executable name |
 | `--minify` | Minify bundled code |
 | `--asset path` | Embed a file or directory, preserving relative paths (v1.4+) |
-| `--bytecode` | Bytecode cache; supports ES modules with `--format=esm` as of v1.3.9; about 3x source size as of v1.4.1 |
-| `--bytecode-depth N` | Compile only the top N nesting levels to bytecode ahead of time; `0` is top-level only, deeper functions compile on first call. `bytecodeDepth` in `Bun.build()` with `bytecode: true` and `target: 'bun'` (v1.4.1+) |
+| `--bytecode`, `--bytecode-depth N` | Embed the bytecode cache in the executable (see Bytecode above); ESM bytecode requires `--compile` |
 | `--compile-exec-argv args` | Prepend arguments to the executable's `execArgv` |
 | `--compile-executable-path path` | Use a local Bun binary instead of downloading one when cross-compiling (v1.3.6+) |
 | `--compile-autoload-tsconfig` | Re-enable runtime `tsconfig.json` loading (**off by default since v1.3.4**) |

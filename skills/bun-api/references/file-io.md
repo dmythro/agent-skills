@@ -69,7 +69,7 @@ Write data to a file or file descriptor. Creates parent directories if needed.
 ```typescript
 Bun.write(
   destination: string | BunFile | FileBlob | number,  // Path, BunFile, or fd
-  input: string | Blob | BunFile | ArrayBuffer | Uint8Array | Response | ReadableStream,
+  input: string | Blob | BunFile | ArrayBuffer | Uint8Array | Response | Request | ReadableStream,
   options?: { createPath?: boolean }  // createPath: true by default
 ): Promise<number>  // Returns bytes written
 ```

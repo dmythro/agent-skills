@@ -103,9 +103,10 @@ const ws = new WebSocket('ws+unix:///tmp/app.sock:/realtime')
 
 ### Pausing Reads (v1.4.1+)
 
-`pause()` stops reading from the underlying TCP socket: no `message` events fire and the peer
-sees TCP backpressure. `resume()` continues. Both return `true` on success. This is a Bun
-extension with no browser equivalent.
+`pause()` stops further reads from the underlying TCP socket: frames already decoded still
+deliver their `message` events, nothing new is read, and the peer sees TCP backpressure.
+`resume()` continues. Both return `true` on success. This is a Bun extension with no browser
+equivalent.
 
 ```typescript
 ws.pause()             // true; ws.isPaused === true
@@ -174,7 +175,8 @@ await fetch('http://localhost/containers/json', { unix: '/var/run/docker.sock' }
 
 **Changed in 1.4.1 -- TLS verification and `localhost`.** `fetch()` verifies the certificate
 against the URL hostname, not a custom `Host` header (matching Node and curl). To verify
-against a different name, pass `tls: { servername: 'internal.example' }`. `localhost` and
+against a different name, pass `tls: { serverName: 'internal.example' }` (the typed key;
+lowercase `servername` also works). `localhost` and
 `*.localhost` resolve to `::1` / `127.0.0.1` in `fetch()`, `WebSocket`, and `Bun.connect()`
 without a resolver query, so `http://app.localhost:3000` works on every OS and inside Docker.
 
