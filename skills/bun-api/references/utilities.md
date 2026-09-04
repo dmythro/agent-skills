@@ -242,8 +242,8 @@ tar header, not the gzip magic bytes. Bun's own docs show this form as compressi
 not (tracked upstream: oven-sh/bun#30234). `.bytes()` and `.blob()` do honor `compress`:
 
 ```typescript
-await Bun.write("out.tar.gz", archive)                 // WRONG -- uncompressed tar
-await Bun.write("out.tar.gz", await archive.bytes())   // correct -- real gzip
+await Bun.write("out.tar.gz", compressed)                 // WRONG -- uncompressed tar despite compress: "gzip"
+await Bun.write("out.tar.gz", await compressed.bytes())   // correct -- real gzip
 ```
 
 ### Reading Archives

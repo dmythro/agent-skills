@@ -849,7 +849,7 @@ Untagged rows landed in 1.4.0.
 | `crypto.argon2Sync()` / callback `argon2()` (v1.4.1+) | Raw Argon2 tags matching Node byte-for-byte; `Bun.password` for PHC strings | `runtime/nodejs-compat.mdx` |
 | `fetch(url, { unix })` keep-alive (v1.4.1+) | Reused Unix-socket connections; `tls: { ca }` honored | `runtime/networking/fetch.mdx` |
 | `binaryType: "blob"` on `ServerWebSocket` (v1.4.1+) | Receiving binary frames as `Blob`, as the client does | `runtime/http/websockets.mdx` |
-| `import x from "./f" with { type: "text" }` typed (v1.4.1+) | Loader-typed imports on TypeScript 7.1+ (`text`, `file`, `md`, `toml`, `yaml`, `jsonc`, `json5`, `xml`, `sqlite`, `html`) | `bun-types/ts7.1/import-attributes.d.ts` |
+| `import x from "./f" with { type: "text" }` typed (v1.4.1+) | Loader-typed imports on TypeScript 7.1+ (`text`, `file`, `md`, `markdown`, `toml`, `yaml`, `jsonc`, `json5`, `xml`, `sqlite`, `html`) | `bun-types/ts7.1/import-attributes.d.ts` |
 
 `ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
 backpressure automatically — `Bun.serve` pauses a request/response body when the socket
