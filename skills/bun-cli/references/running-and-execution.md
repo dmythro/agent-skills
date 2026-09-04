@@ -34,7 +34,8 @@ bun run [flags] <script|file> [args...]
 | `--hot` | Hot reload (preserves application state) |
 | `--smol` | Reduce memory usage at the cost of throughput |
 | `--silent` | Don't echo script name to stderr |
-| `--env-file path` | Load env file(s); repeatable, left takes priority |
+| `--env-file path` | Load env file(s); repeatable, left takes priority. Pipes, FIFOs, and `/dev/stdin` are accepted (v1.4.1+) |
+| `--no-ffi-cc` | Make `cc()` from `bun:ffi` throw `ERR_FFI_CC_DISABLED`; `--no-addons` disables it too (v1.4.1+) |
 | `--shell bun\|system` | Which shell to use for scripts (macOS/Linux default: system; Windows: bun) |
 | `--bun` | Force Bun runtime instead of Node.js |
 | `--cwd path` | Set working directory |
@@ -240,6 +241,15 @@ bun --env-file .env.staging file.ts
 Multiple files (left takes priority):
 ```bash
 bun --env-file .env.local --env-file .env file.ts
+```
+
+Feed variables from a secret manager without writing them to disk (v1.4.1+). An explicit
+`--env-file` accepts process substitution, named pipes, and `/dev/stdin`; the default `.env*`
+lookup still skips non-regular files:
+
+```bash
+echo A=1 | bun --env-file=/dev/stdin app.ts
+bun --env-file=<(op inject -i .env.tpl) app.ts   # 1Password CLI renders .env.tpl to dotenv lines
 ```
 
 Disable automatic loading entirely (v1.3.3+) -- useful in production and CI, where variables

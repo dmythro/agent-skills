@@ -20,12 +20,36 @@ bun build [flags] <entrypoint(s)>
 | `--outdir path` | Output directory |
 | `--outfile path` | Output to single file (mutually exclusive with --outdir) |
 | `--splitting` | Enable code splitting (ESM format only) |
+| `--min-chunk-size N` | With `--splitting`, fold side-effect-free chunks smaller than N source bytes into their loader; `16384` suits browser builds (v1.4.1+) |
+| `--no-module-preload` | With `--splitting --target browser`, skip the default `<link rel="modulepreload">` links (v1.4.1+) |
+| `--no-split-require` | With `--splitting --target bun`, inline a `require()`'d ES module instead of emitting a chunk (v1.4.1+) |
+| `--no-deprecated-namespace-object-setters` | Getter-only `import * as ns` objects; the future default (v1.4.1+) |
 | `--sourcemap mode` | `external`, `inline`, `linked`, `none` (default: none) |
 | `--minify` | Minify all (shorthand for below three flags) |
 | `--minify-syntax` | Minify syntax only |
 | `--minify-whitespace` | Minify whitespace only |
 | `--minify-identifiers` | Minify identifiers only |
 | `--root path` | Root directory for computing entry point paths in output |
+
+### Code Splitting (v1.4.1 behavior)
+
+With `--splitting`, code shared between an entry and its lazy routes stays in the entry's chunk,
+browser builds get `<link rel="modulepreload">` for every chunk an entry or `import()` loads,
+`require()` of an ES module is its own chunk under `--target bun`, and `export * as` /
+`const { x } = await import()` tree-shake unused exports. Details and the 1.4.0 diff:
+`migration-1.4.md`.
+
+### Bytecode
+
+| Flag | Description |
+|---|---|
+| `--bytecode` | Write a `.jsc` bytecode cache next to the output (`--target bun`); CommonJS output by default and needs no `--compile`. ES modules (`--format=esm`) need `--compile`, since v1.3.9. About 3x the source size as of v1.4.1 |
+| `--bytecode-depth N` | Compile only the top N nesting levels ahead of time; `0` is top-level only, deeper functions compile on first call. `bytecodeDepth` in `Bun.build()` with `bytecode: true` (v1.4.1+) |
+
+```bash
+bun build ./index.ts --target=bun --bytecode --outdir=./dist          # dist/index.js + dist/index.js.jsc
+bun build ./cli.ts --compile --bytecode --format=esm --outfile=mycli  # ESM bytecode: --compile required
+```
 
 ### Target and Format
 
@@ -169,7 +193,7 @@ bun build --compile [flags] <entrypoint>
 | `--outfile name` | Output executable name |
 | `--minify` | Minify bundled code |
 | `--asset path` | Embed a file or directory, preserving relative paths (v1.4+) |
-| `--bytecode` | Bytecode cache; supports ES modules with `--format=esm` as of v1.3.9 |
+| `--bytecode`, `--bytecode-depth N` | Embed the bytecode cache in the executable (see Bytecode above); ESM bytecode requires `--compile` |
 | `--compile-exec-argv args` | Prepend arguments to the executable's `execArgv` |
 | `--compile-executable-path path` | Use a local Bun binary instead of downloading one when cross-compiling (v1.3.6+) |
 | `--compile-autoload-tsconfig` | Re-enable runtime `tsconfig.json` loading (**off by default since v1.3.4**) |
@@ -213,6 +237,10 @@ bun build --compile --target bun-windows-x64 ./app.ts
 
 On Linux (v1.3.12+), the runtime is embedded via a dedicated `.bun` ELF section instead of being read from `/proc/self/exe`, which allows execute-only (non-readable) standalone binaries.
 
+Cross-compiling with `--bytecode` works for every target as of v1.4.1, `bun-windows-x64` from
+macOS or Linux included. The bytecode cache format is identical on all platforms, so builds are
+byte-identical.
+
 Bun's runtime also ships native first-party builds for FreeBSD and Android (v1.3.14+), alongside Linux, macOS, and Windows -- these are runtime platforms, not `--compile` targets.
 
 ### Browser Target (v1.3.10+)
@@ -245,6 +273,10 @@ const result = await Bun.build({
   target: 'browser',           // 'browser' | 'bun' | 'node'
   format: 'esm',               // 'esm' | 'cjs' | 'iife'
   splitting: true,
+  minChunkSize: 16 * 1024,     // fold small side-effect-free chunks into their loader (v1.4.1+, default 0)
+  modulePreload: true,         // default; false skips <link rel="modulepreload"> (v1.4.1+)
+  splitRequire: true,          // default with target 'bun'; false inlines require()'d ESM (v1.4.1+)
+  deprecatedNamespaceObjectSetters: false,  // getter-only namespace objects, the future default (v1.4.1+)
   sourcemap: 'external',       // 'external' | 'inline' | 'linked' | 'none'
   minify: true,                // or { syntax: true, whitespace: true, identifiers: true }
   external: ['react'],

@@ -33,6 +33,8 @@ bun install [flags]
 | `--config path` | Load specific bunfig.toml |
 | `--no-verify` | Skip checksum verification |
 | `--no-cache` | Disable package cache |
+| `--offline` | Never touch the network; every manifest and tarball must already be cached, a missing one fails by name (v1.4.1+) |
+| `--prefer-offline` | Use cached manifests regardless of age; download only packages not in the cache (v1.4.1+) |
 | `--cache-dir path` | Custom cache directory |
 | `--omit dev\|optional\|peer` | Exclude a dependency type |
 | `--lockfile-only` | Write the lockfile without installing |
@@ -488,3 +490,30 @@ version range (v1.4+). Lockfiles using nested or version-scoped overrides are wr
   }
 }
 ```
+
+### Self-Contained Workspaces (v1.4.1+)
+
+Under the hoisted linker, shared dependencies live in the root `node_modules`. Tools that
+walk, prune, and repackage one workspace's `node_modules` (Electron packagers, serverless
+bundlers) expect every dependency under it. Mark the workspace self-contained from the root
+`package.json`, or with Yarn's key in the workspace's own file:
+
+```json
+{
+  "workspaces": {
+    "packages": ["apps/*", "packages/*"],
+    "selfContained": ["apps/desktop"]
+  }
+}
+```
+
+```json
+{ "name": "desktop", "installConfig": { "hoistingLimits": "workspaces" } }
+```
+
+Entries are workspace paths or package names. `bun install` then hoists nothing that
+workspace depends on, directly or transitively, above `apps/desktop/node_modules`, and
+materializes those packages as real copies instead of cache hardlinks, so a tool rewriting
+them cannot touch the cache. Other workspaces keep hoisting to the root. The lockfile does not
+record the setting -- Bun reads it from `package.json` on every install, `--frozen-lockfile`
+included -- and it has no effect under the isolated linker.

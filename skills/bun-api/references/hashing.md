@@ -213,6 +213,31 @@ const hash = await Bun.password.hash('password', {
 | `argon2i` | Side-channel resistant (use when timing attacks are the primary concern) |
 | `argon2d` | GPU-resistant (faster, but vulnerable to side-channel attacks) |
 
+### Raw Argon2 via node:crypto (v1.4.1+)
+
+`Bun.password` produces self-describing strings: PHC format for Argon2, Modular Crypt Format
+(`$2b$...`) for bcrypt. For a raw Argon2 tag -- verifying a hash another
+system stored as bytes, or deriving a key -- `node:crypto` implements Node's `argon2Sync()` and
+callback-style `argon2()`; both threw `ERR_CRYPTO_ARGON2_NOT_SUPPORTED` before 1.4.1. Output
+matches Node byte-for-byte; `argon2d`, `argon2i`, and `argon2id` are supported, and the async
+form runs on the thread pool. There is no `crypto.promises.argon2` -- promisify it.
+
+```typescript
+import { argon2, argon2Sync, randomBytes } from 'node:crypto'
+import { promisify } from 'node:util'
+
+const params = {
+  message: 'password',
+  nonce: randomBytes(16),  // >= 8 bytes; string or Buffer -- store it next to the tag
+  parallelism: 1,
+  tagLength: 32,        // output bytes
+  memory: 65536,        // KiB
+  passes: 3,
+}
+const tag = argon2Sync('argon2id', params)            // Buffer(32)
+const same = await promisify(argon2)('argon2id', params)
+```
+
 ### Verify Auto-Detects Algorithm
 
 `Bun.password.verify()` automatically detects the algorithm from the hash string — you don't need to specify it:

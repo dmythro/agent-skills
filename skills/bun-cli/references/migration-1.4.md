@@ -1,8 +1,8 @@
 # Bun 1.3 to 1.4: CLI, Package Manager, and Test Runner Changes
 
 **What changed under existing projects.** Bun's shipped docs describe the current state only --
-this file is for upgrading a repo or a CI pipeline written against 1.3.x. Runtime and API
-changes live in the `bun-api` skill's `references/migration-1.4.md`.
+this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1 changes
+at the end. Runtime and API changes live in the `bun-api` skill's `references/migration-1.4.md`.
 
 Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
 
@@ -135,3 +135,86 @@ Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
   are runtime platforms, not `bun build --compile` targets.
 - On Linux, Bun no longer sets `prctl(PR_SET_THP_DISABLE)` at startup, so child processes
   inherit the system transparent-huge-pages setting instead of Bun's.
+
+## 1.4.1
+
+### Package Manager
+
+- **`bun install --offline`** (`[install] offline = true`) makes no network requests and fails
+  naming the first uncached package. **`--prefer-offline`** (`[install] prefer = "offline"`)
+  uses cached manifests regardless of age and downloads only what is missing.
+- **Self-contained workspaces**: `"workspaces": { "packages": [...], "selfContained": [...] }`
+  in the root `package.json`, or Yarn's `"installConfig": { "hoistingLimits": "workspaces" }`
+  in the workspace, give that workspace a complete, copy-based `node_modules` under the hoisted
+  linker. Not recorded in the lockfile; no effect under the isolated linker.
+- A no-op install in a monorepo with a shared dependency whose peer is unprovided dropped from
+  about 13 s to 20 ms. `bun dedupe`, `bun prune --production`, and `bun pm licenses` print
+  clearer output. `bun pm pkg set`, `bun pm version`, `bun pack`, and `bun publish` no longer
+  rewrite large integers in exponent form.
+
+### Bundler
+
+- **Code splitting emits fewer, smaller chunks.** Code shared between an entry and its lazy
+  routes stays in the entry's chunk (a 40-route test: 219 files to 151), and bindings shared
+  between chunks get one bundle-wide name (about 19% smaller). Snapshot tests of build output
+  will change.
+- **`<link rel="modulepreload">` is emitted by default** with `--splitting --target browser`,
+  and each `import()` preloads its transitive chunks. `--no-module-preload` /
+  `modulePreload: false` restores plain `import()` calls.
+- **`--min-chunk-size=N`** (`minChunkSize`) folds side-effect-free chunks smaller than N source
+  bytes into the chunk that loads them. Default `0` (off); `16384` is a good browser value.
+- **`require()` of an ES module is a chunk boundary** with `--splitting --target bun`; the call
+  stays synchronous. `--no-split-require` / `splitRequire: false` keeps the old inlined output.
+- **`export * as` and dynamic `import()` tree-shake.** Unused exports behind namespace
+  re-exports and `const { x } = await import(...)` are dropped: `zod` 4.5 shrinks from 375 KB to
+  77 KB minified, `effect` 3.22 from 369 KB to 164 KB. A namespace that escapes (passed to a
+  function, spread, `Object.keys(ns)`, computed access) keeps everything.
+- **Namespace object setters are deprecated.** Bundled `import * as ns` / `export * as ns`
+  objects accept `ns.x = 1` silently today and will become getter-only. Opt in now with
+  `--no-deprecated-namespace-object-setters` / `deprecatedNamespaceObjectSetters: false`.
+- **Nested classes and functions keep their names.** A class `Model` returned from a factory
+  reported `.name === "Model2"` when a top-level `Model` existed; it is now `"Model"`.
+  `--minify` output is unchanged.
+- **Default imports of CommonJS compile to a plain variable** when every export is visible
+  (`React.createElement` becomes `$createElement`), including through
+  `module.exports = require("./impl")` redirects.
+- **1.4.0 regressions fixed:** a default import of a CommonJS `.js`/`.ts` file returned all of
+  `module.exports` instead of matching `bun run`; `onResolve` returning `undefined` dropped code
+  from `sideEffects: false` packages; unused classes with a computed key (`[TypeId]`) were not
+  tree-shaken; `--compile` without `--outfile`/`--outdir` wrote next to the entrypoint instead
+  of the working directory; `--compile` from a WSL2 `/mnt/c` path failed with `EACCES`.
+
+### Executables (`--compile`)
+
+- **Bytecode is about 3x the source size instead of 9x**, and compiled executables start about
+  20% faster. `--bytecode-depth=N` (`bytecodeDepth`) compiles only the top N nesting levels
+  ahead of time; `0` is top-level code only, and functions past the limit compile on first call.
+- **Cross-compiling with `--bytecode` works for every target**, including
+  `--target=bun-windows-x64` from macOS or Linux. The cache format is identical on all
+  platforms, so builds are byte-identical.
+- Text imports (`with { type: "text" }`) are embedded once, pre-encoded: a 3 MB text import
+  cost about 12 MB of peak memory and now costs about 1 MB.
+- `import addon from "./x.node"` no longer throws `__require is not defined` in ESM bundles.
+- Compiled executables ignore `NODE_COMPILE_CACHE`.
+
+### Runtime Flags
+
+- **`--env-file` reads pipes, FIFOs, and `/dev/stdin`**: `echo A=1 | bun --env-file=/dev/stdin app.ts`,
+  or `bun --env-file=<(op inject -i .env.tpl) app.ts` with a secret-manager CLI that prints
+  dotenv lines. The default `.env*` lookup still skips non-regular files.
+- **`--no-ffi-cc`** disables `cc()` from `bun:ffi` (`ERR_FFI_CC_DISABLED`); `--no-addons`
+  disables it too. Workers inherit both; bake it into an executable with
+  `--compile-exec-argv="--no-ffi-cc"`.
+- `bun run --filter`, `--workspaces`, `--parallel`, and `--sequential` honor an auto-discovered
+  `bunfig.toml`; before 1.4.1 they required `--config`.
+- `bun run` re-transpiles a file of 4 KiB or more after `[define]` or `--drop` changes; it
+  reused a stale cache before.
+
+### Test Runner
+
+- **`--isolate` no longer leaks between files** that use `mock()`, `spyOn()`, `mock.module()`,
+  or `Bun.plugin()`: 80 such files went from 1.6 GB to 215 MB. `process.env.TZ`, proxy, and
+  TLS settings no longer carry into later files.
+- `jest.useFakeTimers({ now })` and `setSystemTime()` move `performance.timeOrigin` together
+  with `Date.now()`.
+- Piped stdout (`bun test | pbcopy`) no longer receives ANSI colors when only stderr is a TTY.

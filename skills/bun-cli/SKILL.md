@@ -5,8 +5,9 @@ description: >-
   and compilation. Covers bun install/add/remove/update, bun run, bun test, bun build, bunx,
   bun patch, bun audit fix, bun dedupe, bun prune, bun why, bun pm, bun repl,
   bunfig.toml, bun.lock, workspace catalogs, isolated installs and the global virtual store,
-  zero-config frontend dev, parallel/sequential execution, test sharding and parallelism,
-  compile-to-browser, and replacing npm/npx/yarn/pnpm
+  offline installs, self-contained workspaces, zero-config frontend dev, parallel/sequential
+  execution, test sharding and parallelism, code splitting, bytecode and cross-compiled
+  executables, compile-to-browser, and replacing npm/npx/yarn/pnpm
   with bun equivalents. Use for package management, lockfile issues, test runner config,
   bundler setup, or frontend dev server
   Not for Bun runtime APIs (Bun.file(), Bun.$(), Bun.sql()) -- use bun-api skill
@@ -16,10 +17,10 @@ description: >-
 
 Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, and test runner. Bun runs TypeScript natively — `bun file.ts` directly, no compile step, no `tsc`, no `ts-node`. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
 
-**Verified against Bun v1.4.0** (2026-08-20). Features are tagged with the version that
-introduced them (`v1.4+`). Where 1.4 changed existing behavior, both behaviors are stated so
-this skill stays correct on 1.3.x projects -- run `bun --version` before relying on a
-version-tagged item.
+**Verified against Bun v1.4.1** (2026-09-04). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`). Where a release changed existing behavior, both
+behaviors are stated so this skill stays correct on older projects -- run `bun --version`
+before relying on a version-tagged item.
 
 ## Check the Version, Then Check Bun's Docs
 
@@ -144,7 +145,14 @@ bun install --frozen-lockfile  # CI mode: fail if lockfile needs update
 bun install --no-save          # Install without updating package.json
 bun install --production       # Skip devDependencies
 bun install --dry-run          # Show what would be installed
+bun install --offline          # No network at all; every package must already be cached (v1.4.1+)
+bun install --prefer-offline   # Cached metadata regardless of age; download only what is missing (v1.4.1+)
 ```
+
+`--offline` suits CI jobs that restore `~/.bun/install/cache` and air-gapped machines -- a
+missing package fails by name (`no cached manifest for 'left-pad'`). `--prefer-offline` skips
+the staleness check but still fetches uncached packages. Both have `bunfig.toml` forms:
+`[install] offline = true` and `[install] prefer = "offline"`.
 
 ### Adding/Removing Packages
 
@@ -295,6 +303,20 @@ Consequences worth knowing before enabling it:
 
 > **Reference**: `node_modules/bun-types/docs/pm/global-store.mdx` and `pm/isolated-installs.mdx`.
 
+### Self-Contained Workspaces (v1.4.1+, hoisted linker)
+
+Electron packagers and serverless bundlers repackage one workspace's `node_modules` and expect
+every dependency physically under it. List such workspaces in the root `package.json`, or set
+Yarn's `"installConfig": { "hoistingLimits": "workspaces" }` in the workspace's own file:
+
+```json
+{ "workspaces": { "packages": ["apps/*", "packages/*"], "selfContained": ["apps/desktop"] } }
+```
+
+Nothing that workspace depends on, directly or transitively, is hoisted above
+`apps/desktop/node_modules`, and those packages are real copies rather than cache hardlinks.
+The lockfile does not record it, and it has no effect under the isolated linker.
+
 ## Running Scripts and Files
 
 ### Direct Execution
@@ -308,6 +330,8 @@ bun --hot file.ts              # Hot reload (preserves state)
 bun --env-file .env file.ts    # Load env file
 bun --env-file .env.local --env-file .env file.ts  # Multiple env files
 bun --no-env-file file.ts      # Skip automatic .env loading (CI/prod; `env = false` in bunfig)
+bun --env-file=<(op inject -i .env.tpl) file.ts   # 1Password CLI renders dotenv lines; any pipe/FIFO//dev/stdin works (v1.4.1+)
+bun --no-ffi-cc file.ts        # cc() from bun:ffi throws ERR_FFI_CC_DISABLED (v1.4.1+)
 bun --no-orphans run dev       # Die with the parent, SIGKILL every descendant on exit
 bun repl                       # Native REPL: highlighting, history, completion (v1.3.10+)
 bun repl -p '{ a: 1 }'         # Evaluate and print with REPL semantics
@@ -428,6 +452,8 @@ bun test --parallel --shard=1/3 --timings=t.json   # Balance by wall time, not f
 - Coverage and JUnit output are merged across workers; `--bail` stops every worker.
 - `--timings` (v1.4+) makes shards equal in **time** rather than file count, and the file is
   written slowest-first so it doubles as a slow-test report.
+- 1.4.1 stops files using `mock()`, `spyOn()`, `mock.module()`, or `Bun.plugin()` from keeping
+  the previous module graph alive under `--isolate`, so memory stays flat across a large suite.
 
 ### Test File Patterns
 
@@ -459,7 +485,15 @@ bun build ./src/index.ts --format esm               # Format: esm (default), cjs
 bun build ./src/index.ts --minify                   # Minify output
 bun build ./src/index.ts --sourcemap external        # Sourcemaps: external, inline, linked, none
 bun build ./src/index.ts --splitting                # Code splitting (ESM only)
+bun build ./src/index.ts --splitting --min-chunk-size=16384   # Fold tiny side-effect-free chunks into their loaders (v1.4.1+)
 ```
+
+**Changed in 1.4.1 -- splitting output.** Code shared between an entry and its lazy routes stays
+in the entry's chunk (fewer, smaller files), browser builds get `<link rel="modulepreload">`
+for every chunk an entry or `import()` loads (`--no-module-preload` to disable), `--target bun`
+turns `require()` of an ES module into its own chunk (`--no-split-require` to inline), and
+`export * as` / `const { x } = await import()` tree-shake unused exports -- `zod` and `effect`
+bundles shrink 50-80%. Snapshot tests of build output will change.
 
 ### Standalone Executables
 
@@ -489,6 +523,8 @@ bun build ... --metafile meta.json  # esbuild-format build metadata
 bun build ... --metafile-md meta.md # Module graph as Markdown, for reading or an LLM (v1.3.8+)
 bun build ... --feature=FLAG        # Compile-time flag for `feature()` from bun:bundle
 bun build ./src/cli.ts --compile --asset ./public --asset ./templates   # Embed files/dirs (v1.4+)
+bun build ./src/cli.ts --compile --bytecode --bytecode-depth=1   # Bytecode for top-level + one nesting level (v1.4.1+)
+bun build ... --no-deprecated-namespace-object-setters   # Getter-only `import * as ns` objects, the future default (v1.4.1+)
 ```
 
 `--asset` (v1.4+) embeds a file or directory into a `--compile` executable keeping original
@@ -503,6 +539,10 @@ still auto-load.
 `--bytecode` gained ES module support back in **v1.3.9** (`--format=esm`, requires
 `--compile`), enabling top-level await,
 `import.meta`, dynamic imports, and code splitting -- it previously forced CommonJS.
+As of **v1.4.1** bytecode is about 3x the source size instead of 9x, `--bytecode-depth=N`
+limits ahead-of-time compilation to N nesting levels (deeper functions compile on first call),
+and cross-compiling with `--bytecode` works for every target, `bun-windows-x64` from macOS or
+Linux included, with byte-identical output.
 
 > **Reference**: See `references/bundling-and-compilation.md` for complete options.
 
@@ -544,6 +584,8 @@ frozenLockfile = false         # Don't fail on lockfile mismatch
 globalDir = "~/.bun/install/global"  # Global install location
 linker = "isolated"            # "isolated" or "hoisted" -- see gotchas
 globalStore = true             # Share package files across projects (requires isolated)
+offline = false                # true: never touch the network, every package must be cached (v1.4.1+)
+prefer = "online"              # "offline": cached metadata regardless of age (v1.4.1+); "latest": always check
 
 [install.scopes]
 "@myorg" = { token = "$NPM_TOKEN", url = "https://npm.pkg.github.com/" }
@@ -666,6 +708,8 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 15. **The isolated linker is not on by default for existing projects** -- it is chosen by the lockfile's `configVersion`, not the Bun version. See "Install Layout" above
 16. **x64 builds are baseline-only (v1.4+).** The `-march=haswell` build is gone; the `-baseline` download URLs and npm packages still exist and contain the same binary, and the `CPU lacks AVX support` warning is removed
 17. **`bun feedback` was removed in 1.4**
+18. **Bundled namespace objects will become getter-only.** `import * as ns` / `export * as ns` from `bun build` currently accept `ns.x = 1` silently; `--no-deprecated-namespace-object-setters` (or `deprecatedNamespaceObjectSetters: false`) opts into the future default now (v1.4.1+)
+19. **`bun run --filter`, `--workspaces`, `--parallel`, and `--sequential` ignored an auto-discovered `bunfig.toml`** before 1.4.1 unless `--config` was passed; `bun run` also reused a stale transpile cache for files of 4 KiB or more after `[define]` or `--drop` changed
 
 ## References
 

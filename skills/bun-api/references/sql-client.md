@@ -20,8 +20,12 @@ the numbers `Infinity` and `-Infinity` instead of an invalid `Date`; `PGSSLMODE`
 `connectionTimeout` bounds the entire handshake rather than restarting per packet; and
 `sql.unsafe()` / `sql.file()` accept an object of named parameters for `:name`, `$name`, and
 `@name` placeholders on SQLite (an object previously bound nothing and returned no rows).
-Float8/float4 read as text still decode `'Infinity'`/`'-Infinity'` to `NaN` -- tracked
-upstream (oven-sh/bun#39777, fix PR oven-sh/bun#36239).
+Float8/float4 read as **text** (`.simple()`, `sql.unsafe()`) decoded `'Infinity'`/`'-Infinity'`
+to `NaN` on 1.4.0; fixed in 1.4.1 (oven-sh/bun#39777). Also fixed in 1.4.1: `timestamptz` with a
+seconds-level offset returned `Invalid Date` in text queries and arrays, a `Date` written to a
+MySQL `TIMESTAMP` column landed at the wrong instant under a non-UTC session time zone,
+`close()`/`ref()`/`unref()` crashed after the server dropped the connection, and `sql.close()`
+fired `onclose` for pool connections that never connected.
 
 For PgBouncer transaction pooling, construct with `new Bun.SQL({ prepare: false })` -- since
 v1.3.11 Bun sends each such query's Parse+Bind+Execute as one atomic batch, so PgBouncer can

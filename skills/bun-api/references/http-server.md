@@ -329,6 +329,30 @@ Bun.serve({
 })
 ```
 
+### HTTP/2 (v1.4.1+, experimental)
+
+`http2: true` serves HTTP/2 on the same port, with the same `routes` and `fetch` handler, as
+HTTP/1.1:
+
+```typescript
+Bun.serve({
+  tls: { key: Bun.file('key.pem'), cert: Bun.file('cert.pem') },
+  http2: true,
+  http1: false,                        // optional: refuse HTTP/1.x clients
+  fetch(req) { return new Response('Hello over HTTP/2') },
+})
+```
+
+- With `tls`, ALPN picks the protocol per connection: clients offering `h2` (browsers, curl,
+  `node:http2`) get HTTP/2, everyone else HTTP/1.1.
+- Without `tls`, a connection that opens with the HTTP/2 preface (`curl --http2-prior-knowledge`,
+  `http2.connect("http://...")`) gets HTTP/2; other connections get HTTP/1.1 (verified on v1.4.1).
+- `http1: false` fails the handshake for TLS clients that offer ALPN without `h2`; clients that
+  send no ALPN, and cleartext connections without the preface, receive `505`. It requires
+  `http2: true` or `http3: true`, and it disables WebSockets, since `server.upgrade()` is
+  HTTP/1.1-only.
+- Not supported over HTTP/2: WebSockets, server push, and response trailers (so no gRPC).
+
 ### HTTP/3 (QUIC) (v1.3.14+)
 
 Serve HTTP/3 over QUIC (UDP/443) alongside HTTP/1.1 and HTTP/2 by setting `http3: true` (requires TLS):
@@ -384,6 +408,7 @@ const server = Bun.serve({
     idleTimeout: 120,                     // seconds (default: 120)
     backpressureLimit: 1024 * 1024,       // 1 MB
     perMessageDeflate: true,              // Compression
+    binaryType: 'nodebuffer',             // 'nodebuffer' (default) | 'arraybuffer' | 'uint8array' | 'blob' (v1.4.1+)
   },
 })
 ```
