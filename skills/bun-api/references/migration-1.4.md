@@ -1,8 +1,8 @@
 # Bun 1.3 to 1.4: Runtime Behavior Changes
 
 **What changed under existing code.** Bun's shipped docs describe the current state only --
-this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1 changes
-at the end. CLI and package manager changes live in the `bun-cli` skill's
+this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1 and
+1.4.2 changes at the end. CLI and package manager changes live in the `bun-cli` skill's
 `references/migration-1.4.md`.
 
 Check `bun --version` before applying any of this. On 1.3.x the pre-1.4 behavior still holds.
@@ -236,3 +236,46 @@ Upgrade instead of working around these on a 1.4.0 runtime:
 - `assert.deepStrictEqual()` threw for objects with different prototypes.
 - `ws` `handleUpgrade()` threw after an `await`.
 - On Windows, `child_process`, `Bun.spawn`, and `Bun.which` could not find `.com` executables.
+
+## 1.4.2
+
+A bugfix release on top of 1.4.1; nothing new to opt into. What changes under existing code:
+
+- **`.json()` rejects with the `JSON.parse` message.** `Response`, `Request`, `Blob`, `Bun.file()`,
+  and `proc.stdout` `.json()` reject invalid JSON with a `SyntaxError` whose message is what
+  `JSON.parse` gives (`JSON Parse error: Expected '}'`, `JSON Parse error: Unexpected EOF`)
+  instead of the generic `Failed to parse JSON`. Code that matched on the old message must
+  update; matching on `error instanceof SyntaxError` is unchanged.
+- **`Bun.Image` decodes CMYK and YCCK JPEGs**, converting them to RGB. They rejected with
+  `Image: decode failed` before, so a fallback path that caught that error for print-oriented
+  JPEGs is no longer reached.
+- **JavaScriptCore upgrade** (about 350 upstream commits): `Intl.PluralRules#select()` accepts a
+  `BigInt` (was `TypeError`); `Intl.DurationFormat` with `style: "digital"` no longer prints a
+  stray `:` when minutes is 0 and hidden; TypedArray constructors read the right element when a
+  `valueOf` mutates the source array mid-conversion, and `TypedArray.prototype.slice` into an
+  overlapping `Symbol.species` view copies in spec order; `Object.setPrototypeOf(handler, null)`
+  on a `Proxy` handler that had already served a trap no longer crashes; `Date` objects are
+  cheaper to allocate.
+
+### 1.4.1 regressions fixed in 1.4.2
+
+Upgrade instead of working around these on a 1.4.1 runtime:
+
+- **`AsyncLocalStorage` memory leak.** A timer, immediate, or pending promise created inside
+  `store.exit()` or a nested `store.run()` kept the outer store value alive for as long as it
+  existed. `getStore()` returned the right value throughout, so it showed up as RSS growth on
+  servers that stash per-request context in the store, not as wrong reads. Verified on 1.4.2:
+  the outer value is collectable once the callback returns.
+- **`worker_threads` `'online'` fired after the first `'message'`.** A `Worker` that posts on
+  startup lost that message when the parent attached its listener after `await once(worker,
+  "online")`; `@discordjs/ws` hung on it. The order now matches Node.
+
+### Other 1.4.2 fixes
+
+- A rare crash in long-running processes after a prototype that JIT-optimized code had cached
+  property lookups through was garbage-collected.
+- On musl (Alpine images), `Array.prototype.splice`, `shift`, or shrinking `array.length` on an
+  array of objects could crash on a GC thread or hang while the GC was marking.
+- On Linux, when registering a `Bun.file().writer()` `FileSink` with epoll failed (for example
+  with `fs.epoll.max_user_watches` exhausted), its file descriptor was closed twice, which could
+  close an unrelated descriptor that had reused the number.

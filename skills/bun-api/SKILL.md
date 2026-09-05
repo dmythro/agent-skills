@@ -22,8 +22,8 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 
 **Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
 
-**Verified against Bun v1.4.1** (2026-09-04). Features are tagged with the version that
-introduced them (`v1.4+`, `v1.4.1+`). Where a release changed existing behavior, both
+**Verified against Bun v1.4.2** (2026-09-05). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`). Where a release changed existing behavior, both
 behaviors are stated so this skill stays correct on older projects -- check `bun --version`
 before relying on a version-tagged item.
 
@@ -509,7 +509,7 @@ await extracted.extract("./out", { glob: ["src/**", "!**/*.test.ts"] })
 const files = await extracted.files()              // -> Map<string, File>
 ```
 
-**Gotcha (verified on v1.4.0 and v1.4.1):** `Bun.write(path, archive)` ignores the constructor's
+**Gotcha (verified on v1.4.0 through v1.4.2):** `Bun.write(path, archive)` ignores the constructor's
 `compress` option and writes an uncompressed tar under your `.tar.gz` filename. Bun's own
 docs show `Bun.write(path, archive)` as compressing -- it does not. Always pass
 `await archive.bytes()` (or `await archive.blob()`), which do honor `compress`
@@ -802,7 +802,9 @@ const pasted = Bun.Image.fromClipboard()      // v1.4+, macOS/Windows only, null
 JPEG/PNG/WebP use statically-linked codecs, so their encoded output is byte-identical across
 platforms; HEIC/AVIF/TIFF (and GIF/BMP on macOS/Windows) go through the OS backend. There
 are no `.gif()`/`.bmp()`/`.tiff()` encoder methods -- re-encode those decodes as
-JPEG/PNG/WebP.
+JPEG/PNG/WebP. CMYK and YCCK JPEGs (print-oriented exports from Photoshop and press PDFs)
+decode as of v1.4.2, converted to RGB so every transform and every encoder the platform
+supports works on them; 1.4.1 and earlier rejected them with `Image: decode failed`.
 
 > **Reference**: See `references/image.md`, and
 > `node_modules/bun-types/docs/runtime/image.mdx` for the full compatibility matrix.
@@ -857,10 +859,10 @@ cannot accept more, and `fetch()` pauses the socket when nothing is consuming th
 Streaming code that previously buffered whole payloads no longer needs hand-rolled
 throttling, provided every stage of the pipeline honors backpressure.
 
-> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4 and
-> 1.4.1 (TLS verification against the URL hostname, `localhost` loopback resolution, `ws`
-> `ArrayBuffer` frames, and the 1.4.0 regressions 1.4.1 fixed) -- the one thing Bun's shipped
-> docs do not cover, since they describe only the current state.
+> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4,
+> 1.4.1, and 1.4.2 (TLS verification against the URL hostname, `localhost` loopback resolution,
+> `ws` `ArrayBuffer` frames, `.json()` error messages, and the regressions each patch fixed) --
+> the one thing Bun's shipped docs do not cover, since they describe only the current state.
 
 ## Script Patterns
 

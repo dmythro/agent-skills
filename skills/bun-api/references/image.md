@@ -30,6 +30,17 @@ output is byte-identical across Linux, macOS, and Windows. Formats handled by th
 backend inherit the OS's patch level. GIF, BMP, and TIFF are decode-only -- there are no
 `.gif()`/`.bmp()`/`.tiff()` encoder methods; re-encode those decodes as JPEG/PNG/WebP.
 
+**CMYK and YCCK JPEGs (v1.4.2+).** Four-component JPEGs -- print exports from Photoshop,
+images pulled out of press PDFs -- decode on every platform and are converted to RGB, so
+`resize()`, `modulate()`, and every output format the platform supports (see the table
+above) work on them, and `metadata()` reports `format: 'jpeg'`. On 1.4.1 and earlier the constructor's pipeline rejected them with
+`Image: decode failed`; there is no workaround short of upgrading, since no other decoder
+is bundled.
+
+```typescript
+await new Bun.Image('photo-cmyk.jpg').resize(400, 400).webp().bytes()  // v1.4.2+
+```
+
 ## Clipboard (v1.4+)
 
 ```typescript

@@ -1,8 +1,8 @@
 # Bun 1.3 to 1.4: CLI, Package Manager, and Test Runner Changes
 
 **What changed under existing projects.** Bun's shipped docs describe the current state only --
-this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1 changes
-at the end. Runtime and API changes live in the `bun-api` skill's `references/migration-1.4.md`.
+this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1 and
+1.4.2 changes at the end. Runtime and API changes live in the `bun-api` skill's `references/migration-1.4.md`.
 
 Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
 
@@ -218,3 +218,26 @@ Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
 - `jest.useFakeTimers({ now })` and `setSystemTime()` move `performance.timeOrigin` together
   with `Date.now()`.
 - Piped stdout (`bun test | pbcopy`) no longer receives ANSI colors when only stderr is a TTY.
+
+## 1.4.2
+
+A bugfix release; no new flags or bunfig keys. Two 1.4.1 regressions are fixed -- upgrade
+rather than work around them:
+
+### Bundler
+
+- **`bun build` renamed a nested `var` onto a `let` in the same block** (1.4.1 only). A
+  function with `{ let exports2 = {}; var exports = exports2 }` in an inner block came out as
+  `var exports2 = exports2`, and the bundle failed to load with
+  `SyntaxError: Cannot declare a var variable that shadows a let/const/class variable`. Any
+  build importing Elysia hit it. The same renamer bug could also give a `let` the name of a
+  function parameter or `catch` binding, which loads but computes wrong values -- so a 1.4.1
+  bundle that loads is not proof it is correct. Verified fixed on 1.4.2: the inner binding is
+  renamed instead.
+
+### Package Manager
+
+- **`bun install` and `bun add` could panic with `range end index out of range`** when a
+  `bun.lockb` or a cached registry manifest stored a package-name hash that did not match the
+  name. Fixed in 1.4.2; on an older runtime, delete the cached manifest (`bun pm cache rm`) or
+  migrate the binary lockfile to `bun.lock`.

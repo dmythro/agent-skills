@@ -17,8 +17,8 @@ description: >-
 
 Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, and test runner. Bun runs TypeScript natively — `bun file.ts` directly, no compile step, no `tsc`, no `ts-node`. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
 
-**Verified against Bun v1.4.1** (2026-09-04). Features are tagged with the version that
-introduced them (`v1.4+`, `v1.4.1+`). Where a release changed existing behavior, both
+**Verified against Bun v1.4.2** (2026-09-05). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`). Where a release changed existing behavior, both
 behaviors are stated so this skill stays correct on older projects -- run `bun --version`
 before relying on a version-tagged item.
 
@@ -710,6 +710,7 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 17. **`bun feedback` was removed in 1.4**
 18. **Bundled namespace objects will become getter-only.** `import * as ns` / `export * as ns` from `bun build` currently accept `ns.x = 1` silently; `--no-deprecated-namespace-object-setters` (or `deprecatedNamespaceObjectSetters: false`) opts into the future default now (v1.4.1+)
 19. **`bun run --filter`, `--workspaces`, `--parallel`, and `--sequential` ignored an auto-discovered `bunfig.toml`** before 1.4.1 unless `--config` was passed; `bun run` also reused a stale transpile cache for files of 4 KiB or more after `[define]` or `--drop` changed
+20. **Bun 1.4.1's `bun build` could rename a nested `var` onto a `let` in the same block**, so bundles importing Elysia failed to load with `SyntaxError: Cannot declare a var variable that shadows a let/const/class variable`, and a `let` could take a parameter's or `catch` binding's name and compute wrong values. Fixed in 1.4.2 -- upgrade rather than patch the output, and do not pin 1.4.1 for bundling
 
 ## References
 
