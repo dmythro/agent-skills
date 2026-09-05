@@ -237,7 +237,7 @@ File contents may be `string`, `Blob` (including `Bun.file()`), `ArrayBufferView
 ### Compression Gotcha
 
 **`Bun.write(path, archive)` ignores the constructor's `compress` option** and writes a plain
-tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0 and v1.4.1: the output carries a POSIX
+tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0 through v1.4.2: the output carries a POSIX
 tar header, not the gzip magic bytes. Bun's own docs show this form as compressing -- it does
 not (tracked upstream: oven-sh/bun#30234). `.bytes()` and `.blob()` do honor `compress`:
 
