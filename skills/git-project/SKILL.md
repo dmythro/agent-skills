@@ -147,8 +147,8 @@ gh api --method PUT orgs/<org>/teams/<team>/repos/{owner}/{repo} -f permission=t
 gh api graphql -f query='mutation($p:ID!,$t:ID!){ updateProjectV2Collaborators(input:{projectId:$p,
   collaborators:[{teamId:$t, role:WRITER}]}){ collaborators(first:20){ nodes{ __typename } } } }' \
   -f p=<projectId> -f t=<teamId>
-# that payload echoes back only what you passed -- verify the team grant by reading it back; user grants and base role are UI-only
-gh api graphql -f query='{ organization(login:"<org>"){ team(slug:"<team>"){ projectsV2(first:20, minPermissionLevel: WRITE){ nodes{ number } } } } }' --jq '.data.organization.team.projectsV2.nodes[].number'   # <num> listed = Write or higher
+# that payload echoes back only what you passed -- verify the team grant by reading it back; a per-user grant (userId in place of teamId) has no read, and the base role is UI-only
+gh api graphql -f query='query($endCursor:String){ organization(login:"<org>"){ team(slug:"<team>"){ projectsV2(first:100, after:$endCursor, minPermissionLevel: WRITE){ nodes{ number } pageInfo{ hasNextPage endCursor } } } } }' --paginate --jq '.data.organization.team.projectsV2.nodes[].number'   # <num> listed = Write or higher
 # verify the repo side by role_name -- .permission reports a triage collaborator as "read"
 gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name
 ```
