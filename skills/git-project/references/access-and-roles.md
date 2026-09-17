@@ -73,7 +73,7 @@ gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name   # 
 
 ## Grant project access (GraphQL only)
 
-There is **no `gh project` subcommand for access**. Use `updateProjectV2Collaborators`; roles are `NONE | READER | WRITER | ADMIN`, and each entry takes either a `userId` or a `teamId`.
+There is **no `gh project` subcommand for access**. Use `updateProjectV2Collaborators`; roles are `NONE | READER | WRITER | ADMIN`, and each entry takes either a `userId` or a `teamId`. The caller needs **Admin on the project** (org owners have it); admin on the repo or maintainer of the team does not count -- the two gates cut both ways.
 
 ```bash
 projectId=$(gh project view <num> --owner <org> --format json --jq .id)
@@ -110,7 +110,8 @@ Effective access is the **maximum** of the base role and every explicit grant, s
 | Team repo grants | `admin:org` (fine-grained: repo `Administration: write` + org `Members: read` + repo `Metadata: read`); caller must have admin on the repo and be able to see the team |
 | Org settings (`PATCH /orgs/<org>`) | `admin:org` **or** `repo` (classic); caller must be an org owner |
 | Project reads | `read:project` |
-| Project writes, incl. collaborators | `project` |
+| Project writes | `project` |
+| Project collaborators (`updateProjectV2Collaborators`) | `project`; caller must be a project Admin or an org owner |
 
 `admin:org` is not part of a default `gh` login, and it is the team grants that need it -- an org-settings PATCH also goes through on a plain `repo` token, and `write:org` does not cover teams. Adding it needs an interactive device flow the **user** must run themselves (the fine-grained permissions above apply only to a token supplied via `gh auth login --with-token`; `gh auth refresh` deals in classic scopes):
 
