@@ -12,6 +12,7 @@ Repo role and project role are **independent**. Neither implies the other.
 | Apply/dismiss labels | Repo | **Triage** |
 | Assign people, close/reopen, apply milestones | Repo | **Triage** |
 | Add or remove sub-issues (the epic tree) | Repo | **Triage** |
+| Create, edit, delete labels or milestones | Repo | Write |
 | Edit anyone's comments, transfer an issue | Repo | Write |
 | Delete an issue | Repo | Admin |
 | See the board | Project | Read |

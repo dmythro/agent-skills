@@ -140,7 +140,7 @@ gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> 
 ### Give a teammate access to work the board
 
 ```bash
-# repo side -- labels, assignees, milestones, sub-issue links (Triage, no code push)
+# repo side -- labels, assignees, apply milestones, sub-issue links (Triage, no code push; creating labels or milestones is Write)
 gh api --method PUT orgs/<org>/teams/<team>/memberships/<user> -f role=member
 gh api --method PUT orgs/<org>/teams/<team>/repos/{owner}/{repo} -f permission=triage
 # project side -- Status, Priority, every field (no gh subcommand exists for this)
