@@ -32,11 +32,8 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
       "Bash(gh api orgs/*/issue-types)",
       "Bash(gh api orgs/*/issue-types --jq *)",
       "Bash(gh api repos/*/collaborators/*/permission --jq *)",
-      "Bash(gh api repos/*/collaborators?affiliation=* --jq *)",
       "Bash(gh api repos/*/collaborators?affiliation=* --paginate --jq *)",
-      "Bash(gh api orgs/*/teams/*/repos --jq *)",
       "Bash(gh api orgs/*/teams/*/repos --paginate --jq *)",
-      "Bash(gh api orgs/*/teams/*/members --jq *)",
       "Bash(gh api orgs/*/teams/*/members --paginate --jq *)",
       "Bash(gh api orgs/*/members?filter=* --paginate --jq *)",
       "Bash(gh api orgs/*/outside_collaborators?filter=* --paginate --jq *)",
@@ -54,7 +51,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
 - `repos/*/issues/*/sub_issues` (bare / `--jq` / `--paginate --jq`) -- the GET reads a parent's children; POST/DELETE are excluded by enumerating only read flags.
 - `repos/*/milestones` (bare / `--jq` / `?state=* --jq` / by-number `--jq`) -- GET-only forms for listing, the current-milestone recipe, and by-number lookups. The query-string variant anchors `state=` right after the `?` so it can't degrade into a broad match. Creation/close (`--method POST/PATCH` or bare `-f` fields) don't match the enumerated shapes.
 - `orgs/*/issue-types` -- GET lists the org's issue-type catalog; managing it (POST/PUT/DELETE) doesn't match.
-- **Access reads** -- `collaborators/*/permission` (the `role_name` check), the `affiliation=` collaborator list, a team's repos/members, and the `filter=2fa_disabled` member / outside-collaborator lists used as a 2FA preflight. Each is enumerated in both its plain and `--paginate` form, because a bare list read stops at 30 items and an access audit must not. All end in `--jq *`, which is what keeps them read-only: **`gh api` with any `-f`/`-F` field and no `--method` sends a POST**, and a grant (`--method PUT orgs/...`) puts the flag before the path, so neither shape matches.
+- **Access reads** -- `collaborators/*/permission` (the `role_name` check), the `affiliation=` collaborator list, a team's repos/members, and the `filter=2fa_disabled` member / outside-collaborator lists used as a 2FA preflight. The single-item `permission` read is plain; every list read is enumerated only in its `--paginate` form, because a bare list read stops at 30 items and turns an access audit into a false all-clear -- the unpaginated shape is left to prompt on purpose. All end in `--jq *`, which is what keeps them read-only: **`gh api` with any `-f`/`-F` field and no `--method` sends a POST**, and a grant (`--method PUT orgs/...`) puts the flag before the path, so neither shape matches.
 - `*{ viewer { projectV2*` -- matches single-line project **read** queries (views, workflows, fields, items with issue metadata). Mutations begin with `mutation` and don't match. The included `*{ organization(login*` is the org-owned variant: the query is `organization(login: "ORG") { projectV2 }`, so a `{ organization { projectV2` pattern would *not* match (the `(login: ...)` argument sits in between). It also covers the org `issueTypes` GraphQL read.
 
 ## Not Included (Manual Approval Required)
