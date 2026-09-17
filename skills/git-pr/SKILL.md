@@ -62,6 +62,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 5. **Push only finished work -- one push per round.** Where auto-review and `auto_incremental_review` are on (both default), `git push` **is** the review request and it reviews whatever is on the branch at that moment. Do every task of the round first -- all fixes, tests, docs, local checks (`coderabbit review --committed`), everything committed -- then push once. A progress push spends a scarce per-developer review window on code you already intend to change. While the change is still moving, keep the PR a draft (drafts are not auto-reviewed, so pushes to them are free); marking it ready is the review request. Full gate: `references/bot-review-loop.md` (One Push Per Round).
 6. **A review is not handled until its body-only findings are.** Bot findings that never become threads (CodeRabbit nitpick, outside-diff-range, duplicate and failed-to-post buckets) live in the review body and are invisible to thread queries -- triage them too, and reconcile the claimed comment count before declaring a round done.
 7. **A green bot check is not a completed review.** CodeRabbit records each round as a commit status that is `success` either way -- the outcome is only in its `description` (`Review completed` vs `Review rate limited`), and a rate-limited round often posts nothing else at all: no review, no threads, no comment. Read it with `gh pr checks --json name,state,bucket,description` (the field is not returned by default, and `gh pr view --json statusCheckRollup` drops it entirely) before reporting a PR as reviewed.
+8. **The local CodeRabbit command is exactly `coderabbit review --committed --base {base}`, plus `--agent` for JSON-lines output.** Plain text is the default -- there is **no `--plain`**, and `--type <scope>` is gone too (both fail with `error: unknown option` on CLI v0.7+). Never improvise an output or scope flag from memory: the `coderabbit` skill owns the CLI surface, and a wrong flag prints the usage text with exit `0`, so a wrapper that tails the output reads it as a clean review.
 
 ---
 
@@ -300,7 +301,7 @@ Review preferences are declared in a `Code Review Policy` section of an agent in
 - Reviewer: coderabbit            # coderabbit | copilot | both | none
 - CodeRabbit plan: pro+ until 2026-08-20, then pro   # free | pro | pro+ | enterprise
 - Copilot billing: legacy         # legacy (premium requests) | credits
-- Local review: coderabbit review --committed   # run before every push
+- Local review: coderabbit review --committed --base main   # run before every push; --agent for JSON lines, no --plain
 - PR review rounds: ask           # ask | loop <= N
 ```
 

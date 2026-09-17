@@ -27,7 +27,7 @@ description: >-
 
 1. **Reviews upload code to CodeRabbit's service.** A review sends the diff (and context) to CodeRabbit. On a repo with sensitive/unpublished code, confirm the user is OK with that before the first run.
 2. **Reviews consume a per-hour quota** (Free: 3/hour CLI reviews). Scope deliberately (`--committed`/`--uncommitted`, `--base`) and use `coderabbit review findings` to replay the last result without spending a review.
-3. **Use `--agent` output when driving fixes programmatically**; the default plain-text mode is for humans.
+3. **Use `--agent` output when driving fixes programmatically**; the default plain-text mode is for humans. There is **no `--plain` flag** (and no `--type`): both were removed in v0.7 and fail with `error: unknown option` -- the CLI then prints its usage text and exits `0`, so a piped or tailed run looks clean while nothing was reviewed. Do not guess flags; the table under CLI Reference is the whole surface.
 4. **Validate findings before fixing** -- same rule as PR reviews: judge each finding on its merits; never blind-fix to silence the tool.
 5. **CodeRabbit is optional -- check the Code Review Policy first** (repo AGENTS.md/CLAUDE.md, falling back to the user's global agent instructions; see `git-pr` skill) for the preferred reviewer and checkpoints. Never install, authenticate, or run it on a project whose policy or user hasn't opted in.
 
