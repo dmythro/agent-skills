@@ -85,9 +85,11 @@ gh api graphql -f query='mutation($p:ID!,$t:ID!){
 
 Revoke by re-running with `role: NONE`. Grant an individual with `{userId: "<id>", role: WRITER}` (`gh api graphql -f query='{ user(login:"<login>"){ id } }'`).
 
-**Reading the collaborator list:** the mutation's return payload is the only way. `ProjectV2` exposes no `collaborators` field, so there is no plain query -- a no-op grant doubles as the read.
+**There is no API read for project access.** `ProjectV2` exposes no `collaborators` field, and the mutation's return payload echoes back **only the collaborators you passed in** -- verified: a one-team grant returns `totalCount: 1` on a project that also has three individual collaborators. Do not treat that payload as the access list; it will show you exactly what you just sent and nothing else. The UI's **Manage access** page is the only complete view, so audit access there and never conclude "nobody else has access" from the CLI.
 
-**Base role** -- what every org member gets on the project -- is **UI-only**: Project -> ... -> Settings -> Manage access -> Base role (`No access | Read | Write | Admin`). It is neither readable nor settable through the API. An explicit team/user grant works regardless of it, so grant explicitly rather than relying on a base role you cannot verify from the CLI. Check it in the UI once, to confirm it is not set wider than you intend.
+**Base role** -- what every org member gets on the project -- is **UI-only**: Project -> ... -> Settings -> Manage access -> Base role (`No access | Read | Write | Admin`). It is neither readable nor settable through the API.
+
+Effective access is the **maximum** of the base role and every explicit grant, so a grant can only add. The trap: if the base role is already `Write`, every org member can edit the board and your team grant changes nothing -- it looks like team-gated access while being open to the whole org. A project whose access is meant to come from teams needs base role `No access`, set in the UI, with the team grant in place first. Always read the base role off that page before concluding the board is gated.
 
 ## Scopes for these operations
 
