@@ -40,11 +40,13 @@ Then find where the access comes from:
 
 ```bash
 gh api orgs/<org> --jq '.default_repository_permission'                  # base role for every member
-gh api orgs/<org>/teams/<team>/repos --jq '.[] | {repo: .full_name, role: .role_name}'
-gh api "repos/{owner}/{repo}/collaborators?affiliation=direct" --jq '.[] | {login, role: .role_name}'
+gh api orgs/<org>/teams/<team>/repos --paginate --jq '.[] | {repo: .full_name, role: .role_name}'
+gh api "repos/{owner}/{repo}/collaborators?affiliation=direct" --paginate --jq '.[] | {login, role: .role_name}'
 ```
 
 Effective permission is the **highest** of org base, team grant, and direct grant. A stale direct `read` is harmless; a stale direct `write` silently outranks the team and hides a downgrade.
+
+**Paginate every list read.** REST returns 30 items per page, so a bare `gh api .../collaborators` or `.../members` answers for the first page only and quietly omits the rest -- which turns an access audit or a 2FA preflight into a false all-clear. Add `--paginate`, and emit one record per line (`--jq '.[].login'`) rather than per-page arrays (`--jq '[.[].login]'`), which `--paginate` would hand back as several separate arrays to reassemble.
 
 ## Grant repo access (prefer teams)
 
@@ -83,7 +85,9 @@ gh api graphql -f query='mutation($p:ID!,$t:ID!){
   -f p=$projectId -f t=$teamId
 ```
 
-Revoke by re-running with `role: NONE`. Grant an individual with `{userId: "<id>", role: WRITER}` (`gh api graphql -f query='{ user(login:"<login>"){ id } }'`).
+Grant an individual with `{userId: "<id>", role: WRITER}` (`gh api graphql -f query='{ user(login:"<login>"){ id } }'`).
+
+**`role: NONE` removes only that one direct grant.** It does not touch access the person keeps through a team that holds a grant, or through the project's base role. Revoking someone for real is three checks: drop the direct grant, remove them from any granted team, and -- if the base role is `Read` or higher -- lower it. Dropping the direct grant alone and calling it revoked is the mistake this ordering exists to prevent.
 
 **There is no API read for project access.** `ProjectV2` exposes no `collaborators` field, and the mutation's return payload echoes back **only the collaborators you passed in** -- verified: a one-team grant returns `totalCount: 1` on a project that also has three individual collaborators. Do not treat that payload as the access list; it will show you exactly what you just sent and nothing else. The UI's **Manage access** page is the only complete view, so audit access there and never conclude "nobody else has access" from the CLI.
 
@@ -135,8 +139,8 @@ gh api orgs/<org> --jq '{default_repository_permission, members_can_create_repos
 List both before flipping it:
 
 ```bash
-gh api "orgs/<org>/members?filter=2fa_disabled" --jq '[.[].login]'               # locked out until they enable
-gh api "orgs/<org>/outside_collaborators?filter=2fa_disabled" --jq '[.[].login]' # removed on enable
+gh api "orgs/<org>/members?filter=2fa_disabled" --paginate --jq '.[].login'               # locked out until they enable
+gh api "orgs/<org>/outside_collaborators?filter=2fa_disabled" --paginate --jq '.[].login' # removed on enable
 ```
 
 ## Why a team, even for three people
