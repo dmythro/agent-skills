@@ -35,13 +35,13 @@ gh issue edit <child> --parent <newEpic>
 The sub-issues REST API identifies the child by its **database `id`** (a large integer like `4573108877`), **not** its issue number and **not** its `node_id`. Always resolve it first:
 
 ```bash
-gh api repos/{owner}/{repo}/issues/<number> --jq .id     # -> 4573108877
+gh api repos/{owner}/{repo}/issues/<number> --jq .id --method GET     # -> 4573108877
 ```
 
 ### List a parent's children
 
 ```bash
-gh api repos/{owner}/{repo}/issues/<epic>/sub_issues --jq '.[] | {number, id, state, title}'
+gh api repos/{owner}/{repo}/issues/<epic>/sub_issues --jq '.[] | {number, id, state, title}' --method GET
 ```
 
 Returns each child's `number` and `id` -- the `id` is what you pass to re-parent.

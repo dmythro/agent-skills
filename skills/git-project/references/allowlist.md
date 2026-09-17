@@ -8,6 +8,7 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
 - `*` cannot cross shell operators (`&&`, `|`, `;`) or, reliably, newlines -- keep allowlisted commands single-line.
 - `?` in URL query strings is ambiguous (a matcher may treat it as a single-char wildcard) -- anchor literal text right after it (`milestones?state=*`, never `milestones?*`).
 - Avoid `VAR=...` prefixes (they break matching); use `$(...)` inline, or gh's `{owner}/{repo}` placeholders on REST endpoints.
+- A trailing `*` matches everything after it, including a later `-f`/`-F` (which turns a method-less `gh api` into a POST) or `-X DELETE`. Every REST read pattern therefore ends in a literal `--method GET`, and the documented commands carry it **last**: `gh api` honours the last method flag it sees, so nothing appended can flip the request.
 
 ## Recommended: Broad Patterns (Read-Only)
 
@@ -23,14 +24,20 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
       "Bash(gh issue view:*)",
       "Bash(gh label list:*)",
       "Bash(gh api repos/*/issues/*/sub_issues)",
-      "Bash(gh api repos/*/issues/*/sub_issues --jq *)",
-      "Bash(gh api repos/*/issues/*/sub_issues --paginate --jq *)",
+      "Bash(gh api repos/*/issues/*/sub_issues --jq * --method GET)",
+      "Bash(gh api repos/*/issues/*/sub_issues --paginate --jq * --method GET)",
       "Bash(gh api repos/*/milestones)",
-      "Bash(gh api repos/*/milestones --jq *)",
-      "Bash(gh api repos/*/milestones?state=* --jq *)",
-      "Bash(gh api repos/*/milestones/* --jq *)",
+      "Bash(gh api repos/*/milestones --jq * --method GET)",
+      "Bash(gh api repos/*/milestones?state=* --jq * --method GET)",
+      "Bash(gh api repos/*/milestones/* --jq * --method GET)",
       "Bash(gh api orgs/*/issue-types)",
-      "Bash(gh api orgs/*/issue-types --jq *)",
+      "Bash(gh api orgs/*/issue-types --jq * --method GET)",
+      "Bash(gh api repos/*/collaborators/*/permission --jq * --method GET)",
+      "Bash(gh api repos/*/collaborators?affiliation=* --paginate --jq * --method GET)",
+      "Bash(gh api orgs/*/teams/*/repos --paginate --jq * --method GET)",
+      "Bash(gh api orgs/*/teams/*/members --paginate --jq * --method GET)",
+      "Bash(gh api orgs/*/members?filter=* --paginate --jq * --method GET)",
+      "Bash(gh api orgs/*/outside_collaborators?filter=* --paginate --jq * --method GET)",
       "Bash(gh api graphql -f query=*{ viewer { projectV2*)",
       "Bash(gh api graphql -f query=*{ organization(login*)"
     ]
@@ -42,9 +49,10 @@ Auto-approval patterns for Claude Code `settings.json`. Covers read-only `gh pro
 
 - `gh project list/view/field-list/item-list` -- query-only subcommands; no flag turns them into writes. These cover ID discovery (project id, field ids, option ids, item ids).
 - `gh issue list/view`, `gh label list` -- read-only (shared with the `git-pr` skill).
-- `repos/*/issues/*/sub_issues` (bare / `--jq` / `--paginate --jq`) -- the GET reads a parent's children; POST/DELETE are excluded by enumerating only read flags.
-- `repos/*/milestones` (bare / `--jq` / `?state=* --jq` / by-number `--jq`) -- GET-only forms for listing, the current-milestone recipe, and by-number lookups. The query-string variant anchors `state=` right after the `?` so it can't degrade into a broad match. Creation/close (`--method POST/PATCH` or bare `-f` fields) don't match the enumerated shapes.
+- `repos/*/issues/*/sub_issues` (bare / `--jq` / `--paginate --jq`) -- the GET reads a parent's children; the trailing `--method GET` is what excludes POST/DELETE.
+- `repos/*/milestones` (bare / `--jq` / `?state=* --jq` / by-number `--jq`) -- GET-only forms for listing, the current-milestone recipe, and by-number lookups. The query-string variant anchors `state=` right after the `?` so it can't degrade into a broad match. Creation/close cannot ride on these shapes: each ends in `--method GET`, the last method flag, so an appended `-f` field becomes a query parameter rather than a POST body.
 - `orgs/*/issue-types` -- GET lists the org's issue-type catalog; managing it (POST/PUT/DELETE) doesn't match.
+- **Access reads** -- `collaborators/*/permission` (the `role_name` check), the `affiliation=` collaborator list, a team's repos/members, and the `filter=2fa_disabled` member / outside-collaborator lists used as a 2FA preflight. The single-item `permission` read is plain; every list read is enumerated only in its `--paginate` form, because a bare list read stops at 30 items and turns an access audit into a false all-clear -- the unpaginated shape is left to prompt on purpose. All end in `--method GET`, which is what keeps them read-only: a trailing `--jq *` alone would still match a command with `-f`/`-F` appended (**`gh api` with a field and no method sends a POST**) or with a later `-X PUT`, and a literal final `--method GET` outranks both because `gh api` honours the last method flag.
 - `*{ viewer { projectV2*` -- matches single-line project **read** queries (views, workflows, fields, items with issue metadata). Mutations begin with `mutation` and don't match. The included `*{ organization(login*` is the org-owned variant: the query is `organization(login: "ORG") { projectV2 }`, so a `{ organization { projectV2` pattern would *not* match (the `(login: ...)` argument sits in between). It also covers the org `issueTypes` GraphQL read.
 
 ## Not Included (Manual Approval Required)
@@ -56,6 +64,7 @@ Every project write -- they change boards, fields, issues, or links:
 - **Sub-issue links** -- `POST`/`DELETE` on `.../sub_issues` (`--method POST|DELETE`)
 - **Milestone writes** -- `POST`/`PATCH`/`DELETE` on `repos/*/milestones[/*]` (create, edit, close, delete)
 - **Issue-type management** -- `POST`/`PUT`/`DELETE` on `orgs/*/issue-types[/*]` (org-admin catalog changes)
+- **Access grants** -- team membership and team repo `PUT`, `DELETE`/`PUT` on `repos/*/collaborators/*`, `PATCH /orgs/*` (org settings), and `updateProjectV2Collaborators` -- they change who can reach the repo and the board
 - **GraphQL mutations** -- `updateProjectV2ItemFieldValue`, `updateProjectV2ItemPosition`, `addSubIssue`, etc. (`mutation {`)
 
 ### Opt-in: the status-flow edit
