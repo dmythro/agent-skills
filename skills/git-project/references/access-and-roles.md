@@ -118,11 +118,12 @@ gh auth refresh -h github.com -s admin:org
 
 - `members_can_change_repo_visibility`
 - `members_can_delete_repositories`
-- `members_can_invite_outside_collaborators`
-- `two_factor_requirement_enabled`
 - `members_can_create_teams`, `members_can_delete_issues`
+- `two_factor_requirement_enabled`
 
 UI: Organization -> Settings -> Member privileges (2FA lives under Settings -> Authentication security).
+
+One more is returned by GET and cannot be changed **anywhere** on a free/Pro/Team org: **`members_can_invite_outside_collaborators`**. Restricting outside-collaborator invitations to owners is a **GitHub Enterprise Cloud** feature, so on other plans the toggle is absent from Member privileges and the field is permanently `true`. Do not report it as an unfinished hardening step -- check the org's plan (`gh api orgs/<org> --jq .plan.name`) first. It is also narrower than it sounds: only someone with **admin on a repository** can invite an outside collaborator, so an org whose members top out at triage/write and cannot create repositories has no one able to use it regardless.
 
 PATCH **does** accept `default_repository_permission` (`read|write|admin|none`), `members_can_create_repositories`, and `members_allowed_repository_creation_type`. Because the silent-ignore failure mode exists, **always re-read after a PATCH** instead of trusting the response body:
 
