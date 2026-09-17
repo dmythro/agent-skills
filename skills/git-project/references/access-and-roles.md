@@ -101,12 +101,13 @@ Effective access is the **maximum** of the base role and every explicit grant, s
 |-----------|-------|
 | Read repo roles, issues, sub-issues | `repo` |
 | Read org + team membership | `read:org` |
-| Team membership and team repo grants | `admin:org` |
+| Team membership grants | `admin:org` (fine-grained: org `Members: write`); caller must be an org owner or a team maintainer |
+| Team repo grants | `admin:org` (fine-grained: repo `Administration: write` + org `Members: read` + repo `Metadata: read`); caller must have admin on the repo and be able to see the team |
 | Org settings (`PATCH /orgs/<org>`) | `admin:org` **or** `repo` (classic); caller must be an org owner |
 | Project reads | `read:project` |
 | Project writes, incl. collaborators | `project` |
 
-`admin:org` is not part of a default `gh` login, and it is the team grants that need it -- an org-settings PATCH also goes through on a plain `repo` token. Adding it needs an interactive device flow the **user** must run themselves:
+`admin:org` is not part of a default `gh` login, and it is the team grants that need it -- an org-settings PATCH also goes through on a plain `repo` token, and `write:org` does not cover teams. Adding it needs an interactive device flow the **user** must run themselves (the fine-grained permissions above apply only to a token supplied via `gh auth login --with-token`; `gh auth refresh` deals in classic scopes):
 
 ```bash
 gh auth refresh -h github.com -s admin:org
