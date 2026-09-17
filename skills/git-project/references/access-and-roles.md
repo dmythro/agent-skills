@@ -1,6 +1,6 @@
 # Access and Roles
 
-Who is allowed to work the board, as opposed to which token scope your automation holds. These are different problems: a scope error blocks **you**, a role gap blocks the **teammate** you set the board up for -- and it surfaces as "the buttons are missing", never as an error message.
+Who is allowed to work the board, as opposed to which token scope your automation holds. These are different problems: a scope error blocks **you**, a role gap blocks the **teammate** you set the board up for -- and in the UI it surfaces as "the buttons are missing" rather than an error message (the same call over the API fails, with a 403 or a 404 that hides the resource).
 
 ## The two gates
 
