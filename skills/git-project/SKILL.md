@@ -114,9 +114,9 @@ gh issue list --milestone "v1.0" --json number,title,state   # -m takes a title 
 # create (no gh subcommand -- REST)
 gh api --method POST repos/{owner}/{repo}/milestones -f title="v1.0" -f due_on="2026-08-01T00:00:00Z" -f description="<scope>"
 # current milestone (open only; undated ones sort last)
-gh api repos/{owner}/{repo}/milestones --jq 'sort_by(.due_on // "9999-12-31") | first | {number, title, due_on}'
+gh api repos/{owner}/{repo}/milestones --jq 'sort_by(.due_on // "9999-12-31") | first | {number, title, due_on}' --method GET
 # close out the scope once nothing is left open in it
-gh api repos/{owner}/{repo}/milestones/<N> --jq '{title, open_issues}'      # expect open_issues: 0
+gh api repos/{owner}/{repo}/milestones/<N> --jq '{title, open_issues}' --method GET      # expect open_issues: 0
 gh api --method PATCH repos/{owner}/{repo}/milestones/<N> -f state=closed
 ```
 
@@ -150,7 +150,7 @@ gh api graphql -f query='mutation($p:ID!,$t:ID!){ updateProjectV2Collaborators(i
 # that payload echoes back only what you passed -- verify the team grant by reading it back; a per-user grant (userId in place of teamId) has no read, and the base role is UI-only
 gh api graphql -f query='query($endCursor:String){ organization(login:"<org>"){ team(slug:"<team>"){ projectsV2(first:100, after:$endCursor, minPermissionLevel: WRITE){ nodes{ number } pageInfo{ hasNextPage endCursor } } } } }' --paginate --jq '.data.organization.team.projectsV2.nodes[].number'   # <num> listed = Write or higher
 # verify the repo side by role_name -- .permission reports a triage collaborator as "read"
-gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name
+gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name --method GET
 ```
 
 > **Reference**: `references/cli-and-graphql.md` -- full command set, getting `<item>`/`<proj>`/field+option ids (`field-list`/`item-list --format json`), and `updateProjectV2ItemPosition` for roadmap ordering. `references/sub-issues.md` -- native link flags, the REST fallback (database-id requirement), re-parenting, and the ~25/request batch limit. `references/types-and-milestones.md` -- org issue types, milestone CRUD, and the current-milestone / milestone-N conventions in full. `references/access-and-roles.md` -- the two gates in full, diagnosing a blocked teammate, reading project collaborators, the `admin:org` refresh, and the org settings REST accepts but silently ignores.
@@ -170,7 +170,7 @@ Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggle
 
 ## Read-Only vs Write Classification
 
-- **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`, milestone reads (`gh api repos/{owner}/{repo}/milestones`), issue-type reads (`gh api orgs/{org}/issue-types`), access reads (`gh api repos/{owner}/{repo}/collaborators/<user>/permission`, `gh api orgs/{org}/teams/{team}/repos`)
+- **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`, milestone reads (`gh api repos/{owner}/{repo}/milestones`), issue-type reads (`gh api orgs/{org}/issue-types`), access reads (`gh api repos/{owner}/{repo}/collaborators/<user>/permission`, `gh api orgs/{org}/teams/{team}/repos`) -- every REST read ends in `--method GET`, the flag the allowlist keys on
 - **Write** (require approval): `gh project create/copy/edit/link/field-create/item-add/item-edit/item-archive/item-delete`, `gh label create`, `gh issue create/edit` (incl. `--type/--milestone/--parent/--add-sub-issue`), milestone `POST`/`PATCH`/`DELETE`, sub-issue `POST`/`DELETE`, GraphQL mutations, access grants (team membership/repo `PUT`, `updateProjectV2Collaborators`, `PATCH /orgs/{org}`)
 
 > **Reference**: See `references/allowlist.md` for read-only `gh project` patterns and the opt-in write set.

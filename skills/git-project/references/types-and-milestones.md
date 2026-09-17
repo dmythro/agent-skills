@@ -20,8 +20,8 @@ Types are matched by name, case-insensitive. One type per issue.
 
 ```bash
 gh issue list --type Task --json number,title             # filter by type
-gh api orgs/{org}/issue-types                             # list the org's types (read-only)
-gh api repos/{owner}/{repo}/issues/<n> --jq '.type.name'  # a single issue's type
+gh api orgs/{org}/issue-types --method GET                             # list the org's types (read-only)
+gh api repos/{owner}/{repo}/issues/<n> --jq '.type.name' --method GET  # a single issue's type
 ```
 
 GraphQL: `issueType { name }` on `Issue`; the org's catalog is `organization(login: "ORG") { issueTypes(first: 20) { nodes { name isEnabled } } }`.
@@ -42,9 +42,9 @@ There is **no `gh milestone` subcommand** -- issue-side flags cover assignment; 
 
 ```bash
 # list open (default); ?state=all / ?state=closed for the rest
-gh api repos/{owner}/{repo}/milestones --jq '[.[] | {number, title, due_on, open_issues, closed_issues}]'
+gh api repos/{owner}/{repo}/milestones --jq '[.[] | {number, title, due_on, open_issues, closed_issues}]' --method GET
 # fetch one by NUMBER
-gh api repos/{owner}/{repo}/milestones/<N>
+gh api repos/{owner}/{repo}/milestones/<N> --method GET
 # create -- due_on is ISO 8601; GitHub normalizes it to the repo timezone's end-of-day
 gh api --method POST repos/{owner}/{repo}/milestones -f title="v1.0" -f due_on="2026-08-01T00:00:00Z" -f description="<scope>"
 # edit / close / reopen
@@ -71,7 +71,7 @@ Note: a just-assigned milestone can take a few seconds to show up in `gh issue l
 - **"Current milestone"** = the **open** milestone with the **smallest due date**. A passed due date still counts -- overdue is the most urgent scope, not a skipped one. Milestones without a due date only qualify when nothing dated is open:
 
   ```bash
-  gh api repos/{owner}/{repo}/milestones --jq 'sort_by(.due_on // "9999-12-31") | first | {number, title, due_on}'
+  gh api repos/{owner}/{repo}/milestones --jq 'sort_by(.due_on // "9999-12-31") | first | {number, title, due_on}' --method GET
   ```
 
   (The endpoint returns open milestones by default; `// "9999-12-31"` sorts undated ones last. Returns `null` when no milestone is open.)
@@ -83,7 +83,7 @@ Note: a just-assigned milestone can take a few seconds to show up in `gh issue l
 When the work in a milestone is done, close the milestone itself -- that is the signal the scope shipped:
 
 ```bash
-gh api repos/{owner}/{repo}/milestones/<N> --jq '{title, open_issues}'   # expect open_issues: 0
+gh api repos/{owner}/{repo}/milestones/<N> --jq '{title, open_issues}' --method GET   # expect open_issues: 0
 gh api --method PATCH repos/{owner}/{repo}/milestones/<N> -f state=closed
 ```
 

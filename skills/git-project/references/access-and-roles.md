@@ -32,7 +32,7 @@ Sub-issues sit at Triage by documented rule: *"People with at least triage permi
 
 ```bash
 # THE authoritative read -- role_name, not permission
-gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq '{permission, role_name}'
+gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq '{permission, role_name}' --method GET
 ```
 
 **Trap:** `.permission` is the legacy field and only ever reports `read`/`write`/`admin` -- a triage collaborator reads back as `"permission": "read"`. Always judge by `.role_name`. Checking the wrong field makes a correct triage grant look like it failed.
@@ -40,9 +40,9 @@ gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq '{permission, r
 Then find where the access comes from:
 
 ```bash
-gh api orgs/<org> --jq '.default_repository_permission'                  # base role for every member
-gh api orgs/<org>/teams/<team>/repos --paginate --jq '.[] | {repo: .full_name, role: .role_name}'
-gh api "repos/{owner}/{repo}/collaborators?affiliation=direct" --paginate --jq '.[] | {login, role: .role_name}'
+gh api orgs/<org> --jq '.default_repository_permission' --method GET                  # base role for every member
+gh api orgs/<org>/teams/<team>/repos --paginate --jq '.[] | {repo: .full_name, role: .role_name}' --method GET
+gh api "repos/{owner}/{repo}/collaborators?affiliation=direct" --paginate --jq '.[] | {login, role: .role_name}' --method GET
 ```
 
 Effective permission is the **highest** of org base, team grant, and direct grant. A stale direct `read` is harmless; a stale direct `write` silently outranks the team and hides a downgrade.
@@ -68,7 +68,7 @@ Grant before you revoke. Add the team access first, verify `role_name`, then dro
 
 ```bash
 gh api --method DELETE repos/{owner}/{repo}/collaborators/<user>
-gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name   # still triage, via the team
+gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name --method GET   # still triage, via the team
 ```
 
 ## Grant project access (GraphQL only)
@@ -136,7 +136,7 @@ PATCH **does** accept `default_repository_permission` (`read|write|admin|none`),
 
 ```bash
 gh api --method PATCH orgs/<org> -f default_repository_permission=none -F members_can_create_repositories=false
-gh api orgs/<org> --jq '{default_repository_permission, members_can_create_repositories}'   # confirm
+gh api orgs/<org> --jq '{default_repository_permission, members_can_create_repositories}' --method GET   # confirm
 ```
 
 **Before enabling the 2FA requirement**, know that it lands differently on two populations:
@@ -147,8 +147,8 @@ gh api orgs/<org> --jq '{default_repository_permission, members_can_create_repos
 List both before flipping it:
 
 ```bash
-gh api "orgs/<org>/members?filter=2fa_disabled" --paginate --jq '.[].login'               # locked out until they enable
-gh api "orgs/<org>/outside_collaborators?filter=2fa_disabled" --paginate --jq '.[].login' # removed on enable
+gh api "orgs/<org>/members?filter=2fa_disabled" --paginate --jq '.[].login' --method GET               # locked out until they enable
+gh api "orgs/<org>/outside_collaborators?filter=2fa_disabled" --paginate --jq '.[].login' --method GET # removed on enable
 ```
 
 ## Why a team, even for three people
