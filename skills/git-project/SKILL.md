@@ -9,9 +9,10 @@ description: >-
   roadmap. Use when setting up or managing a GitHub Project/roadmap, creating
   an epic with issues, adding or moving issues between epics, picking up or
   closing work on the board, (re)prioritizing, setting issue types, creating
-  or closing milestones, enabling project workflows, or configuring gh project
-  read-only allowlists. Not for PR workflows (git-pr), CI/CD status (git-ci),
-  or commit messages (git-commit)
+  or closing milestones, enabling project workflows, granting a teammate the
+  access to work the board (repo Triage + project Write), or configuring gh
+  project read-only allowlists. Not for PR workflows (git-pr), CI/CD status
+  (git-ci), or commit messages (git-commit)
 ---
 
 # GitHub Project Management
@@ -29,6 +30,7 @@ The conventions here are non-obvious and easy to get half-right: the UI nests is
 - **Classifying work** -- set native issue Types (Task/Bug/Feature) instead of type labels
 - **Milestone scoping** -- create a milestone for a deliverable, assign issues, close it out; resolve "current milestone" / "milestone N"
 - **Migrating** an existing repo's loose issues into this structure
+- **Granting access** -- a teammate cannot apply labels, assign, link sub-issues, or edit Status/Priority
 - **Configuring tool allowlists** -- auto-approval patterns for read-only `gh project` commands
 
 ## Critical Rules
@@ -41,12 +43,14 @@ These are the traps -- each is a place where the obvious action leaves the struc
 4. **Single-selects (Status, Priority) are set by option ID, not name.** Look up field IDs + option IDs first (`gh project field-list <num> --owner @me --format json`), then `item-edit`. Names silently no-op.
 5. **Views and workflow-enabling are one-time UI; everything else is scripted.** There is no API to create/rename a view or toggle a workflow. Do those once in the UI (or copy a template); script the rest.
 6. **Type and Milestone are issue metadata, NOT project fields.** Set them on the issue (`gh issue edit <n> --type Bug --milestone "v1.0"`); the board mirrors them as built-in columns for grouping/filtering, but `gh project item-edit` cannot touch them and they never appear in `field-list`. Issue types exist only in **org** repos. See `references/types-and-milestones.md`.
+7. **Repo role and project role are separate gates.** Repo Write does not let a teammate set Status or Priority; project Write does not let them apply a label or assign anyone. Someone running the roadmap needs **repo Triage + project Write** -- and project access has no `gh project` subcommand at all (GraphQL `updateProjectV2Collaborators`). See `references/access-and-roles.md`.
 
 ## Prerequisites
 
 - **GitHub only** -- Projects v2 has no GitLab equivalent.
 - **`gh` >= 2.94** for the native issue flags used here (`--type`, `--milestone`, `--parent`, `--add-sub-issue`); older `gh` falls back to the REST recipes in the references.
 - **Token scopes gate what works.** `gh auth status` shows them. `gh project` commands and any `projectV2` GraphQL need the `project` scope (`gh auth refresh -s project`); `read:project` alone is enough for read-only queries. Without the scope these fail with auth/permission errors even though everything `repo`-scoped works -- the classic "project features seem missing" trap. Issues, sub-issues, types, and milestones ride on the ordinary `repo` scope; org-owned project access also relies on `read:org`.
+- **Scopes gate your automation; roles gate your teammates.** A role gap is silent -- it hides UI controls instead of erroring, so it reads as a broken board. Triage is the minimum for labels/assignees/sub-issues, project Write for Status/Priority. Team grants need `admin:org`, which a default `gh` login does not carry (an org-settings PATCH also accepts `repo`). See `references/access-and-roles.md`.
 - Projects are addressed by **number** under an `--owner` (`@me` or an org login). The repo and project may have different owners. For an **org-owned** project, pass the org login to `--owner`, and in GraphQL reads use `organization(login: "ORG") { projectV2 }` instead of `viewer { projectV2 }` (see `references/cli-and-graphql.md`).
 
 ## The Model
@@ -133,7 +137,21 @@ gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --
 gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>
 ```
 
-> **Reference**: `references/cli-and-graphql.md` -- full command set, getting `<item>`/`<proj>`/field+option ids (`field-list`/`item-list --format json`), and `updateProjectV2ItemPosition` for roadmap ordering. `references/sub-issues.md` -- native link flags, the REST fallback (database-id requirement), re-parenting, and the ~25/request batch limit. `references/types-and-milestones.md` -- org issue types, milestone CRUD, and the current-milestone / milestone-N conventions in full.
+### Give a teammate access to work the board
+
+```bash
+# repo side -- labels, assignees, milestones, sub-issue links (Triage, no code push)
+gh api --method PUT orgs/<org>/teams/<team>/memberships/<user> -f role=member
+gh api --method PUT orgs/<org>/teams/<team>/repos/{owner}/{repo} -f permission=triage
+# project side -- Status, Priority, every field (no gh subcommand exists for this)
+gh api graphql -f query='mutation($p:ID!,$t:ID!){ updateProjectV2Collaborators(input:{projectId:$p,
+  collaborators:[{teamId:$t, role:WRITER}]}){ collaborators(first:20){ nodes{ __typename } } } }' \
+  -f p=<projectId> -f t=<teamId>
+# verify by role_name -- .permission reports a triage collaborator as "read"
+gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name
+```
+
+> **Reference**: `references/cli-and-graphql.md` -- full command set, getting `<item>`/`<proj>`/field+option ids (`field-list`/`item-list --format json`), and `updateProjectV2ItemPosition` for roadmap ordering. `references/sub-issues.md` -- native link flags, the REST fallback (database-id requirement), re-parenting, and the ~25/request batch limit. `references/types-and-milestones.md` -- org issue types, milestone CRUD, and the current-milestone / milestone-N conventions in full. `references/access-and-roles.md` -- the two gates in full, diagnosing a blocked teammate, reading project collaborators, the `admin:org` refresh, and the org settings REST accepts but silently ignores.
 
 ## Setup (one-time)
 
@@ -150,8 +168,8 @@ Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggle
 
 ## Read-Only vs Write Classification
 
-- **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`, milestone reads (`gh api repos/{owner}/{repo}/milestones`), issue-type reads (`gh api orgs/{org}/issue-types`)
-- **Write** (require approval): `gh project create/copy/edit/link/field-create/item-add/item-edit/item-archive/item-delete`, `gh label create`, `gh issue create/edit` (incl. `--type/--milestone/--parent/--add-sub-issue`), milestone `POST`/`PATCH`/`DELETE`, sub-issue `POST`/`DELETE`, GraphQL mutations
+- **Read-only** (safe to auto-approve): `gh project list/view/field-list/item-list`, GraphQL read queries, `gh label list`, `gh issue list/view`, milestone reads (`gh api repos/{owner}/{repo}/milestones`), issue-type reads (`gh api orgs/{org}/issue-types`), access reads (`gh api repos/{owner}/{repo}/collaborators/<user>/permission`, `gh api orgs/{org}/teams/{team}/repos`)
+- **Write** (require approval): `gh project create/copy/edit/link/field-create/item-add/item-edit/item-archive/item-delete`, `gh label create`, `gh issue create/edit` (incl. `--type/--milestone/--parent/--add-sub-issue`), milestone `POST`/`PATCH`/`DELETE`, sub-issue `POST`/`DELETE`, GraphQL mutations, access grants (team membership/repo `PUT`, `updateProjectV2Collaborators`, `PATCH /orgs/{org}`)
 
 > **Reference**: See `references/allowlist.md` for read-only `gh project` patterns and the opt-in write set.
 
@@ -165,3 +183,4 @@ Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggle
 6. **Sub-issue mutations batch ~25/request** -- larger batches hit `RESOURCE_LIMITS_EXCEEDED`; a multi-`--add-sub-issue` edit can partially fail on the same limit -- re-running is safe.
 7. **Type/Milestone are not project fields** -- set on the issue, mirrored on the board; `item-edit` can't set them and `field-list` won't show them (rule 6). Types are org-only (`--type` on a personal repo: `type "..." not found; available types:` -- fall back to labels there).
 8. **"Current milestone" = smallest due date among open** (past-due included); **"milestone N" = number N**, not the Nth open (see `references/types-and-milestones.md`).
+9. **Access is two gates and both fail silently** -- repo Triage for labels/assignees/sub-issues, project Write for Status/Priority. `.permission` misreports a triage collaborator as `read`, so verify with `.role_name` (rule 7).
