@@ -73,7 +73,7 @@ Keying on an explicit scope flag in first position (`--committed`, `--uncommitte
 - **`coderabbit auth login` / `logout` / `auth org`** -- credential and org-context changes
 - **`coderabbit update`** -- self-modifying binary update
 - **`coderabbit skills`** -- installs/updates CodeRabbit's agent skills (writes outside the repo); `--agent` previews a plan and `--confirm <plan-hash>` applies it after approval
-- **`coderabbit review --use-credits`** -- bills the review as usage-based once the included allowance is spent
+- **`coderabbit review --use-credits`** -- bills the review as usage-based once the included allowance is spent. The opt-in review prefixes above still match it after a scope flag (see their Caveat): where usage billing is `On demand` and each paid run needs approval, omit those patterns
 - **`coderabbit review --remote ...`** -- a server-side review of any installed repo, outside the scope-first prefixes above; approve each run
 - **`coderabbit config`** (bare, `--generate`, `apply`) -- writes repository config; only `config validate` is read-only
 - **`coderabbit handoff`** -- uploads a session summary and the discovered session transcript to a new CodeRabbit Cloud task
