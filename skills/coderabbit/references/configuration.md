@@ -21,7 +21,18 @@ Dump the fully resolved config (with per-setting source annotations) by commenti
 @coderabbitai configuration
 ```
 
-The CLI reads the same `.coderabbit.yaml`; `coderabbit review -c <file>` adds extra instruction files (e.g. `CLAUDE.md`) for one run.
+The CLI reads the same `.coderabbit.yaml`; `coderabbit review -c <file>` adds extra instruction files (e.g. `CLAUDE.md`) for one run. CLI discovery order: `.coderabbit.yaml`, `.coderabbit.yml`, `coderabbit.yaml`, `coderabbit.yml`, then `.coderabbit.config.ts` (v0.7.7+; TypeScript config with PR-aware conditions and shared fragments, typed via the optional `@coderabbitai/config` package). **YAML wins when both exist**, so adding a `.config.ts` next to a YAML file changes nothing.
+
+### Generating Config with the CLI (v0.7.7+)
+
+```bash
+coderabbit config validate .coderabbit.yaml          # schema check, CI-friendly exit code; no upload
+coderabbit config --agent                            # current state as JSON, no prompts
+coderabbit config --agent --generate --profile chill # proposal only (chill | quiet | assertive | default)
+coderabbit config apply proposal.yaml --base <hash> --dry-run   # preview, then --yes to write
+```
+
+Bare `coderabbit config` is an interactive guided flow; `--detailed` adds path instructions. Prefer the low-noise template below over a generated proposal for typed and linted projects, and hand-edit from there.
 
 ## Low-Noise Template (Typed + Linted Projects)
 
