@@ -452,6 +452,8 @@ Each is a collapsed `<details>` section whose summary is icon-prefixed in the re
 gh api repos/{owner}/{repo}/pulls/{pr}/reviews --paginate --slurp | jq -r --arg p coderabbit '.[][] | select((.user.login|ascii_downcase|startswith($p)) and ((.body|length)>0)) | (.body|ascii_downcase) as $b | "\(.submitted_at) \(.commit_id[0:7]) inline=\(($b|capture("actionable comments posted:[ *]*(?<n>[0-9]+)")? // {n:"?"}).n) body-only=[\([$b|scan("(nitpick comments|outside diff range comments|duplicate comments|comments failed to post) *\\(([0-9]+)\\)")|join(" ")]|join("; "))]"'
 ```
 
+With CodeRabbit CLI v0.8 installed and authenticated, `coderabbit pullrequest {pr} --show-prompts` is a second read: one consolidated fix prompt across the PR's reviews, with `Inline comments:` and an **`Outside diff comments:`** section. It runs no review and spends no quota. It is a cross-check, not a replacement for the bucket list above, because it is not verified to carry nitpicks or failed-to-post comments.
+
 For any non-zero bucket, read that review's full body and triage each item exactly like a thread -- fix it or reject it with a reason. There is nothing to resolve afterwards (no thread exists), so **record the verdicts** in the reply on a related thread or in one PR comment; otherwise the only trace is your commit and the user cannot tell them from work you skipped.
 
 **Reconcile before declaring done.** The inline set is complete only when the count the bot claims matches the threads that exist:
