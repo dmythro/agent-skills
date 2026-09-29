@@ -183,7 +183,7 @@ bot_status() {
   # 1) Unresolved bot threads, PR-wide: outstanding comments always win. Handle them before
   #    any re-request -- a new review on top of them just duplicates the points. `last` (the
   #    newest comment), `resolvedBy` and the root's review id feed the thread-confirmation checks.
-  threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved resolvedBy { login } path line comments(first: 1) { nodes { author { login } body pullRequestReview { databaseId } } } last: comments(last: 1) { nodes { author { login } createdAt } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
+  threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved resolvedBy { login } path line comments(first: 1) { nodes { author { login } body pullRequestReview { fullDatabaseId } } } last: comments(last: 1) { nodes { author { login } createdAt } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
   unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
   n="$(printf '%s' "$unresolved" | jq 'length')"
   if [ "${n:-0}" -gt 0 ] && [ -n "$BOT_CHAT_CONFIRM" ]; then
@@ -300,9 +300,9 @@ bot_status() {
   #    rate-limited status (no re-request: that review is exactly what this saves); loses to a
   #    review of HEAD that completed or is running, which is read below as usual.
   if [ -n "$BOT_CHAT_CONFIRM" ] && ! printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_OK_RE|$BOT_CHECK_RUNNING_RE"; then
-    round_id="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -r --arg login "$BOT_REVIEW_LOGIN" '[.[][] | select(.user.login==$login and ((.body|length) > 0))] | last | .id // empty')"
+    round_id="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -r --arg login "$BOT_REVIEW_LOGIN" '[.[][] | select(.user.login==$login and ((.body|length) > 0))] | last | .id // empty | tostring')"
     if [ -n "$round_id" ]; then
-      confirmed="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" --argjson rid "$round_id" --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" '[.nodes[] | select(.comments.nodes[0].pullRequestReview.databaseId == $rid)] | length > 0 and all(.[]; .isResolved and ((.resolvedBy.login // "") | ascii_downcase | startswith($p)) and ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p)) and .last.nodes[0].createdAt > $since)')"
+      confirmed="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" --arg rid "$round_id" --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" '[.nodes[] | select((.comments.nodes[0].pullRequestReview.fullDatabaseId // "" | tostring) == $rid)] | length > 0 and all(.[]; .isResolved and ((.resolvedBy.login // "") | ascii_downcase | startswith($p)) and ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p)) and .last.nodes[0].createdAt > $since)')"
       [ "$confirmed" = "true" ] && { echo "$BOT_THREAD_PREFIX confirmed every fix of its last round in the threads and resolved them; HEAD itself was not re-reviewed${chk_desc:+ ($chk_desc)} -- no re-request"; return 7; }
     fi
   fi
