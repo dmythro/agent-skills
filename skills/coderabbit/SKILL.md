@@ -15,6 +15,8 @@ description: >-
 
 **Local-first AI code review: catch issues before they reach the PR.** The CodeRabbit CLI (`coderabbit`, alias `cr`) reviews working-tree or branch changes locally, so the PR-side review becomes confirmation instead of iteration -- this saves billable PR review rounds (both CodeRabbit's own quota and any Copilot credits). Covers the CLI surface and `.coderabbit.yaml` tuning. PR-side mechanics (threads, re-requests, the bot loop) live in the `git-pr` skill.
 
+**Verified against CodeRabbit CLI v0.8.2** (2026-09-29): every subcommand's `--help` on the official build, plus the [CLI changelog](https://docs.coderabbit.ai/changelog). Flags are tagged with the version that introduced them. If `coderabbit --version` reports something newer, diff `--help` of each subcommand against this list and read the changelog entries since v0.8.2 before relying on flag details here.
+
 ## When to Use
 
 - **Reviewing local changes** -- "review my changes", "run coderabbit", pre-commit/pre-push/pre-PR checks
@@ -61,6 +63,8 @@ The CLI must run inside a git repository. `cr` is a shorthand alias for `coderab
 
 Defaults (CLI v0.8): all tracked changes, base = repository default branch, plain-text output, the local review policy. v0.7 **removed** the older `--type <scope>` and `--plain` flags (`error: unknown option`) -- scope with `--committed`/`--uncommitted`, and plain is simply the default.
 
+**Local reviews are incremental (v0.7.7+).** Each review saves a checkpoint for its scope -- review directory, branch, and base -- and the next run in that scope reviews only what changed since it, with the saved context. A `--dir src` run and a whole-repository run keep separate checkpoints; changing the base resets it; a failed review keeps the last successful one. So the verify run after fixing reviews the fixes, not the branch again, and a clean second pass means "the fixes raised nothing", not "the branch is clean". `--fresh` (v0.8.2) ignores the checkpoint and reviews the whole selected scope -- use it when the branch needs one complete look (after a rebase, or before a PR where the CLI is the only lane).
+
 **Review depth (v0.8)**: `--deep` runs the **full pull request review policy** locally -- the closest the CLI gets to what the PR-side review will say. Use it for the final pre-PR pass on repos where the CLI is the only lane (no PR-side auto-review); keep the default policy for the iterate-and-fix loop. Its quota cost is undocumented, so compare `coderabbit usage` before and after the first one. `--deep "<focus>"` (focus text) is early access only. `--light` is gone from `--help` but still accepted as a **legacy alias for the default review** -- it no longer makes anything lighter, so drop it from scripts. `--deep` needs a compatible server; if it is refused, report that the CLI needs updating rather than falling back to a default review silently.
 
 Other review options:
@@ -68,6 +72,7 @@ Other review options:
 - `--use-credits` -- consent to bill this review as usage-based when it exceeds the included allowance (the add-on's `On demand` mode asks for it). **It spends money: never pass it without the user's explicit approval for that run.**
 - `--remote owner/repo --base main --source-branch <ref>` (v0.7.7) -- review a GitHub repository server-side without a local checkout; the repo must be installed in the active org, under 300 changed files.
 - `-c, --config <files...>` -- extra instruction files (e.g. `CLAUDE.md`) for one run.
+- `--api-key <key> --region us|eu` -- authenticate one run without storing the key (headless/CI; see the allowlist Caveat).
 
 ## Output Modes
 
@@ -76,7 +81,7 @@ Other review options:
 - `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end. `--clear` (v0.7.7) dismisses the stored findings for the current scope (directory + branch + base) once they are fixed or rejected, so later replays stop surfacing them.
 - `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review.
 - `coderabbit stats` -- review statistics (`--rebuild` rescans review history).
-- `coderabbit usage` (`--agent` for one JSON event) -- since v0.8, **the included-review allowance for the current repository**: remaining vs limit over a rolling 1-hour window (`includedReviews.remaining`, `.limit`, `.rollingWindowMs`, and `.fullCapacityInMs`, the time until the bucket is full again). It also reports the billing period: organization, whether usage billing (overage) is active, your review count, and the period reset date. **Read it before a local loop**: it spends no review. The output does not name the lane, so it does not replace `@coderabbitai rate limit` (below) for a PR-side retry window. **The installed binary is the source of truth, not the docs page** -- the online reference still calls this billing-only; verify with `--help`.
+- `coderabbit usage` (`--agent` for one JSON event; `coderabbit --usage` and `coderabbit review --usage` are aliases) -- since v0.8, **the included-review allowance for the current repository**: remaining vs limit over a rolling 1-hour window (`includedReviews.remaining`, `.limit`, `.rollingWindowMs`, and `.fullCapacityInMs`, the time until the bucket is full again). It also reports the billing period (`billingPeriod`): organization, whether usage billing (overage) is active (`usageBillingStatus`), your review count, the usage-based spend so far (`spendCents`), and the period reset date. Each block carries a `state` (`available` when the server answered). **Read it before a local loop**: it spends no review. The output does not name the lane, so it does not replace `@coderabbitai rate limit` (below) for a PR-side retry window. **The installed binary is the source of truth, not the docs page** -- the online reference still calls this billing-only; verify with `--help`.
 - `coderabbit pullrequest <number|url>` -- **reads CodeRabbit's existing output on a GitHub PR**: no review is run and none is spent. `--show-threads --agent` returns the inline thread roots as JSON (thread and comment IDs, `path`/`line`, `isResolved`, `isOutdated`, head commit). `--show-prompts` returns one consolidated fix prompt that also carries an **`Outside diff comments:`** section, which a thread-only pass never sees. It needs github.com and a repo installed in the active org, and it resolves a bare number from the local `origin`. Thread handling and resolution stay in the `git-pr` skill.
 - `@coderabbitai rate limit` -- **not a CLI command: a PR comment**, and the only on-demand read of the PR-side bucket. Reports the remaining allowance and when the next review becomes available, and [does not consume a review](https://docs.coderabbit.ai/reference/review-commands) (aliases `rate-limit`, `limits`, `quota`). Answers within seconds, even while rate-limited: "Your next review will be available in N minutes" -- the only durable read of that window, since the notice edited into the summary comment can vanish. Post it before opening a loop, and after a bounce instead of probing with triggers. It spends no review, but it is still a PR comment -- a write, subject to the usual approval.
 
@@ -85,7 +90,7 @@ Other review options:
 1. Run `coderabbit review --committed --base {base} --agent` (or `--uncommitted` pre-commit; background it -- reviews take minutes).
 2. Parse findings; triage by `severity`. Address `critical` and `major` first.
 3. **Validate each finding** against the codebase (conventions, actual behavior, project docs). Fix valid ones per `codegenInstructions`; note invalid ones with a one-line rationale for the user.
-4. Re-run the same review command to verify fixes. Stop when no valid `critical`/`major` findings remain, or the hourly bucket is exhausted (`coderabbit usage` shows what remains; a bounce reports the wait -- wait or stop, never hammer).
+4. Re-run the same review command to verify fixes -- it is incremental from the last checkpoint, so it reviews the fixes only. Stop when no valid `critical`/`major` findings remain, or the hourly bucket is exhausted (`coderabbit usage` shows what remains; a bounce reports the wait -- wait or stop, never hammer).
 5. Then push / create the PR -- **once the change is completely finished**, not once the findings are fixed. Where PR-side auto-review and `auto_incremental_review` are on (both default), the push *is* the review request and it reviews whatever the branch holds at that moment: remaining tasks, tests, docs and config belong in the same push, or each leftover costs another PR-side window. The PR-side review (if any) should then come back clean or near-clean.
 
 Commit fixes by what they change, never by what prompted them -- `fix: validate empty page cursor`, not `fix: coderabbit fixes` or `fix: review round 2` (see the `git-commit` skill). Fixes must not add code comments that restate what the code already reads.
@@ -94,23 +99,32 @@ Two passes (review, fix, verify) is the normal shape. More than three passes mea
 
 ## Rate Limits (Per Developer, Per Hour)
 
-| Plan | CLI reviews | PR reviews | Files/review |
-|------|-------------|------------|--------------|
-| Free | 3 | 1 (summary only) | 150 |
-| OSS (public repos) | 3 | 1--10, by repo popularity | 100--300, by popularity |
-| Pro | 5 | 5 | 150 |
-| Pro+ | 10 | 10 | 300 |
-| Enterprise | 12 | 12 | 300 |
+| Plan | CLI reviews | PR reviews | Chats | Files/review |
+|------|-------------|------------|-------|--------------|
+| Free | 3 | 1 (summary only) | -- | 150 |
+| OSS (public repos) | 3 | 1--10, by repo popularity | 25 | 100--300, by popularity |
+| Essentials (was Pro) | 5 | 5 | 50 | 150 |
+| Team (was Pro+) | 8 | 8 | 75 | 300 |
+| Advanced | 10 | 10 | 100 | 300 |
+| Enterprise | 12 | 12 | 100 | 300 |
 
-The Lite plan was retired (June 2026); Free / Pro / Pro+ / Enterprise are current. Beyond the hourly allowance, the usage-based add-on bills $0.25 per reviewed file (Pro and up). Open-source public repos get free reviews with popularity-based limits.
+[Plans](https://docs.coderabbit.ai/management/plans) were renamed in September 2026: Essentials was Pro, Team was Pro+, and Advanced is new. The run-configuration block prints the new name. **Grandfathered Pro+ subscriptions keep 10 reviews/hour** even though they now display as Team, and old Pro/Pro+ subscriptions keep their old throttling ladders. Beyond the hourly allowance, the usage-based add-on bills per reviewed file ($0.25/file, as quoted in the rate-limit notice). **Chats are a separate allowance**: a reply in a CodeRabbit review thread gets a chat answer, which is not a review and does not draw from the PR review bucket (`git-pr` skill, `references/bot-review-loop.md`, Fixes Confirmed in the Thread).
 
-**The table is a CEILING, not the rate you get -- [fair-usage throttling](https://docs.coderabbit.ai/management/plans) sets the effective PR-side allowance below it.** It engages once a developer identity reaches the 95th percentile of recent PR review usage, and derives the refill rate from that developer's review count over a **rolling window that is either the past 24 hours or the past 7 days**, whichever the activity pattern selects; the plan allowance itself is not changed. Documented Pro ladder by reviews in the window: 0--29 -> 5/hr, 30--39 -> 4/hr, 40--49 -> 3/hr, 50--59 -> 2/hr, 60+ -> 1/hr one at a time. Pro+ starts at 10/hr and steps down to 1/hr at 90+. Observed live on a paid Pro plan, crossing a tier mid-loop: 4/hr at round 1, 3/hr two rounds later, then a bounce.
+**The table is a CEILING, not the rate you get -- [fair-usage throttling](https://docs.coderabbit.ai/management/rate-limits#fair-usage-limits-policy) sets the effective PR-side allowance below it.** The refill rate comes from the developer's recent PR review count over a **rolling window of either the past 24 hours or the past 7 days**; the plan allowance itself is not changed. Documented ladders by reviews in the last 7 days:
+
+| Plan | Full rate | Steps down to | 1/hr, one at a time |
+|------|-----------|---------------|---------------------|
+| Essentials | 0--29 -> 5/hr | 30--39 -> 4, 40--49 -> 3, 50--59 -> 2 | 60+ |
+| Team | 0--39 -> 8/hr | 40--49 -> 6, 50--59 -> 4, 60--69 -> 2 | 70+ |
+| Advanced | 0--49 -> 10/hr | 50--59 -> 8, 60--69 -> 4, 70--79 -> 2 | 80+ |
+
+Enterprise stays at 12/hr unless the contract enrolls in adaptive limits. Observed live on the old Pro plan, crossing a tier mid-loop: 4/hr at round 1, 3/hr two rounds later, then a bounce. On Team, 23 attempts in 7 days still gave the full 8/hr.
 
 Two consequences. **A heavy review week throttles the next one** -- the binding window is days, not the hour, and capacity trickles back as old reviews age out instead of resetting on the hour. And **a bounce is free but pointless**: "a blocked push does not consume a review or delay when your next review becomes available", since capacity is set by earlier *completed* reviews -- yet a refused round is never queued, so extra triggers inside a closed window buy nothing. Probe with `@coderabbitai rate limit` (no review consumed) rather than with triggers -- verified live: after two bounces it still quoted a window closing 54 minutes after the last *completed* review, so the bounces moved nothing. (The run-configuration footer says "review **attempts** over the past 7 days", but the documented ladders count reviews; treat the footer's number, not its noun, as the fact.)
 
 Past the included limit, the [usage-based add-on](https://docs.coderabbit.ai/management/usage-based-addon) decides what happens, and its admin-set mode decides which: `Automatic` keeps reviewing and bills the overage, `On demand` pauses until a seat-holder authorizes each review, `Off` stops until the included allowance resets. Only `Automatic` is a release valve -- and fair-usage spacing is a separate mechanism layered on top.
 
-**Which plan row applies is something you must be told -- but the LIVE allowance is readable in two places:** the "Run configuration" block inside each posted review names the plan and the current reviews-per-hour figure (read it off the most recent review before planning a loop), and `@coderabbitai rate limit` reports the remaining allowance plus next availability on demand, without spending one. The rest is silent about the plan: `coderabbit usage` reports a repository's included allowance and the billing period, but not the tier, and the PR-side API never mentions one. Declare it in the **Code Review Policy** (`git-pr` skill) -- `CodeRabbit plan: pro+ until 2026-08-20, then pro` -- in the repo's AGENTS.md/CLAUDE.md, or globally for every repo. It decides real behaviour: how many PRs can be non-draft at once, how many rounds to budget, and how much iteration belongs in the CLI lane instead. Re-plan when a trial lapses; a queue tuned for 10 reviews/hour stalls at 5. Undeclared, take the floor from observed behaviour (`bot_bucket`) rather than assuming the best case.
+**Which plan row applies is something you must be told -- but the LIVE allowance is readable in two places:** the "Run configuration" block inside each posted review names the plan and the current reviews-per-hour figure (read it off the most recent review before planning a loop), and `@coderabbitai rate limit` reports the remaining allowance plus next availability on demand, without spending one. The rest is silent about the plan: `coderabbit usage` reports a repository's included allowance and the billing period, but not the tier, and the PR-side API never mentions one. Declare it in the **Code Review Policy** (`git-pr` skill) -- `CodeRabbit plan: team until 2026-10-20, then essentials` -- in the repo's AGENTS.md/CLAUDE.md, or globally for every repo. It decides real behaviour: how many PRs can be non-draft at once, how many rounds to budget, and how much iteration belongs in the CLI lane instead. Re-plan when a trial lapses; a queue tuned for 10 reviews/hour stalls at 5. Undeclared, take the floor from observed behaviour (`bot_bucket`) rather than assuming the best case.
 
 ### Where a Bounce Shows Up
 
@@ -153,6 +167,8 @@ What *does* answer it: a `@coderabbitai rate limit` comment (remaining allowance
 9. **A quoted retry window is an estimate, and it is not durable** -- it is edited into the summary comment and a later edit can remove it, while different PRs quote wildly different numbers at the same moment. Capture it when you see it, take the smallest one visible across your PRs, and treat a sibling PR's `Review completed` as the real all-clear (Where a Bounce Shows Up). Don't wait out the largest number you can find.
 10. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs.
 11. **A rate-limited attempt can leave its commits looking reviewed** -- once the window reopens, a plain `@coderabbitai review` over unchanged commits answers "does not re-review already reviewed commits" and the round silently never happens, so the recovery trigger after a bounce is **`@coderabbitai full review`**. It does not always stick, though: observed on this repo, the *next push* after a bounce resumed its incremental range from the last **completed** review and did re-cover the two skipped commits unprompted. Read the review's own "Commits" block to see which range it actually took, rather than assuming either way. The same forcing form is the fix for a wedged **"Review queued"** (observed stuck 2+ hours): nudge after ~1 hour instead of waiting it out.
+12. **A second local pass reviews only the delta** -- local reviews are incremental from the scope's checkpoint (v0.7.7+), so "the verify run came back clean" says nothing about code the first run already covered or skipped. Pass `--fresh` (v0.8.2) when the whole branch needs a new look.
+13. **The cloud commands moved under `code` in v0.8.1** -- `coderabbit code handoff` (the top-level `handoff` from v0.8.0 is now a hidden alias) and `coderabbit code skills import`. Both upload local material to CodeRabbit Cloud: approve each run (`references/allowlist.md`).
 
 > **Reference**: See `references/configuration.md` for `.coderabbit.yaml` tuning and PR commands
 > **Reference**: See `references/allowlist.md` for auto-approval patterns

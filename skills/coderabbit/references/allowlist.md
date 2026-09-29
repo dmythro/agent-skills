@@ -42,7 +42,7 @@ Read-only or local-only commands -- no code leaves the machine, no quota is cons
 - `stats` -- local review statistics
 - `review findings` -- replays the **cached** findings from the last review (`:*` covers `--dir <path>`); no new analysis, no upload, no quota. The prefix also matches `--clear`, which only dismisses local cached findings -- no code or quota effect
 - `config validate` -- checks a local `.coderabbit.yaml` against the official schema; no review, no code upload
-- `usage` -- reads the included-review allowance and billing period (`:*` covers `--agent`); spends nothing
+- `usage` -- reads the included-review allowance and billing period (`:*` covers `--agent`); spends nothing. Its aliases `coderabbit --usage` and `coderabbit review --usage` do not match this pattern -- call `coderabbit usage` instead of allowlisting a `review` prefix
 - `pullrequest` -- reads CodeRabbit's existing threads and prompts on a PR (`--show-threads`, `--show-prompts`, `--agent`); runs no review, uploads no code
 
 ## Review Runs (Opt-In)
@@ -76,6 +76,7 @@ Keying on an explicit scope flag in first position (`--committed`, `--uncommitte
 - **`coderabbit review --use-credits`** -- bills the review as usage-based once the included allowance is spent. The opt-in review prefixes above still match it after a scope flag (see their Caveat): where usage billing is `On demand` and each paid run needs approval, omit those patterns
 - **`coderabbit review --remote ...`** -- a server-side review of any installed repo, outside the scope-first prefixes above; approve each run
 - **`coderabbit config`** (bare, `--generate`, `apply`) -- writes repository config; only `config validate` is read-only
-- **`coderabbit handoff`** -- uploads a session summary and the discovered session transcript to a new CodeRabbit Cloud task
+- **`coderabbit code handoff`** (v0.8.1; the v0.8.0 top-level `coderabbit handoff` still works as a hidden alias) -- uploads a session summary, an optional plan, and the discovered session transcript to a new CodeRabbit Cloud task
+- **`coderabbit code skills import`** (v0.8.1) -- uploads local agent skills to the cloud Coding Agent library; `--scope organization` publishes them to the whole org, and `--yes` skips the confirmation
 - **`coderabbit review --api-key ...`** -- inline credentials: never add a pattern targeting them, and note the opt-in review prefixes above cannot *exclude* them (see their Caveat); skip those patterns where inline keys are a real risk
 - **Bare `coderabbit` / `cr`** -- runs an unscoped review of all changes; make scope explicit instead

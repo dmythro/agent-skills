@@ -122,7 +122,7 @@ Key `reviews.auto_review` knobs:
 |-----|---------|--------|
 | `enabled` | `true` | Auto-review new PRs |
 | `drafts` | `false` | Draft PRs are NOT reviewed until marked ready |
-| `auto_incremental_review` | `true` | Re-review each push (incremental); `false` = one review per PR |
+| `auto_incremental_review` | `true` | Re-review each push (incremental); `false` = one review per PR, and each later push is stamped `Review skipped: incremental reviews are disabled` |
 | `auto_pause_after_reviewed_commits` | `5` | **Silently pauses** auto-reviews after 5 reviewed commits; `0` disables the pause |
 | `ignore_title_keywords` | `[]` | Skip PRs by title keyword (e.g. `["wip"]`) |
 | `labels` | `[]` | Label gate; `"!no-review"` = skip labeled PRs |
@@ -149,6 +149,8 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai generate configuration` | Open a PR adding a `.coderabbit.yaml` |
 
 Every review run -- automatic incremental on push, `@coderabbitai review`, or `full review` -- consumes one PR review from the hourly allowance. Prefer incremental; reserve `full review` for after large refactors/rebases, when earlier reviews predate significant context -- or **after a rate-limit bounce**: a bounced attempt still marks its commits as reviewed, so a plain `review` no-ops and only `full review` actually runs (SKILL.md, Key Gotchas).
+
+**A reply in a review thread is a chat, not a review.** CodeRabbit answers replies in its own threads (no `@coderabbitai` needed) from the separate chat allowance (SKILL.md, Rate Limits). Answering a "fixed in {sha}" reply, it re-checks the fix against the current HEAD and resolves the thread when it agrees -- the per-finding verification that can replace a re-review round (`git-pr` skill, `references/bot-review-loop.md`, Fixes Confirmed in the Thread).
 
 ## Knowledge Base
 
