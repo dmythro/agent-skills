@@ -19,6 +19,8 @@ description: >-
 
 **Primary skill for organizing a repository's issues into an epic-based roadmap on a GitHub Project (v2) and running the day-to-day on it.** Covers setup (project, fields, views, native workflows) and operations (create epics with sub-issues, drive Status, move work, prioritize). GitHub-only, via `gh project` + `gh api` (REST sub-issues + GraphQL).
 
+**Verified against gh v2.102.0** (2026-09-30): every `gh` subcommand and flag used here, against its `--help`. Minimums are tagged where they matter (`gh >= 2.94`, `>= 2.97`). If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.102.0 for `gh project` and `gh issue` changes before relying on flag details.
+
 The conventions here are non-obvious and easy to get half-right: the UI nests issues by **native parent/child links** and tracks progress on a **separate board Status field** -- neither of which a markdown checklist or a closed issue touches. Get those two wrong and the work *looks* done while the structure silently drifts. This skill makes the flow correct-by-default.
 
 ## When to Use
@@ -40,7 +42,7 @@ These are the traps -- each is a place where the obvious action leaves the struc
 1. **Epics nest by native sub-issues, NOT markdown checklists.** A `- [ ] #123` bullet is cosmetic; it does not create the parent/child link the UI and roadmap read. Link natively: `gh issue edit <epic> --add-sub-issue <child>` / `gh issue create --parent <epic>` (gh >= 2.94), or the REST sub-issues API. See `references/sub-issues.md`.
 2. **Moving an issue between epics = re-parent the native link.** One command: `gh issue edit <child> --parent <newEpic>` (replaces the old parent), then tidy body text. Editing bullets alone leaves it under the old epic -- the most common "looks moved but isn't" miss.
 3. **The board Status is not automatic.** Closing an issue does not set `Done` unless the native *Item closed* workflow is enabled. Set Status explicitly, or enable the native workflows once (see `references/project-setup.md`).
-4. **Single-selects (Status, Priority) are set by option ID, not name.** Look up field IDs + option IDs first (`gh project field-list <num> --owner @me --format json`), then `item-edit`. Names silently no-op.
+4. **Set board fields by name (gh >= 2.97).** `gh project item-edit <num> --owner @me --url <issue-url> --field Status --value "In Progress"` resolves the item, the field and the single-select option from their names. `--url` is the **issue** URL, not the project's. The ID form (`--id`/`--project-id`/`--field-id`/`--single-select-option-id`) is for older `gh` and for loops that should not repeat the lookups; see `references/cli-and-graphql.md`.
 5. **Views and workflow-enabling are one-time UI; everything else is scripted.** There is no API to create/rename a view or toggle a workflow. Do those once in the UI (or copy a template); script the rest.
 6. **Type and Milestone are issue metadata, NOT project fields.** Set them on the issue (`gh issue edit <n> --type Bug --milestone "v1.0"`); the board mirrors them as built-in columns for grouping/filtering, but `gh project item-edit` cannot touch them and they never appear in `field-list`. Issue types exist only in **org** repos. See `references/types-and-milestones.md`.
 7. **Repo role and project role are separate gates.** Repo Write does not let a teammate set Status or Priority; project Write does not let them apply a label or assign anyone. Someone running the roadmap needs **repo Triage + project Write** -- and project access has no `gh project` subcommand at all (GraphQL `updateProjectV2Collaborators`). See `references/access-and-roles.md`.
@@ -48,7 +50,7 @@ These are the traps -- each is a place where the obvious action leaves the struc
 ## Prerequisites
 
 - **GitHub only** -- Projects v2 has no GitLab equivalent.
-- **`gh` >= 2.94** for the native issue flags used here (`--type`, `--milestone`, `--parent`, `--add-sub-issue`); older `gh` falls back to the REST recipes in the references.
+- **`gh` >= 2.94** for the native issue flags used here (`--type`, `--milestone`, `--parent`, `--add-sub-issue`); older `gh` falls back to the REST recipes in the references. **`gh` >= 2.97** for name-based `item-edit` (rule 4).
 - **Token scopes gate what works.** `gh auth status` shows them. `gh project` commands and any `projectV2` GraphQL need the `project` scope (`gh auth refresh -s project`); `read:project` alone is enough for read-only queries. Without the scope these fail with auth/permission errors even though everything `repo`-scoped works -- the classic "project features seem missing" trap. Issues, sub-issues, types, and milestones ride on the ordinary `repo` scope; org-owned project access also relies on `read:org`.
 - **Scopes gate your automation; roles gate your teammates.** A role gap hides UI controls rather than explaining itself, so it reads as a broken board (the same call over the API does fail, with a 403 or a 404 that hides the resource). Triage is the minimum for labels/assignees/sub-issues, project Write for Status/Priority. Team grants need `admin:org` on a classic token (fine-grained: org `Members: write` for membership, repo `Administration: write` for the team-repo grant), which a default `gh` login does not carry (an org-settings PATCH also accepts `repo`) -- and a caller role on top: org owner or team maintainer to change membership, admin on the repo to grant it to a team, project Admin (org owners have it) to change project collaborators. See `references/access-and-roles.md`.
 - Projects are addressed by **number** under an `--owner` (`@me` or an org login). The repo and project may have different owners. For an **org-owned** project, pass the org login to `--owner`, and in GraphQL reads use `organization(login: "ORG") { projectV2 }` instead of `viewer { projectV2 }` (see `references/cli-and-graphql.md`).
@@ -123,18 +125,19 @@ gh api --method PATCH repos/{owner}/{repo}/milestones/<N> -f state=closed
 ### Pick up / finish / prioritize (board Status + Priority)
 
 ```bash
-# Discover the item id + field/option ids once (see references/cli-and-graphql.md), then:
+# Fields and options by name (gh >= 2.97); --url is the ISSUE's URL
+url=$(gh issue view <issue> --json url --jq .url)
 # pick up
-gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <inProgress>
+gh project item-edit <num> --owner @me --url "$url" --field Status --value "In Progress"
 # finish -- close the issue (pick ONE close form; the plain one means "completed"):
 gh issue close <issue>                              # done as planned
 gh issue close <issue> --reason "not planned"       # abandoned
 gh issue close <issue> --duplicate-of <original>    # duplicate; links it natively to the original (gh >= 2.88)
 # closing normally advances the board via the native "Item closed" workflow -- nothing more to do.
 # ONLY IF that workflow is off, set Status manually:
-gh project item-edit --id <item> --project-id <proj> --field-id <statusField> --single-select-option-id <done>
+gh project item-edit <num> --owner @me --url "$url" --field Status --value Done
 # (re)prioritize
-gh project item-edit --id <item> --project-id <proj> --field-id <priorityField> --single-select-option-id <p1>
+gh project item-edit <num> --owner @me --url "$url" --field Priority --value P1
 ```
 
 ### Give a teammate access to work the board
@@ -153,7 +156,7 @@ gh api graphql -f query='query($endCursor:String){ organization(login:"<org>"){ 
 gh api repos/{owner}/{repo}/collaborators/<user>/permission --jq .role_name --method GET
 ```
 
-> **Reference**: `references/cli-and-graphql.md` -- full command set, getting `<item>`/`<proj>`/field+option ids (`field-list`/`item-list --format json`), and `updateProjectV2ItemPosition` for roadmap ordering. `references/sub-issues.md` -- native link flags, the REST fallback (database-id requirement), re-parenting, and the ~25/request batch limit. `references/types-and-milestones.md` -- org issue types, milestone CRUD, and the current-milestone / milestone-N conventions in full. `references/access-and-roles.md` -- the two gates in full, diagnosing a blocked teammate, reading project collaborators, the `admin:org` refresh, and the org settings REST accepts but silently ignores.
+> **Reference**: `references/cli-and-graphql.md` -- full command set, the ID form of `item-edit` (`field-list`/`item-list --format json` for the ids), `item-list --query` filtering, and `updateProjectV2ItemPosition` for roadmap ordering. `references/sub-issues.md` -- native link flags, the REST fallback (database-id requirement), re-parenting, and the ~25/request batch limit. `references/types-and-milestones.md` -- org issue types, milestone CRUD, and the current-milestone / milestone-N conventions in full. `references/access-and-roles.md` -- the two gates in full, diagnosing a blocked teammate, reading project collaborators, the `admin:org` refresh, and the org settings REST accepts but silently ignores.
 
 ## Setup (one-time)
 
@@ -180,7 +183,7 @@ Then, once in the UI: the Epic + Upcoming views and Settings -> Workflows toggle
 1. **Native links, not checklists** -- the tree is built from sub-issue links; bullets are decoration (rule 1).
 2. **Re-parent to move** -- `gh issue edit <child> --parent <newEpic>`; body edits alone don't move it (rule 2).
 3. **REST sub-issues take the database `id`** -- if you drop to `gh api .../sub_issues`, fetch it with `--jq .id`; the issue *number* won't work (the native `gh` flags take numbers/URLs).
-4. **Single-selects set by option id** -- discover ids with `field-list --format json` before `item-edit`.
+4. **`item-edit --url` takes the issue URL** -- the project is picked by `<num>` + `--owner`, whose owner can differ from the issue's repo. Names need gh >= 2.97; older gh needs the option id from `field-list --format json` (rule 4).
 5. **Views + workflow toggles are UI-only** -- no API; do them once (or copy a template) (rule 5).
 6. **Sub-issue mutations batch ~25/request** -- larger batches hit `RESOURCE_LIMITS_EXCEEDED`; a multi-`--add-sub-issue` edit can partially fail on the same limit -- re-running is safe.
 7. **Type/Milestone are not project fields** -- set on the issue, mirrored on the board; `item-edit` can't set them and `field-list` won't show them (rule 6). Types are org-only (`--type` on a personal repo: `type "..." not found; available types:` -- fall back to labels there).

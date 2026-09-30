@@ -99,6 +99,8 @@ Only proceed to Phase 2 after the push succeeds. This ensures reviewers see the 
 
 ### GitHub: Batched Replies + Resolves
 
+For human and Copilot threads. On CodeRabbit threads, keep every reply but drop the Fixed and Addressed threads' aliases (`t1`, `t2`) from the resolve mutation, so it resolves only the rejected ones (`t3`) -- CodeRabbit resolves the others itself once it confirms the fix (Rules below).
+
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
 gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_2}/replies -f body="Addressed in {sha} -- {description}" && \
@@ -124,17 +126,18 @@ mutation {
 - Use thread `.id` (starts with `PRRT_`) for resolveReviewThread, NOT the comment ID
 - Add one aliased operation (`t1`, `t2`, ...) per thread to resolve
 - Do NOT include "Needs discussion" threads in the resolve mutation -- leave those for the reviewer
+- Do NOT resolve CodeRabbit threads you fixed or already addressed -- CodeRabbit answers the reply, re-checks the fix at HEAD, and resolves the thread itself when it agrees. That in-thread confirmation is what lets the round skip a re-review; resolving it yourself throws it away (`bot-review-loop.md`, Fixes Confirmed in the Thread). Resolve its threads you rejected as usual
 - All replies come before the resolve mutation so reviewers see context before resolution
 - Keep replies to one or two sentences: verdict + evidence. No filler
 
 ### Reply Content by Classification
 
-| Classification     | Reply template                                                     | Resolve? |
-|--------------------|--------------------------------------------------------------------|----------|
-| Valid + Fixed      | `Fixed in {sha} -- {brief explanation}.`                           | Yes      |
-| Already addressed  | `Addressed in {sha} -- {brief description}.`                      | Yes      |
-| Incorrect/Outdated | `Intentional -- {reference to docs/convention}. {explanation}.`    | Yes      |
-| Needs discussion   | `Good point. {analysis}. Leaving for your call.`                   | No       |
+| Classification     | Reply template                                                  | Resolve?                                         |
+|--------------------|-----------------------------------------------------------------|--------------------------------------------------|
+| Valid + Fixed      | `Fixed in {sha} -- {brief explanation}.`                        | Yes (CodeRabbit: no -- it confirms and resolves) |
+| Already addressed  | `Addressed in {sha} -- {brief description}.`                    | Yes (CodeRabbit: no -- it confirms and resolves) |
+| Incorrect/Outdated | `Intentional -- {reference to docs/convention}. {explanation}.` | Yes                                              |
+| Needs discussion   | `Good point. {analysis}. Leaving for your call.`                | No                                               |
 
 ### GitLab: Batched Replies + Resolves
 
@@ -177,5 +180,6 @@ After both phases are complete:
 - All replies and resolves batched into one command (one approval)
 - "Needs discussion" threads replied to but left unresolved
 - No reply says "Fixed" without a corresponding pushed commit
-- Unresolved threads re-fetched after the final push -- the push triggers another incremental review, which lands minutes later and is the round you are most likely to abandon half-read
-- That follow-up round confirmed as having actually run -- a green `CodeRabbit` check whose `description` reads `Review rate limited` means it never did (`bot-review-loop.md`, The Status Check Nobody Reads)
+- Unresolved threads re-fetched after the final push -- where incremental auto-review is on, the push triggers another review, which lands minutes later and is the round you are most likely to abandon half-read
+- That follow-up round confirmed as having actually run -- a green `CodeRabbit` check whose `description` reads `Review rate limited` or `Review skipped: incremental reviews are disabled` means it never did (`bot-review-loop.md`, The Status Check Nobody Reads)
+- CodeRabbit's answers to your "Fixed" replies read: each thread it resolved is a confirmed fix; one it left open is a finding that still stands

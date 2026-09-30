@@ -12,6 +12,8 @@ description: >-
 
 **Query CI/CD pipelines and check merge readiness across GitHub Actions and GitLab CI.** All recipes use minimal field sets for token efficiency. Covers pipeline status, failing jobs, run logs, workflow management, and merge readiness assessment.
 
+**Verified against gh v2.102.0** (2026-09-30): every `gh` subcommand and flag used here, against its `--help`. **glab: not verified** -- no pinned version yet; check `glab <cmd> --help` before relying on a `glab` flag. If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.102.0 before relying on flag details.
+
 ## When to Use
 
 - **Checking CI status** -- "are checks passing?", "what's failing?", pipeline status
