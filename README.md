@@ -15,6 +15,21 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, native issue Types, milestone scoping, Epic/Upcoming roadmap views, team access grants | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
 | `deps-upgrade` | Dependency upgrade validation for bun/npm/pnpm/yarn: delta from git, peer and engine conflicts, release notes, breaking changes, migrations and codemods, held-back package analysis, verification gates | `bunx skills add dmythro/agent-skills --skill deps-upgrade` <br> `npx skills add dmythro/agent-skills --skill deps-upgrade` |
 
+## Tool Versions
+
+The CLI version each skill was last verified against. A newer installed version is not an error -- it is the gap to check: read that tool's changelog since the pinned version, then update the skill and this table together.
+
+| Skill | Tool | Verified against | Checked |
+|---|---|---|---|
+| `bun-cli`, `bun-api` | Bun | v1.4.2 | 2026-09-05 |
+| `coderabbit` | CodeRabbit CLI | v0.8.2 | 2026-09-29 |
+| `git-pr`, `git-ci`, `git-project` | GitHub CLI (`gh`) | v2.102.0 | 2026-09-30 |
+| `git-pr`, `git-ci` | GitLab CLI (`glab`) | not verified | -- |
+| `deps-upgrade` | bun / npm / pnpm / yarn | 1.3.14 / 11.19.0 / 11.21.0 / 4.18.0 | 2026-08-15 |
+| `deps-upgrade` | GitHub CLI (`gh`) | v2.102.0 | 2026-09-30 |
+
+`git-commit` drives no CLI surface beyond plain `git`, so it carries no pin.
+
 ## Install
 
 Install individual skills:

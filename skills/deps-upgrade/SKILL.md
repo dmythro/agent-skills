@@ -17,6 +17,8 @@ description: >-
 
 **The upgrade is the easy part; proving the project still coheres is the work.** This skill takes over after versions are chosen -- typically `bun update -i -r` or an equivalent interactive pick -- and validates what landed: the real delta from git, peer and engine integrity, breaking changes and migrations across every version crossed, features worth adopting, and verification gates that run the project rather than reading about it. It also answers the inverse question: can a held-back package move, and why is it in `package.json` at all.
 
+**Verified against bun 1.3.14, npm 11.19.0, pnpm 11.21.0, yarn 4.18.0** (2026-08-15, the command matrix in `references/package-managers.md`) **and gh v2.102.0** (2026-09-30, the `gh release`/`gh api` reads). The bun baseline trails the `bun-cli` skill (v1.4.2): for a flag that matrix does not cover, `bun-cli` is the current reference.
+
 ## When to Use
 
 - **Validating a batch upgrade** -- "I upgraded a lot of packages, validate everything"

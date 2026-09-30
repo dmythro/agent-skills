@@ -16,6 +16,8 @@ description: >-
 
 **Primary skill for pull request and merge request workflows across GitHub and GitLab.** Covers the full lifecycle: creation, review queries, comment handling, line-specific comments, and merging. All recipes use minimal field sets for token efficiency.
 
+**Verified against gh v2.102.0** (2026-09-30): every `gh` subcommand and flag used here, against its `--help`. **glab: not verified** -- no pinned version yet; check `glab <cmd> --help` before relying on a `glab` flag. If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.102.0 before relying on flag details. The CodeRabbit CLI pin lives in the `coderabbit` skill.
+
 ## Context Check (Do This First)
 
 Before starting any PR workflow, detect the current state. This determines the right action:

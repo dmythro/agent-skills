@@ -21,7 +21,7 @@ skills/
       allowlist.md        # Tool permission patterns (optional)
 ```
 
-Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`, `git-project`, `coderabbit`.
+Current skills: `bun-api`, `bun-cli`, `git-commit`, `git-pr`, `git-ci`, `git-project`, `coderabbit`, `deps-upgrade`.
 
 ## Build / Lint / Test Commands
 
@@ -55,11 +55,12 @@ description: >-
 
 1. **H1 heading** immediately after frontmatter -- matches the skill's subject
 2. **Opening paragraph** -- bold, concise, establishes context and scope
-3. **"When to Use"** section -- bullet list of triggering scenarios
-4. **"Critical Rule"** or **"Critical Rules"** section -- bold, imperative, must-follow constraints
-5. **Major topic sections** (H2) covering the skill's API/CLI surface
-6. **Key Gotchas** / **Best Practices** -- a numbered list at the end; use either name (most skills use `## Key Gotchas`)
-7. **References** -- blockquote pointers to `references/*.md` files
+3. **Version pin** (skills that drive a CLI) -- a bold `**Verified against <tool> vX.Y.Z** (YYYY-MM-DD)` line right after the opening paragraph, naming what was checked and what to do when the installed version is newer
+4. **"When to Use"** section -- bullet list of triggering scenarios
+5. **"Critical Rule"** or **"Critical Rules"** section -- bold, imperative, must-follow constraints
+6. **Major topic sections** (H2) covering the skill's API/CLI surface
+7. **Key Gotchas** / **Best Practices** -- a numbered list at the end; use either name (most skills use `## Key Gotchas`)
+8. **References** -- blockquote pointers to `references/*.md` files
 
 ### Reference Files (`references/*.md`)
 
@@ -139,6 +140,15 @@ when visual separation helps readability (used sparingly).
   multiple options without a clear recommendation.
 - **No emojis**: Do not use emojis in any skill content.
 
+## Tool Version Pins
+
+Every skill that documents a CLI's flags records the version it was verified against, in two places that must agree:
+
+1. The skill's `SKILL.md` pin line (see Document Structure)
+2. The **Tool Versions** table in `README.md`
+
+Verify against the tool itself, not memory or web docs: diff `--help` of every subcommand the skill uses, and read the changelog entries between the old pin and the new version. Update the pin only for what was actually checked; a tool that was not verified says so (`not verified`) instead of carrying a guessed version. When a new release changes behavior, tag the affected text with the version (`gh >= 2.97`, `v0.8.2`) so older installs still read correctly.
+
 ## Naming Conventions
 
 - **Skill directories**: `kebab-case` (e.g., `bun-api`, `git-commit`)
@@ -164,7 +174,7 @@ when visual separation helps readability (used sparingly).
 4. **Broken cross-references** -- verify `references/*.md` paths exist
 5. **Skipping heading levels** -- go H1 -> H2 -> H3, never skip
 6. **Including non-Markdown files** -- this repo is Markdown-only
-7. **Forgetting README.md updates** -- every new skill needs a table entry
+7. **Forgetting README.md updates** -- every new skill needs a table entry, and every CLI re-verification updates the Tool Versions table
 
 ## License
 
