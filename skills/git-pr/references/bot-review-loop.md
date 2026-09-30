@@ -187,10 +187,11 @@ bot_status() {
   unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
   n="$(printf '%s' "$unresolved" | jq 'length')"
   if [ "${n:-0}" -gt 0 ] && [ -n "$BOT_CHAT_CONFIRM" ]; then
-    # Every open bot thread ends in YOUR reply from the last 10 min: the bot's chat answer is due
-    # (it lands within ~a minute). Waiting, not "not clean" -- and never a reason to re-request.
+    # Every open bot thread ends in YOUR reply (the authenticated gh user -- a teammate's comment
+    # is not an answer the bot owes you) from the last 10 min: the bot's chat answer is due (it
+    # lands within ~a minute). Waiting, not "not clean" -- and never a reason to re-request.
     # Older than 10 min with no answer falls through to 2: resolve or chase those threads yourself.
-    due="$(printf '%s' "$unresolved" | jq --arg p "$BOT_THREAD_PREFIX" --argjson now "$(date +%s)" 'all(.[]; ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p) | not) and ($now - (.last.nodes[0].createdAt | fromdateiso8601) < 600))')"
+    due="$(printf '%s' "$unresolved" | jq --arg me "$(gh api user --jq .login)" --argjson now "$(date +%s)" 'all(.[]; ((.last.nodes[0].author.login // "") | ascii_downcase) == ($me | ascii_downcase) and ($now - (.last.nodes[0].createdAt | fromdateiso8601) < 600))')"
     [ "$due" = "true" ] && { BOT_AWAIT_CHAT=1; echo "$n $BOT_THREAD_PREFIX thread(s) await the bot's answer to your reply -- polling, no re-request"; return 3; }
   fi
   if [ "${n:-0}" -gt 0 ]; then
@@ -440,11 +441,11 @@ Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix pu
 | Costs | One chat per reply | One PR review from the hourly bucket |
 | Misses | Anything else the fix commits changed | Earlier findings: it does not revisit its old threads |
 
-**So a confirmed round needs no re-review when the fixes stay inside what the findings asked for.** When the fix commits also add new surface -- a config key, an env var, a new code path -- cover that code in the local lane instead of spending a PR review: `coderabbit review --committed --base {base} --agent` is incremental from the local checkpoint, so it reviews exactly the new commits (`coderabbit` skill). Re-request a PR review only when the new code is large enough that the PR lane's repo-wide context matters.
+**So a confirmed round needs no re-review when the fixes stay inside what the findings asked for.** When the fix commits also add new surface -- a config key, an env var, a new code path -- cover that code in the local lane instead of spending a PR review: `coderabbit review --committed --base {base} --agent` reviews the branch, the fix commits included, from the separate CLI bucket (`coderabbit` skill). Re-request a PR review only when the new code is large enough that the PR lane's repo-wide context matters.
 
 **The confirmation only counts if CodeRabbit resolves the thread.** Resolving your own "Fixed" threads, as `pr-comment-workflow.md` does for other reviewers, erases the signal: `resolvedBy` becomes you, and the tick cannot tell a verified fix from an unverified one. So for CodeRabbit threads, **reply "Fixed in {sha}" and leave the thread open**; resolve only the ones you rejected. `bot_status` reads the outcome:
 
-- Every open bot thread ends in your reply from the last 10 minutes -> exit `3` with `BOT_AWAIT_CHAT=1`: the answer is due, and `bot_tick` polls without re-requesting.
+- Every open bot thread ends in your own reply (the authenticated `gh` user) from the last 10 minutes -> exit `3` with `BOT_AWAIT_CHAT=1`: the answer is due, and `bot_tick` polls without re-requesting.
 - Every thread of the newest findings review is resolved by the bot, after an answer newer than HEAD's commit, and HEAD has no completed or running review -> exit `7`.
 - The bot answered but left a thread open -> exit `2`: it disagrees, so treat that thread as a fresh finding.
 - No answer after 10 minutes -> exit `2` listing those threads: resolve them yourself and don't count them as confirmed.
@@ -644,7 +645,7 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 
 ## Scheduling Several PRs Through One Bucket (CodeRabbit)
 
-The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Pro: 5, Pro+: 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Trials and adaptive throttling push the effective rate below the table. Several PRs in flight is therefore a scheduling problem, not N independent loops:
+The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Trials and adaptive throttling push the effective rate below the table. Several PRs in flight is therefore a scheduling problem, not N independent loops:
 
 **The plan sets how many PRs you can honestly keep in flight**, so re-plan when it changes -- a trial expiring into a lower tier halves the queue overnight. On Advanced (10/hour, or a grandfathered Pro+ now shown as Team) two PRs can sensibly be non-draft at once; on Team (8/hour) one or two; on Essentials (5/hour, formerly Pro) it is one active PR plus drafts, with local CLI reviews carrying the rest of the iteration; on Free (1/hour, summary only) the PR lane is a final confirmation and nothing more. When the tier drops, drafts do the work the allowance used to.
 

@@ -99,7 +99,7 @@ Only proceed to Phase 2 after the push succeeds. This ensures reviewers see the 
 
 ### GitHub: Batched Replies + Resolves
 
-For human and Copilot threads. On CodeRabbit threads, drop the `t1`/`t2` aliases (the Fixed and Addressed replies) and resolve only the rejected ones (`t3`) -- CodeRabbit resolves the others itself once it confirms the fix (Rules below).
+For human and Copilot threads. On CodeRabbit threads, keep every reply but drop the Fixed and Addressed threads' aliases (`t1`, `t2`) from the resolve mutation, so it resolves only the rejected ones (`t3`) -- CodeRabbit resolves the others itself once it confirms the fix (Rules below).
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
