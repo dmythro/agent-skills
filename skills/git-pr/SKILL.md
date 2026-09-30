@@ -267,7 +267,7 @@ glab api projects/{project_id}/merge_requests/{iid}/discussions --paginate | jq 
 
 ### Reply and Resolve (One Batched Command)
 
-**GitHub** -- combine all REST replies and a batch GraphQL resolve mutation into one `&&`-chained command. Reply uses `fullDatabaseId` (a string; `databaseId` is deprecated), resolve uses thread `id` (PRRT_ node ID):
+**GitHub** -- combine all REST replies and a batch GraphQL resolve mutation into one `&&`-chained command. Reply uses `fullDatabaseId` (a string; `databaseId` is deprecated), resolve uses thread `id` (PRRT_ node ID). The example is for human and Copilot threads: on CodeRabbit threads keep the Fixed/Addressed replies but leave their threads out of the mutation, since CodeRabbit re-checks the fix and resolves them itself (step 8):
 
 ```bash
 gh api repos/{owner}/{repo}/pulls/{pr}/comments/{fullDatabaseId_1}/replies -f body="Fixed in {sha} -- {explanation}" && \
