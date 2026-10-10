@@ -4,18 +4,20 @@ description: >-
   CodeRabbit CLI local code reviews and .coderabbit.yaml configuration.
   Run AI reviews on uncommitted/committed changes before pushing or opening
   a PR, parse --agent findings, iterate fix-and-verify loops within hourly
-  rate limits, and tune repo config for low-noise high-signal reviews.
-  Use when reviewing local changes pre-push/pre-PR, installing or driving
-  the coderabbit/cr CLI, creating or tuning .coderabbit.yaml, or reducing
-  CodeRabbit review noise. Not for PR-side review loops and thread
-  handling (git-pr), commits (git-commit), or CI status (git-ci)
+  rate limits, and tune repo config for low-noise high-signal reviews. Also
+  drives cloud Coding Agent tasks from the CLI (coderabbit code). Use when
+  reviewing local changes pre-push/pre-PR, installing or driving the
+  coderabbit/cr CLI, starting or following a CodeRabbit cloud task, creating
+  or tuning .coderabbit.yaml, or reducing CodeRabbit review noise. Not for
+  PR-side review loops and thread handling (git-pr), commits (git-commit),
+  or CI status (git-ci)
 ---
 
 # CodeRabbit CLI and Configuration
 
-**Local-first AI code review: catch issues before they reach the PR.** The CodeRabbit CLI (`coderabbit`, alias `cr`) reviews working-tree or branch changes locally, so the PR-side review becomes confirmation instead of iteration -- this saves billable PR review rounds (both CodeRabbit's own quota and any Copilot credits). Covers the CLI surface and `.coderabbit.yaml` tuning. PR-side mechanics (threads, re-requests, the bot loop) live in the `git-pr` skill.
+**Local-first AI code review: catch issues before they reach the PR.** The CodeRabbit CLI (`coderabbit`, alias `cr`) reviews working-tree or branch changes locally, so the PR-side review becomes confirmation instead of iteration -- this saves billable PR review rounds (both CodeRabbit's own quota and any Copilot credits). Covers the CLI surface -- local reviews, plus the beta cloud Coding Agent commands -- and `.coderabbit.yaml` tuning. PR-side mechanics (threads, re-requests, the bot loop) live in the `git-pr` skill.
 
-**Verified against CodeRabbit CLI v0.8.2** (2026-09-29): every subcommand's `--help` on the official build, plus the [CLI changelog](https://docs.coderabbit.ai/changelog). Flags are tagged with the version that introduced them. If `coderabbit --version` reports something newer, diff `--help` of each subcommand against this list and read the changelog entries since v0.8.2 before relying on flag details here.
+**Verified against CodeRabbit CLI v0.9.0** (2026-10-10): every subcommand's `--help` on the official build, diffed against v0.8.2, plus the [CLI changelog](https://docs.coderabbit.ai/changelog) and the [agent-mode](https://docs.coderabbit.ai/cli/agent-mode) and [cloud-task](https://docs.coderabbit.ai/cli/cloud-tasks) pages it links. Flags are tagged with the version that introduced them. The billed and pushing `coderabbit code` commands were not exercised; their handling comes from those docs. If `coderabbit --version` reports something newer, diff `--help` of each subcommand against this list and read the changelog entries since v0.9.0 before relying on flag details here.
 
 ## When to Use
 
@@ -23,32 +25,36 @@ description: >-
 - **Driving a review-fix loop** -- run review, fix valid findings, re-run to verify
 - **Configuring CodeRabbit** -- create or tune `.coderabbit.yaml`, reduce review noise, disable redundant linters
 - **Checking limits** -- rate limits per plan, review budgeting
-- **Setting up the CLI** -- install, auth, headless/CI usage
+- **Setting up the CLI** -- install, auth, updates, headless/CI usage
+- **Running cloud Coding Agent tasks** -- `coderabbit code new`/`resume`/`push`, handing a local session off to the cloud (beta, v0.9.0)
 
 ## Critical Rules
 
 1. **Reviews upload code to CodeRabbit's service.** A review sends the diff (and context) to CodeRabbit. On a repo with sensitive/unpublished code, confirm the user is OK with that before the first run.
 2. **Reviews consume a per-hour quota** (Free: 3/hour CLI reviews). Scope deliberately (`--committed`/`--uncommitted`, `--base`) and use `coderabbit review findings` to replay the last result without spending a review.
-3. **Use `--agent` output when driving fixes programmatically**; the default plain-text mode is for humans. There is **no `--plain` flag** (and no `--type`): both were removed in v0.7 and fail with `error: unknown option` plus the usage text. v0.8 exits `1` on it; v0.7 exited `0`, so on an older binary a piped or tailed run looks clean while nothing was reviewed. Do not guess flags; `coderabbit review --help` on the installed binary is the whole surface.
+3. **Use `--agent` output when driving fixes programmatically**; the default plain-text mode is for humans. There is **no `--plain` flag**: v0.7 removed it, and it fails with `error: unknown option` plus the usage text (v0.9 adds a `Remove --plain` hint). v0.8+ exits `1` on it; v0.7 exited `0`, so on an older binary a piped or tailed run looks clean while nothing was reviewed. Do not guess flags: `coderabbit review --help` on the installed binary is the supported surface, and the hidden legacy aliases it omits still parse -- `--type <all|committed|uncommitted>` and `--light` both start a real review.
 4. **Validate findings before fixing** -- same rule as PR reviews: judge each finding on its merits; never blind-fix to silence the tool.
 5. **CodeRabbit is optional -- check the Code Review Policy first** (repo AGENTS.md/CLAUDE.md, falling back to the user's global agent instructions; see `git-pr` skill) for the preferred reviewer and checkpoints. Never install, authenticate, or run it on a project whose policy or user hasn't opted in.
+6. **`coderabbit code` spends money and pushes code.** `new`, `ask`, and messages sent through `resume` start billed agent work; `push` and Autopilot write to the repository. Run them only on the user's explicit request, and never rerun one that already reported its commit point -- the rerun duplicates the billed work (`references/cloud-tasks.md`).
 
 ---
 
 ## Setup
 
 ```bash
-curl -fsSL https://cli.coderabbit.ai/install.sh | sh   # or: brew install coderabbit
+curl -fsSL https://cli.coderabbit.ai/install.sh | sh   # also links `cr`; or: brew install coderabbit (no `cr`)
 coderabbit auth login        # browser OAuth; --agent emits JSON for agent-driven login
 coderabbit auth status       # verify
-coderabbit doctor            # diagnose runtime/auth/connectivity issues
+coderabbit doctor            # diagnose runtime/auth/git/connectivity; exits 1 when any check fails
 ```
 
-`auth login` also accepts `--api-key <key>` (store a key instead of OAuth), `--region us|eu`, `--self-hosted`, and `--no-browser` (print the URL for a browser that can reach the localhost callback); `auth org` switches the active organization. Every `auth` subcommand takes `--agent` for JSON output.
+`auth login` also accepts `--api-key "<key>"` (store a key instead of OAuth), `--region us|eu`, `--self-hosted`, and `--no-browser` (print the URL for a browser that can reach the localhost callback). `auth org` switches the active organization interactively; since v0.9.0 `auth org --agent` only **lists** the organizations as JSON, so an agent cannot switch -- a person runs `coderabbit auth org`. Every `auth` subcommand takes `--agent` for JSON output.
 
-**No paid plan required**: the Free plan includes CLI reviews (3/hour) after `coderabbit auth login` with a free account -- paid plans add org context, learnings, and higher limits. Headless/CI: `CODERABBIT_API_KEY` env var with an **Agentic API key** (requires the usage-based add-on on paid plans), or `--api-key` per call. `coderabbit update` self-updates.
+**No paid plan required**: the Free plan includes CLI reviews (3/hour) after `coderabbit auth login` with a free account -- paid plans add org context, learnings, and higher limits. Headless/CI: an **Agentic API key** (a user API key is rejected) from an organization where that user holds a seat, passed per run as `--api-key "$CODERABBIT_API_KEY"` or stored once with `coderabbit auth login --api-key "$CODERABBIT_API_KEY"`. **The CLI reads no API-key environment variable** -- `CODERABBIT_API_KEY` is only the conventional secret name. Reviews draw on that user's plan allowance first, and on usage credits only where the usage-based add-on is on.
 
-The CLI must run inside a git repository. `cr` is a shorthand alias for `coderabbit`.
+**Updating**: `coderabbit update` updates an install-script install; **a Homebrew install updates only with `brew upgrade coderabbit`** (v0.9.0 `update --help`; `doctor` reports `Update policy: Managed by Homebrew`). Outside Homebrew the CLI also updates itself: `CODERABBIT_CLI_DISABLE_AUTO_UPDATE=true` holds the installed version, and `CODERABBIT_VERSION=X.Y.Z` on the install script pins one. Other switches listed in v0.9.0 `--help`: `CR_CLI_TELEMETRY_DISABLED=true`, and `CODERABBIT_LOG_LEVEL=debug` with `CODERABBIT_LOG_TRANSPORT=console` to send logs to stderr instead of `~/.coderabbit/logs`. `coderabbit completion bash|zsh|fish|powershell` (v0.9.0) prints a completion script for both names.
+
+Local reviews must run inside a git worktree (`--dir` can target one); `--remote` reviews and `pullrequest <full URL>` work from anywhere. **`cr` is a symlink the install script creates (`~/.local/bin/cr`); the Homebrew cask links only `coderabbit`** -- write commands, scripts, and allowlist patterns with the full name.
 
 ## Review Scopes and Checkpoints
 
@@ -61,36 +67,57 @@ The CLI must run inside a git repository. `cr` is a shorthand alias for `coderab
 | Vs specific commit | `coderabbit review --committed --base-commit {sha}` | Changes since a commit |
 | Include untracked files | `coderabbit review --include-untracked` | Also files not yet added to git |
 
-Defaults (CLI v0.8): all tracked changes, base = repository default branch, plain-text output, the local review policy. v0.7 **removed** the older `--type <scope>` and `--plain` flags (`error: unknown option`) -- scope with `--committed`/`--uncommitted`, and plain is simply the default.
+Defaults (CLI v0.8+): all tracked changes, base = repository default branch, plain-text output, the local review policy. `--include-untracked` combines with `--uncommitted` but not with `--committed`, and contradictory scopes are rejected before a review starts. v0.7 **removed** `--plain` (`error: unknown option`) -- plain is simply the default. `--type <all|committed|uncommitted>` was never removed: `--help` hides it, it still runs a review, and it errors next to `--committed`/`--uncommitted` (`cannot be used with option '-t, --type <type>'`) -- scope with the listed flags instead.
 
 **Local reviews keep a checkpoint (v0.7.7+).** Each review saves context for its scope -- review directory, branch, and base -- that later runs in the same scope reuse; a `--dir src` run and a whole-repository run keep separate checkpoints, changing the base resets it, and a failed review keeps the last successful one. The docs call this incremental, but it does not narrow what gets reported: observed on this repo (2026-09-30), a second `--committed --base main` run on the same branch reported six findings in commits the first run had passed with zero. Treat every run as a review of the whole scope, and a clean pass as one sample, not proof. `--fresh` (v0.8.2) discards the checkpoint and reviews the scope without the saved context.
 
-**Review depth (v0.8)**: `--deep` runs the **full pull request review policy** locally -- the closest the CLI gets to what the PR-side review will say. Use it for the final pre-PR pass on repos where the CLI is the only lane (no PR-side auto-review); keep the default policy for the iterate-and-fix loop. Its quota cost is undocumented, so compare `coderabbit usage` before and after the first one. `--deep "<focus>"` (focus text) is early access only. `--light` is gone from `--help` but still accepted as a **legacy alias for the default review** -- it no longer makes anything lighter, so drop it from scripts. `--deep` needs a compatible server; if it is refused, report that the CLI needs updating rather than falling back to a default review silently.
+**Review depth (v0.8)**: `--deep` runs the **full pull request review policy** locally -- the closest the CLI gets to what the PR-side review will say. It stays under the CLI's own limits and billing, but it does not attach to an open PR or read its description and discussion, so its findings can still differ from the PR-side round. Use it for the final pre-PR pass on repos where the CLI is the only lane (no PR-side auto-review); keep the default policy for the iterate-and-fix loop. `--deep "<focus>"` (focus text) is early access only. `--light` is gone from `--help` but still accepted as a **legacy alias for the default review** -- it no longer makes anything lighter, so drop it from scripts. `--deep` needs a compatible server; if it is refused, report that the CLI needs updating rather than falling back to a default review silently.
 
 Other review options:
 
-- `--use-credits` -- consent to bill this review as usage-based when it exceeds the included allowance (the add-on's `On demand` mode asks for it). **It spends money: never pass it without the user's explicit approval for that run.**
-- `--remote owner/repo --base main --source-branch <ref>` (v0.7.7) -- review a GitHub repository server-side without a local checkout; the repo must be installed in the active org, under 300 changed files.
-- `-c, --config <files...>` -- extra instruction files (e.g. `CLAUDE.md`) for one run.
-- `--api-key <key> --region us|eu` -- authenticate one run without storing the key (headless/CI; see the allowlist Caveat).
+- `--use-credits` -- consent to bill this review as usage-based when it exceeds the included allowance (the add-on's `On demand` mode asks for it). **It spends money: never pass it without the user's explicit approval for that run.** Without it, an over-limit run in `On demand` mode charges nothing: in `--agent` mode it ends with an `action_required` record (`status: "awaiting_confirmation"`, the billable file count, the maximum price, and the exact `--use-credits` command) -- relay that to the user. The consent covers only that content; any change needs a fresh approval.
+- `--remote owner/repo --base main --source-branch <ref>` (v0.7.7) -- review a GitHub repository server-side without a local checkout; the repo must be installed in the active org, under 300 changed files. `<ref>` is a branch or a full 40-character SHA, never a tag; local selectors (`--dir`, `--committed`, `--uncommitted`, `--include-untracked`, `--base-commit`), `--show-prompts` and local `--config` files do not apply, and nothing is stored for `review findings`.
+- `-c, --config <files...>` -- extra instruction files (e.g. `CLAUDE.md`) for one run. They are read from disk even under `--committed`, which takes the reviewed content and the discovered `.coderabbit.yaml` from the Git snapshot -- so commit a config change before testing it with `--committed`.
+- `--api-key <key> --region us|eu` -- authenticate one run without storing the key (headless/CI; see the allowlist Caveat). `--region` applies only together with `--api-key`.
 
 ## Output Modes
 
-- Default (no mode flag) -- detailed plain-text feedback with fix suggestions, non-interactive.
-- `--agent` -- JSON-lines: one object per line. Finding objects carry `type: "finding"`, `severity` (`critical|major|minor|trivial|info`), `fileName`, `suggestions`, and `codegenInstructions` (written for coding agents -- follow them when fixing); a `comment` field appears when `codegenInstructions` is empty. Heartbeat events appear during long reviews; a final `complete` event carries `status` (`"review_skipped"` with `findings: 0` when the scope has no changes). A depleted bucket ends the run at exit code `1` with `{"type":"error","errorType":"rate_limit","recoverable":true,"metadata":{"waitTime":"7 minutes"}}` and no findings -- the exit status alone cannot tell a bounce from a real failure, so branch on `errorType`, take the retry window from `metadata.waitTime` (wait it out plus a minute, then re-run), and never read the empty result as a clean review. Since v0.7.7 any failed or incomplete review exits `1`. Security findings add `category`, CWE, reachability and exploitability; **unverified findings** are listed and counted separately and carry no fix prompt (inspect them, don't auto-fix them); a review billed as usage-based adds `usageCost`.
-- `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache). Use between fix iterations; only re-run a real review to verify at the end. `--clear` (v0.7.7) dismisses the stored findings for the current scope (directory + branch + base) once they are fixed or rejected, so later replays stop surfacing them.
-- `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review.
-- `coderabbit stats` -- review statistics (`--rebuild` rescans review history).
-- `coderabbit usage` (`--agent` for one JSON event; `coderabbit --usage` and `coderabbit review --usage` are aliases) -- since v0.8, **the included-review allowance for the current repository**: remaining vs limit over a rolling 1-hour window (`includedReviews.remaining`, `.limit`, `.rollingWindowMs`, and `.fullCapacityInMs`, the time until the bucket is full again). It also reports the billing period (`billingPeriod`): organization, whether usage billing (overage) is active (`usageBillingStatus`), your review count, the usage-based spend so far (`spendCents`), and the period reset date. Each block carries a `state` (`available` when the server answered). **Read it before a local loop**: it spends no review. The output does not name the lane, so it does not replace `@coderabbitai rate limit` (below) for a PR-side retry window. **The installed binary is the source of truth, not the docs page** -- the online reference still calls this billing-only; verify with `--help`.
-- `coderabbit pullrequest <number|url>` -- **reads CodeRabbit's existing output on a GitHub PR**: no review is run and none is spent. `--show-threads --agent` returns the inline thread roots as JSON (thread and comment IDs, `path`/`line`, `isResolved`, `isOutdated`, head commit). `--show-prompts` returns one consolidated fix prompt that also carries an **`Outside diff comments:`** section, which a thread-only pass never sees. It needs github.com and a repo installed in the active org, and it resolves a bare number from the local `origin`. Thread handling and resolution stay in the `git-pr` skill.
+- Default (no mode flag) -- detailed plain-text feedback with fix suggestions and a closing severity summary, non-interactive. In a detected agent environment it prints a notice suggesting `--agent` but stays plain.
+- `--agent` -- JSON lines, one event per line (Reading `--agent` Output, below).
+- `coderabbit review findings` -- replay cached findings from the most recent local review **that produced findings** (clean sessions are skipped), with no new analysis and **no quota cost** (`--dir <path>` reads a scoped review's cache; up to ten sessions are kept per scope, with no expiry). Use between fix iterations; only re-run a real review to verify at the end. `--clear` (v0.7.7) dismisses the stored findings for the current scope (directory + branch + base) once they are fixed or rejected, so later replays stop surfacing them; it exits `1` if some could not be dismissed (the rest stay dismissed).
+- `coderabbit review --show-prompts` -- print the AI prompts from the most recent local review, no new review. It cannot be combined with `--agent`.
+- `coderabbit stats` -- statistics from the local review history (`--rebuild` rescans it).
+- `coderabbit usage` (`--agent` for one JSON event; `coderabbit --usage` and `coderabbit review --usage` are aliases) -- since v0.8, **the included-review allowance for the current repository**: remaining vs limit over a rolling 1-hour window (`includedReviews.remaining`, `.limit`, `.rollingWindowMs`, and `.fullCapacityInMs`, the time until the bucket is full again). It also reports the billing period (`billingPeriod`): organization, whether usage billing (overage) is active (`usageBillingStatus`), your review count, the usage-based spend so far (`spendCents`), and the period reset date. Each block carries a `state` (`available` when the server answered). **Read it before a local loop**: it spends no review. The output does not name the lane, so it does not replace `@coderabbitai rate limit` (below) for a PR-side retry window.
+- `coderabbit pullrequest <number|url>` -- **reads CodeRabbit's existing output on a GitHub PR**: no review is run and none is spent. It takes exactly one of `--show-threads` or `--show-prompts`. `--show-threads --agent` returns the inline thread roots as JSON (thread and comment IDs, `path`/`line`, `isResolved`, `isOutdated`, head commit). `--show-prompts` returns one consolidated fix prompt that also carries an **`Outside diff comments:`** section, which a thread-only pass never sees. It needs github.com and a repo installed in the active org; it resolves a bare number from the local `origin`, and a full URL works outside a checkout. Thread handling and resolution stay in the `git-pr` skill.
 - `@coderabbitai rate limit` -- **not a CLI command: a PR comment**, and the only on-demand read of the PR-side bucket. Reports the remaining allowance and when the next review becomes available, and [does not consume a review](https://docs.coderabbit.ai/reference/review-commands) (aliases `rate-limit`, `limits`, `quota`). Answers within seconds, even while rate-limited: "Your next review will be available in N minutes" -- the only durable read of that window, since the notice edited into the summary comment can vanish. Post it before opening a loop, and after a bounce instead of probing with triggers. It spends no review, but it is still a PR comment -- a write, subject to the usual approval.
+
+### Reading `--agent` Output
+
+Parse line by line and dispatch on `type`:
+
+| `type` | Carries | Use it to |
+|--------|---------|-----------|
+| `review_context` | `reviewType`, `currentBranch`, `baseBranch`, `workingDirectory`; `expectedDuration` (v0.9.0), a sentence rather than a number | Size the wait: observed "usually 2-6 minutes and can take up to 15", and stopping the command early discards the review -- background it and allow 15+ minutes |
+| `status` | `phase`, `status` | Track progress; `review_skipped` means the scope has no changes |
+| `heartbeat` | Keep-alive only | Reset idle timers; otherwise ignore |
+| `finding` | `severity` (`critical`, `major`, `minor`, `trivial`, `info`, `none`), `fileName`, `codegenInstructions`, `suggestions`, `comment`; `title` and `startLine`/`endLine` (v0.9.0) | Fix per `codegenInstructions` (written for coding agents), falling back to `comment`. Before v0.9.0 `comment` appeared only when `codegenInstructions` was empty |
+| `complete` | `status`, `findings`, `outcome` (`completed` on a full run), `message`, `reviewedFiles`, and when relevant `unreviewedFileCount`, `reused`, `persistence` | Decide whether the run counts (rules below); `reviewedFiles` shows what the run actually covered |
+| `error` | `errorType`, `recoverable`, `message`, `metadata` | Branch on `errorType`, never on the findings count |
+
+1. **A run is clean only if it exits `0` and its `complete` event reads `status: "review_completed"` with no `outcome: "failed"` and no positive `unreviewedFileCount`.** Since v0.7.7 a failed or incomplete review exits `1` even after emitting findings, and a `review_completed` event can still describe a run that failed or skipped files. `outcome: "completed_with_warnings"` with nothing unreviewed is fine; `status: "review_skipped"` (`findings: 0`, exit `0`) means the scope had no changes.
+2. **A bounce is an `error`, not an empty review**: exit `1` with `{"type":"error","errorType":"rate_limit","recoverable":true,"metadata":{"waitTime":"7 minutes"}}` and no findings. Wait out `metadata.waitTime` plus a minute, then re-run once -- a re-run inside the window is answered locally with the same error and the remaining wait (the local wait is capped at 15 minutes), so retrying in a loop buys nothing. `--use-credits` skips that local wait, and bills.
+3. **`errorType: "interrupted"`** (v0.9.0, with `elapsedSeconds`) means a signal stopped the run; findings already streamed and the last successful checkpoint are kept -- re-run when ready.
+4. **`reused: true` on `complete`** means the server returned an existing review -- not proof that a new review ran.
+5. **`persistence.status: "failed"`** (v0.9.0, with an `errorCode`) means the results were not saved locally: keep the findings from this stream, since `review findings` may not replay them, and check local storage permissions and free space. The server-side review can still be complete.
+6. **Too many files** fails with an `error` that can carry `candidates` -- narrower `--committed`, `--uncommitted` or `--dir` scopes with estimated file counts -- and a `candidatesNote`. The CLI never picks one or retries: choose one and re-run it.
+7. **Security findings** add `category`, CWE, reachability and exploitability. **Unverified findings** are listed and counted separately and carry no fix prompt: inspect them, don't auto-fix them. A review billed as usage-based adds `usageCost`.
 
 ## The Local Review-Fix Loop
 
-1. Run `coderabbit review --committed --base {base} --agent` (or `--uncommitted` pre-commit; background it -- reviews take minutes).
+1. Run `coderabbit review --committed --base {base} --agent` (or `--uncommitted` pre-commit). Background it -- reviews take minutes (v0.9.0's `review_context.expectedDuration` states the range), and killing the command early discards the review.
 2. Parse findings; triage by `severity`. Address `critical` and `major` first.
 3. **Validate each finding** against the codebase (conventions, actual behavior, project docs). Fix valid ones per `codegenInstructions`; note invalid ones with a one-line rationale for the user.
-4. Re-run the same review command to verify fixes -- it reviews the whole scope again, so new findings on untouched code are normal, not a regression. Stop when no valid `critical`/`major` findings remain, or the hourly bucket is exhausted (`coderabbit usage` shows what remains; a bounce reports the wait -- wait or stop, never hammer).
+4. Re-run the same review command to verify fixes -- it reviews the whole scope again, so new findings on untouched code are normal, not a regression. Stop when a clean run (Reading `--agent` Output, rule 1) leaves no valid `critical`/`major` findings, or the hourly bucket is exhausted (`coderabbit usage` shows what remains; a bounce reports the wait -- wait or stop, never hammer).
 5. Then push / create the PR -- **once the change is completely finished**, not once the findings are fixed. Where PR-side auto-review and `auto_incremental_review` are on (both default), the push *is* the review request and it reviews whatever the branch holds at that moment: remaining tasks, tests, docs and config belong in the same push, or each leftover costs another PR-side window. The PR-side review (if any) should then come back clean or near-clean.
 
 Commit fixes by what they change, never by what prompted them -- `fix: validate empty page cursor`, not `fix: coderabbit fixes` or `fix: review round 2` (see the `git-commit` skill). Fixes must not add code comments that restate what the code already reads.
@@ -150,9 +177,35 @@ What *does* answer it: a `@coderabbitai rate limit` comment (remaining allowance
 
 ## Configuration
 
-`.coderabbit.yaml` at the repo root governs both PR-side and CLI reviews (the CLI also accepts `-c <file>` for extra instruction files, e.g. `CLAUDE.md`). For typed, well-linted projects the goal is high-level findings only: `profile`, `tone_instructions`, disabled CI-redundant linters, `path_filters` for generated files. Validate edits with `coderabbit config validate [file]` (checks against the current official schema, CI-friendly exit codes) before committing. Since v0.7.7 `coderabbit config` also generates and applies a config (`--agent --generate --profile chill` for a proposal) and the CLI discovers `.coderabbit.config.ts` when no YAML exists.
+`.coderabbit.yaml` at the repo root governs both PR-side and CLI reviews (the CLI also accepts `-c <file>` for extra instruction files, e.g. `CLAUDE.md`). For typed, well-linted projects the goal is high-level findings only: `profile`, `tone_instructions`, disabled CI-redundant linters, `path_filters` for generated files -- and one automatic PR review per PR (`auto_incremental_review: false`), with later rounds closed in the review threads, whose replies are chats rather than reviews. Validate edits with `coderabbit config validate [file]` (checks against the current official schema, CI-friendly exit codes) before committing. Since v0.7.7 `coderabbit config` also generates and applies a config (`--agent --generate --profile chill` for a proposal) and the CLI discovers `.coderabbit.config.ts` when no YAML exists.
 
 > **Reference**: See `references/configuration.md` for the full schema highlights, config precedence, the low-noise template for typed/linted projects, and PR-side commands (`@coderabbitai review` vs `full review`, pause/resume, config dump).
+
+## Cloud Coding Agent (`coderabbit code`)
+
+**Beta, v0.9.0** (`code handoff` and `code skills import` since v0.8.1). `coderabbit code` starts and follows **tasks** that CodeRabbit's Coding Agent runs in the cloud; each instruction runs as a **turn**. Tasks spend agent minutes, billed like web-app tasks, and the first one starts the organization's Coding Agent trial if it has not begun. A person must sign in through the browser and pick an organization with `coderabbit auth org` first: API-key, self-hosted and SSO-workspace logins fail with `unsupported_auth`, and Coding Agent must be enabled for the organization.
+
+| Command | Effect |
+|---------|--------|
+| `code ls`, `code show <task>`, `code autopilot status <task>` | Read only -- rerun freely |
+| `code plan <task>` | Shows the latest finalized plan; `--approve` records a reviewer approval (not on a task you started; it does not start implementation) |
+| `code new "<prompt>"` | **Starts a billed task** from the branch on `origin` -- unpushed commits and uncommitted changes are not included. `--plan` asks for a plan before any code |
+| `code resume <task>` | Follows a task; with `--agent`, `-m`, `--steer` or `--answer` sends into it and starts or extends billed work |
+| `code ask <task> "<question>"` | **Billed** side question; never changes the task |
+| `code cancel <task>` | Stops the running turn and **drops queued messages** |
+| `code push <task>` | **Commits and pushes** the task's changes to its working branch; `--stacked` opens a pull request instead |
+| `code autopilot on <task>` (or `--pr <n>`) | Publishes the changes when the agent finishes, then **pushes fixes on its own** for CodeRabbit findings, failing required CI and merge conflicts; `off` stops it, `resume` restarts a paused one |
+| `code handoff --summary <path>` | **Uploads** a session summary, an optional plan and the discovered Codex or Claude Code transcript into a new task |
+| `code skills import [path]` | **Uploads** local skills to the cloud library (`--scope organization` shares them with the org) |
+
+Driving it from an agent:
+
+1. **Pass `--agent` right after the command name** (`coderabbit code new --agent "<prompt>"`, before `--plan`). Under a detected agent environment with piped stdout the CLI emits JSON anyway (observed under Claude Code), but only an explicit `--agent` turns argument errors into JSON.
+2. **The last record decides** -- branch on its `type`, then its `status` or `action`; the exit code is a cross-check (`0` complete, `1` error or a login/authorization action, `3` a question to answer, `4` rerun `resume` -- or, after `ask`, read the answer in the web app). The first record is always a `beta_notice` status.
+3. **Never rerun a command after it wrote a commit-point record** (`task_submitted`, `creating_task`, `message_sent`, `steer_sent`, `answer_sent`, `question_sent`): the rerun creates a second billed task or question. Follow the task with `coderabbit code resume --agent <task>` instead, and pass explicit task IDs, never `--last`, which can change between runs.
+4. **Get the user's OK before** `push`, `plan --approve`, `autopilot on`/`resume`, `cancel`, or pushing what a failed or canceled turn left behind. Hand `authorize_github` URLs, login commands and sensitive questions to the user; never open or answer them yourself. Where PR-side auto-review is on, each Autopilot or `push` commit to a PR branch is also a PR review request (`git-pr` skill).
+
+> **Reference**: See `references/cloud-tasks.md` for the record stream, per-command outcomes, safe reruns and wait limits
 
 ## Key Gotchas
 
@@ -162,14 +215,18 @@ What *does* answer it: a `@coderabbitai rate limit` comment (remaining allowance
 4. **CLI reviews and PR reviews draw from separate buckets** -- burning CLI reviews locally does not reduce the PR-side allowance, which is the point of the local-first flow.
 5. **Org context needs matching access** -- on a repo not linked to your CodeRabbit org, reviews run in limited free mode (no learnings/org context); results differ from PR-side reviews on the same code.
 6. **`--agent` emits JSON lines, not a JSON document** -- parse line-by-line; do not `JSON.parse` the whole output.
-7. **`--type <scope>` and `--plain` no longer exist** (removed in v0.7; `error: unknown option`, exit `1` since v0.8) -- older docs and allowlists reference them; use `--committed`/`--uncommitted` and rely on the plain default. `--light` still parses but is only an alias for the default review since v0.8; `--deep` is the real depth switch.
+7. **`--plain` is gone; `--type` and `--light` are only hidden** -- `--plain` was removed in v0.7 (`error: unknown option`, exit `1` since v0.8). `--type <all|committed|uncommitted>` still runs a review although `--help` omits it, and fails next to `--committed`/`--uncommitted`; `--light` still parses as an alias for the default review since v0.8. Use `--committed`/`--uncommitted`, rely on the plain default, and treat `--deep` as the real depth switch.
 8. **A PR-side rate limit is silent and green** -- no review, no threads, usually no comment, and a passing `CodeRabbit` check whose `description` reads `Review rate limited`. Nothing about the PR looks wrong, so an unreviewed PR gets reported as reviewed. Read that description before concluding anything from a quiet PR-side round (Where a Bounce Shows Up).
 9. **A quoted retry window is an estimate, and it is not durable** -- it is edited into the summary comment and a later edit can remove it, while different PRs quote wildly different numbers at the same moment. Capture it when you see it, take the smallest one visible across your PRs, and treat a sibling PR's `Review completed` as the real all-clear (Where a Bounce Shows Up). Don't wait out the largest number you can find.
-10. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs.
+10. **The push is the PR-side review request** -- with auto-review plus `auto_incremental_review`, every push spends a PR-side review of whatever is on the branch, from a bucket that is **per developer, not per PR**. Finish the whole change locally, then push once; the local lane (separate bucket) is where iteration belongs. With incremental reviews off (the template in `references/configuration.md`), fix pushes spend nothing and the thread replies verify the fixes instead.
 11. **A rate-limited attempt can leave its commits looking reviewed** -- once the window reopens, a plain `@coderabbitai review` over unchanged commits answers "does not re-review already reviewed commits" and the round silently never happens, so the recovery trigger after a bounce is **`@coderabbitai full review`**. It does not always stick, though: observed on this repo, the *next push* after a bounce resumed its incremental range from the last **completed** review and did re-cover the two skipped commits unprompted. Read the review's own "Commits" block to see which range it actually took, rather than assuming either way. The same forcing form is the fix for a wedged **"Review queued"** (observed stuck 2+ hours): nudge after ~1 hour instead of waiting it out.
 12. **A clean local pass is one sample, not proof** -- runs vary: observed here, a second run on an unchanged scope reported six findings in code the first run had passed clean. Budget for that, and let the PR-side round have the final say where it exists. `--fresh` (v0.8.2) reviews without the saved checkpoint context.
-13. **The cloud commands moved under `code` in v0.8.1** -- `coderabbit code handoff` (the top-level `handoff` from v0.8.0 is now a hidden alias) and `coderabbit code skills import`. Both upload local material to CodeRabbit Cloud: approve each run (`references/allowlist.md`).
+13. **`coderabbit code` is billed cloud work, not a review** (v0.9.0, beta) -- `new`, `ask` and sends through `resume` spend agent minutes, `push` and Autopilot push to the repository, and `handoff` and `skills import` upload local material. A rerun after a commit-point record duplicates the billed work. The top-level `handoff` from v0.8.0 survives only as a hidden alias of `code handoff`. Approve each state-changing run (`references/allowlist.md`).
+14. **A Homebrew install has no `cr` and no self-update** -- the cask links only `coderabbit`, and `coderabbit update` defers to `brew upgrade coderabbit` (v0.9.0). A `cr ...` line copied from docs fails there with `command not found`; write the full name.
+15. **Exporting `CODERABBIT_API_KEY` authenticates nothing** -- the CLI reads no API-key environment variable (v0.9.0 `--help`), so a CI step that only exports it runs under whatever login is stored, or none. Pass `--api-key "$CODERABBIT_API_KEY"`, or store the key with `coderabbit auth login --api-key` in an earlier step of the same environment.
+16. **`status: "review_completed"` is not proof the review completed** -- a failed run or one that skipped files can still end with it. Check the exit code, `outcome` and `unreviewedFileCount` before calling a run clean (Reading `--agent` Output).
 
 > **Reference**: See `references/configuration.md` for `.coderabbit.yaml` tuning and PR commands
+> **Reference**: See `references/cloud-tasks.md` for driving `coderabbit code` cloud tasks from an agent
 > **Reference**: See `references/allowlist.md` for auto-approval patterns
 > **Reference**: PR-side review loops, thread handling: `git-pr` skill (`references/bot-review-loop.md`)
