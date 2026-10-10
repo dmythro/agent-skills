@@ -106,12 +106,13 @@ bun --check       # type checks the project
 bun run typecheck # type checks the project
 ```
 
-Only inside the `check` script itself is `bun check` the type checker, so `"check": "bun check"`
-works on 1.4.3 -- but an older Bun, including an old `bun` in `node_modules/.bin` that scripts
-find first, runs it again and again without end. Inside any other script `bun check` still runs
-the `check` script: with the scripts above, `"typecheck": "bun check"` (what `bun init` writes)
-would run `biome check`. In scripts, write `bun --check`. Under `--filter` / `--workspaces`,
-`check` always means each package's `check` script.
+Inside the `check` script, and in any script it starts, `bun check` is the type checker, so
+`"check": "bun check"` works on 1.4.3 -- but an older Bun, including an old `bun` in
+`node_modules/.bin` that scripts find first, runs it again and again without end. Anywhere else,
+other scripts included, `bun check` runs the `check` script: with the scripts above,
+`"typecheck": "bun check"` (what `bun init` writes) would run `biome check`. In scripts, write
+`bun --check`. Under `--filter` / `--workspaces`, `check` always means each package's `check`
+script.
 
 ## Output
 

@@ -434,10 +434,11 @@ bun --watch --check src/index.ts   # re-check before every restart (there is no 
 - **Point `types` at `bun-types`.** With no Bun types, or a stale `@types/bun`, `Bun`,
   `bun:test`, and every API newer than the installed types fail to check. See "Check the
   Version" above.
-- **A `check` script wins, from anywhere but itself.** When `package.json` defines `check`,
-  `bun check` runs that script -- also from inside other scripts, so `bun init`'s
-  `"typecheck": "bun check"` then runs the lint script. `bun --check` always type checks: use it
-  in scripts. On an older Bun, `"check": "bun check"` calls itself forever.
+- **A `check` script wins.** When `package.json` defines `check`, `bun check` runs that
+  script -- from the shell and from other scripts alike, so `bun init`'s
+  `"typecheck": "bun check"` then runs the lint script. Only inside the `check` script and the
+  scripts it starts is `bun check` the type checker. `bun --check` always type checks: use it in
+  scripts. On an older Bun, `"check": "bun check"` calls itself forever.
 - **Agent output.** With `CLAUDECODE=1`, `AGENT=1`, or `REPL_ID=1` set, errors print as
   `<error file= line= column= code=>` blocks with the source lines. `--no-pretty` gives one
   `file(line,col): error TSxxxx: ...` line per error, the default when piped; the summary goes to
@@ -809,7 +810,7 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 18. **Bundled namespace objects will become getter-only.** `import * as ns` / `export * as ns` from `bun build` currently accept `ns.x = 1` silently; `--no-deprecated-namespace-object-setters` (or `deprecatedNamespaceObjectSetters: false`) opts into the future default now (v1.4.1+)
 19. **`bun run --filter`, `--workspaces`, `--parallel`, and `--sequential` ignored an auto-discovered `bunfig.toml`** before 1.4.1 unless `--config` was passed; `bun run` also reused a stale transpile cache for files of 4 KiB or more after `[define]` or `--drop` changed
 20. **Bun 1.4.1's `bun build` could rename a nested `var` onto a `let` in the same block**, so bundles importing Elysia failed to load with `SyntaxError: Cannot declare a var variable that shadows a let/const/class variable`, and a `let` could take a parameter's or `catch` binding's name and compute wrong values. Fixed in 1.4.2 -- upgrade rather than patch the output, and do not pin 1.4.1 for bundling
-21. **A `check` script shadows `bun check` (v1.4.3+).** When `package.json` defines `check`, `bun check` runs it -- also from inside other scripts, so `bun init`'s `"typecheck": "bun check"` then runs the lint script. `bun --check` type checks regardless: use it in scripts. On an older Bun, `"check": "bun check"` calls itself forever
+21. **A `check` script shadows `bun check` (v1.4.3+).** When `package.json` defines `check`, `bun check` runs it -- from other scripts too, except those the `check` script itself starts -- so `bun init`'s `"typecheck": "bun check"` then runs the lint script. `bun --check` type checks regardless: use it in scripts. On an older Bun, `"check": "bun check"` calls itself forever
 22. **`@types/bun` lags every Bun release**, often by a day or more, so `bun check` rejects the newest APIs (`TS2339`, `TS2353`). Depend on `bun-types@<runtime-version>` with `"types": ["bun-types"]` instead; installing `bun-types` beside `@types/bun` does not change what gets type checked
 23. **Installs no longer cache what they skip (v1.4.3+).** A `--production` or `--omit` install without a lockfile downloads no tarballs for the dropped groups, so it cannot warm a cache for a later full `--offline` install. Warm it with an install that places the same packages, on the same platform
 24. **`--disallow-code-generation-from-strings` is enforced as of 1.4.3** -- Bun accepted and ignored it before. `eval()` and `new Function()` now throw `EvalError` process-wide, Workers included; `=strict` also blocks `node:vm`, `data:`/`blob:` imports, and plugins that return source text, and refuses `--inspect`
