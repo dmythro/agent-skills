@@ -36,6 +36,8 @@ bun run [flags] <script|file> [args...]
 | `--silent` | Don't echo script name to stderr |
 | `--env-file path` | Load env file(s); repeatable, left takes priority. Pipes, FIFOs, and `/dev/stdin` are accepted (v1.4.1+) |
 | `--no-ffi-cc` | Make `cc()` from `bun:ffi` throw `ERR_FFI_CC_DISABLED`; `--no-addons` disables it too (v1.4.1+) |
+| `--check` | Type check first; nothing runs on a type error. A file checks itself and its imports; a `package.json` script checks the whole project (v1.4.3+) |
+| `--disallow-code-generation-from-strings[=strict]` | Make `eval()` and `new Function()` throw `EvalError`; `=strict` also blocks `node:vm`, `data:` imports, and the other string-to-code paths -- see below (v1.4.3+) |
 | `--shell bun\|system` | Which shell to use for scripts (macOS/Linux default: system; Windows: bun) |
 | `--bun` | Force Bun runtime instead of Node.js |
 | `--cwd path` | Set working directory |
@@ -56,6 +58,10 @@ When you run `bun <name>`:
 
 - `--watch` — Kills and restarts the process on file changes. Clean state.
 - `--hot` — Reloads modules in-place without restarting. Preserves global state, open connections, etc. Uses `module.hot` API for cleanup handlers.
+
+Add `--check` (v1.4.3+) to type check before every restart: `bun --watch --check src/index.ts`.
+After a type error Bun waits for the next change instead of running the file. `--hot --check`
+restarts the process like `--watch`, so the check can run first.
 
 ### Pre/Post Scripts
 
@@ -279,3 +285,40 @@ pre-populated values as shell overrides. `bun file.js` still loads them. A `pack
   }
 }
 ```
+
+## Blocking Code Generation From Strings (v1.4.3+)
+
+`--disallow-code-generation-from-strings` makes `eval()` and the `Function` constructors throw a
+catchable `EvalError`, for the whole process; `=strict` extends that to every way a string
+becomes code. Bun 1.4.2 and earlier accepted the flag and ignored it.
+
+```bash
+bun --disallow-code-generation-from-strings server.ts          # eval() and the Function constructors, as in Node
+bun --disallow-code-generation-from-strings=strict server.ts   # every way a string becomes code (Bun only)
+```
+
+| Code compiled from a string | Flag | `=strict` |
+|---|---|---|
+| `eval()`, `new Function()`, and the async/generator function constructors | refused | refused |
+| `node:vm`: `Script`, `runIn*Context`, `compileFunction`, `SourceTextModule` | allowed | refused |
+| `import()` / `require()` of a `data:` or `blob:` URL, `new Worker(code, { eval: true })` | allowed | refused |
+| `module._compile()`, so `require.extensions` transpilers (`ts-node`, `@babel/register`) | allowed | refused |
+| A plugin `onLoad` returning `contents` for the `js`/`jsx`/`ts`/`tsx` loaders | allowed | refused |
+| The inspector: `--inspect*` exits at startup, `inspector.open()` throws | allowed | refused |
+
+- **Nothing turns it off.** Every `Worker`, `ShadowRealm`, and `Bun.ModuleGraph` gets the
+  process's level. A `Worker` given the flag in its own `execArgv` throws
+  `ERR_WORKER_INVALID_EXEC_ARGV`, so `new Worker(file, { execArgv: process.execArgv })` throws in
+  a process that has the flag.
+- **Still works:** importing files, `new Worker(file)`, `JSON.parse()`, WebAssembly, native
+  addons, and `bun:ffi`. A library that probes with `try { new Function("") } catch {}` takes its
+  fallback path.
+- **Bake it into an executable** with
+  `--compile-exec-argv="--disallow-code-generation-from-strings=strict"`. Write the value with
+  `=`: with a space, `strict` becomes a separate argument and the executable silently runs at
+  the lower level. The embedded level is a floor -- `BUN_OPTIONS` can raise it, not lower it. A
+  literal `import("data:...")` is bundled at build time and still loads.
+- **Assert it at startup**:
+  `process.execArgv.includes("--disallow-code-generation-from-strings=strict")`.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/code-generation-from-strings.mdx`

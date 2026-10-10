@@ -29,8 +29,9 @@ bun test [flags] [file/dir patterns...]
 | `--watch` | Re-run on file changes |
 | `--update-snapshots` | Update snapshot files |
 | `--preload module` | Preload script before tests |
+| `--check` | Type check the test files and everything they import first; no test runs on a type error (v1.4.3+). Missing from the help's flag list, shown in its examples |
 | `--coverage` | Enable code coverage |
-| `--coverage-reporter type` | `text` and/or `lcov` only -- **there is no `json`** |
+| `--coverage-reporter type` | `text` and/or `lcov` only -- **there is no `json`**. Implies `--coverage` (v1.4.3+; before, it ran the tests and wrote no report) |
 | `--coverage-dir path` | Coverage output directory |
 | `--reporter name` | `junit` (requires `--reporter-outfile`) or `dots` only -- **not** `default`, `spec`, `tap`, or `json` |
 | `--reporter-outfile path` | Output file, required with `--reporter=junit` |
@@ -319,6 +320,7 @@ global is defined without importing (v1.3.1+).
 
 ```typescript
 import { mock, spyOn, jest } from 'bun:test'
+import { foo } from './module'   // imported before mocking -- the async-factory case below
 
 // Mock function
 const fn = mock(() => 42)
@@ -339,6 +341,10 @@ mock.module('module-name', () => ({
   default: 42,
   namedExport: 'mocked',
 }))
+
+// Async factory for ./module, already imported above: returns a promise that resolves once
+// `foo` is replaced (v1.4.3+; it spun at 100% CPU before). await it in a test or hook.
+await mock.module('./module', async () => ({ foo: (await import('./fixture.json')).default.foo }))
 
 // Timer mocking (jest-compatible API)
 jest.useFakeTimers()

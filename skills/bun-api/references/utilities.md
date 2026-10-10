@@ -237,7 +237,7 @@ File contents may be `string`, `Blob` (including `Bun.file()`), `ArrayBufferView
 ### Compression Gotcha
 
 **`Bun.write(path, archive)` ignores the constructor's `compress` option** and writes a plain
-tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0 through v1.4.2: the output carries a POSIX
+tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0 through v1.4.3: the output carries a POSIX
 tar header, not the gzip magic bytes. Bun's own docs show this form as compressing -- it does
 not (tracked upstream: oven-sh/bun#30234). `.bytes()` and `.blob()` do honor `compress`:
 
@@ -451,6 +451,16 @@ Use the options-object form. Bun's prose docs also show a positional
 All operations are async and run on Bun's threadpool. Intended for local development tools,
 not production deployment secrets.
 
+On Windows a credential roams with a roaming user profile by default (`CRED_PERSIST_ENTERPRISE`).
+For a secret that belongs to one device, such as a refresh token that rotates on use, pass
+`persist: "local"` (v1.4.3+). macOS and Linux ignore it, but any value other than `"local"` or
+`"enterprise"` throws `ERR_INVALID_ARG_VALUE` on every platform. Each `set()` replaces the whole
+entry, so the latest call's `persist` applies.
+
+```typescript
+await secrets.set({ service: "my-app", name: "refresh-token", value: token, persist: "local" })
+```
+
 > **Reference**: `node_modules/bun-types/docs/runtime/secrets.mdx`
 
 ## Bun.XML (v1.4+)
@@ -508,6 +518,40 @@ Bun natively supports the TC39 `using` and `await using` declarations (v1.3.12+;
 
 `Bun.cron()` jobs and `Bun.WebView` are common examples of disposable Bun resources.
 
+## Bun.ModuleGraph (v1.4.3+, experimental)
+
+Runs many instances of one app in a single process -- per-tenant module state without a Worker
+per tenant. Each graph evaluates the modules it imports afresh (top-level state, its own
+`require.cache` and `import.meta`) while sharing parsed code and bytecode with the host and
+other graphs; ES modules share JIT code too.
+
+```typescript
+const graph = new Bun.ModuleGraph({
+  // free identifiers in the graph's modules: here a tenant-specific `process`
+  globals: { process: Object.create(process, { env: { value: { TENANT: 'a' }, enumerable: true } }) },
+  onError: (error, kind) => console.error('tenant a', kind, error),   // instead of the process-wide handlers
+})
+
+const app = await graph.import('./app.ts')           // the first import is the graph's main module
+const res = await graph.run(() => app.handle(req))   // what handle() opens belongs to the graph
+graph.dispose()                                      // or: using graph = new Bun.ModuleGraph(...)
+```
+
+- **Call into the graph through `run()`.** A function runs in its caller's context:
+  `app.start()` from the host opens host-owned timers and sockets, while
+  `graph.run(() => app.start())` opens graph-owned ones. `Bun.ModuleGraph.current` is the graph
+  the caller runs in, `undefined` in the host.
+- **`dispose()` acts like `worker.terminate()`.** It closes the graph's timers, servers, sockets,
+  `fetch()` requests, child processes, and workers, settles no pending promise, and makes
+  `graph.import()` / `graph.run()` throw `ERR_INVALID_STATE`. A host that may dispose while
+  awaiting `graph.run(...)` must race it against a promise of its own.
+- **Not a sandbox.** `globalThis`, `process` (unless replaced through `globals`), plugins,
+  native addons, and `http.globalAgent` are shared; synchronous calls run to completion; and
+  `node:fs` descriptors and `node:quic` endpoints survive `dispose()`. Use it to separate
+  instances of code you trust.
+
+> **Reference**: `node_modules/bun-types/docs/runtime/module-graph.mdx`
+
 ## Bun.wrapAnsi() / Bun.sliceAnsi()
 
 ANSI-aware string manipulation for terminal output.
@@ -564,6 +608,26 @@ Bun.zstdCompressSync(data, { level: 19 })
 // Default level: 3
 Bun.zstdCompressSync(data)
 ```
+
+### CompressionStream Levels (v1.4.3+)
+
+`CompressionStream` takes a second options argument: `level` picks the compression level and
+`highWaterMark` (Bun extension, default 64 KiB) bounds output per step. Omitting `level` keeps
+each format's default -- zlib's default, brotli quality 11 (very slow for large dynamic
+responses), zstd 3.
+
+| Format | `level` range |
+|---|---|
+| `gzip`, `deflate`, `deflate-raw` | 0-9 |
+| `brotli` | 0-11 |
+| `zstd` | 1-22 |
+
+```typescript
+const compressed = Bun.file('dump.json').stream().pipeThrough(new CompressionStream('brotli', { level: 4 }))
+new CompressionStream('gzip', { level: 10 })   // RangeError: The compression level must be an integer between 0 and 9 for gzip
+```
+
+Bun 1.4.2 accepts `level` and silently ignores it: output size is identical at every level.
 
 ## Bun.Glob
 

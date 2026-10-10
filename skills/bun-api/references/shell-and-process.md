@@ -175,7 +175,7 @@ interface SpawnOptions {
   stdin?: 'pipe' | 'inherit' | 'ignore' | null | BunFile | Blob | Response | ReadableStream | ArrayBuffer | Uint8Array | number
   stdout?: 'pipe' | 'inherit' | 'ignore' | null | BunFile | number
   stderr?: 'pipe' | 'inherit' | 'ignore' | null | BunFile | number
-  onExit?: (proc: Subprocess, exitCode: number | null, signalCode: string | null, error: Error | undefined) => void
+  onExit?: (proc: Subprocess, exitCode: number | null, signalCode: NodeJS.Signals | number | null, error: Error | undefined) => void
   windowsHide?: boolean
   windowsVerbatimArguments?: boolean
   ipc?: (message: any, subprocess: Subprocess) => void  // IPC handler
@@ -193,7 +193,7 @@ interface Subprocess {
   readonly stderr: ReadableStream | undefined // If stderr: 'pipe'
   readonly exited: Promise<number>           // Exit code promise
   readonly exitCode: number | undefined      // Available after exit
-  readonly signalCode: string | undefined    // If killed by signal
+  readonly signalCode: NodeJS.Signals | number | null  // If killed by signal; a nameless signal is its number
   readonly killed: boolean
 
   kill(signal?: number | string): void       // Send signal

@@ -46,7 +46,7 @@ Without `using`, call `view.close()` when done.
 | `type(text)` | Type text into the focused element |
 | `press(key, { modifiers })` | Press a key with optional modifiers |
 | `scroll(dx, dy)` / `scrollTo(selector)` | Scroll by delta or to an element |
-| `goBack()` / `goForward()` / `reload()` | History navigation |
+| `goBack()` / `goForward()` / `reload()` | History navigation. `bun-types` before 1.4.3 declared `back()` / `forward()`, which do not exist at runtime |
 | `resize(w, h)` | Resize the viewport |
 | `cdp(method, params)` | Raw Chrome DevTools Protocol call |
 | `close()` | Close the view (or use `await using`) |

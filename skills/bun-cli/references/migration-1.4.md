@@ -1,8 +1,9 @@
 # Bun 1.3 to 1.4: CLI, Package Manager, and Test Runner Changes
 
 **What changed under existing projects.** Bun's shipped docs describe the current state only --
-this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1 and
-1.4.2 changes at the end. Runtime and API changes live in the `bun-api` skill's `references/migration-1.4.md`.
+this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1,
+1.4.2, and 1.4.3 changes at the end. Runtime and API changes live in the `bun-api` skill's
+`references/migration-1.4.md`.
 
 Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
 
@@ -241,3 +242,114 @@ rather than work around them:
   `bun.lockb` or a cached registry manifest stored a package-name hash that did not match the
   name. Fixed in 1.4.2; on an older runtime, delete the cached manifest (`bun pm cache rm`) or
   migrate the binary lockfile to `bun.lock`.
+
+## 1.4.3
+
+`bun check` and `--check` on run, test, and build (see `type-checking.md`), profile-guided
+bytecode layout, and an enforced `--disallow-code-generation-from-strings`. Verified on the
+1.4.3 runtime except items marked (release notes).
+
+### New Commands and Flags
+
+- `bun check` (`-p`, `-b`, `--pretty` / `--no-pretty`, `--all`, `--threads`, `--timing`, and any
+  compiler option as a flag), plus `--check` on `bun <file>`, `bun run`, `bun test`,
+  `bun build`, and `Bun.build({ check: true })`.
+- `bun build`: `--bytecode-order`, `--compile-jit-policy`, `--no-optimize-bytecode`, and the
+  `[hash9]` through `[hash13]` naming tokens.
+- `bun init` adds `"typecheck": "bun check"`, and the `CLAUDE.md` it copies says `bun check`
+  instead of `tsc --noEmit`. It still adds `@types/bun` as `latest`, which resolves to the
+  previous release for a day or more after each Bun release -- switch to `bun-types` (SKILL.md,
+  "Check the Version").
+- `--disallow-code-generation-from-strings` is enforced, and `=strict` extends it to `node:vm`,
+  `data:` imports, and plugins returning source text. Bun 1.4.2 accepted the flag and ignored it,
+  so a deployment that already passes it starts throwing `EvalError` wherever a dependency calls
+  `eval()` or `new Function()` (`running-and-execution.md`).
+
+### Package Manager
+
+- **Installs fetch only what they place.** Without a lockfile, `bun install` and `bun add` skip
+  the tarballs of groups dropped by `--production` / `--omit`, of other platforms' packages, and
+  of bundled dependencies -- so those never reach the cache. A cache warmed by a `--production`
+  install then fails a full `--offline` install (`--offline: "left-pad" is not in the cache`;
+  1.4.2 cached everything). Warm `--offline` caches with an install that places the same
+  packages, on the same platform.
+- `--cafile`, `--ca`, and bunfig `cafile` / `ca` apply to an https registry reached through
+  `HTTPS_PROXY`; a self-signed registry behind a proxy failed with
+  `DEPTH_ZERO_SELF_SIGNED_CERT` (release notes).
+- `bun update <name>` no longer exits 0 and rewrites `package.json` when `<name>` is an optional
+  dependency behind an `npm:` alias whose download failed (release notes).
+
+### Bundler
+
+- **`Bun.build({ tsconfig })` is honored.** It was silently ignored in favor of the
+  `tsconfig.json` Bun found itself, so a build that passes a custom file now gets its `paths`,
+  JSX, and decorator settings -- output can change. `--tsconfig-override` no longer prints
+  `Internal error: directory mismatch for directory`.
+- **`--jsx-runtime=solid` and bunfig `jsx = "solid"` are errors** (they were accepted).
+  tsconfig `jsxImportSource: "solid-js"` now selects the automatic runtime; it emitted
+  `React.createElement` calls before (release notes).
+- **Chunk names grow on collision.** Different chunks whose 8-character `[hash]` matched failed
+  large `--splitting` builds with `Multiple files share the same output path`; both now get
+  extra characters until they differ. 1.4.2 printed `[hash13]` literally and failed.
+- **Nothing folds into an entry chunk without `[hash]` in its name**; the shared code goes into
+  a hashed chunk. Loading such an entry with a query string (`index.js?v=1`) ran it twice -- a
+  1.4.1 regression. `--splitting` output snapshots may change (release notes).
+- **Metafile:** each split `import()` in `inputs` carries `entryPoint`, the `inputs` key of the
+  file it loads. `outputs[...].bytes` and `--metafile-md` counts are accurate.
+- **CommonJS default imports stay live.** A module whose default import is used as a value
+  (`fn(React)`, `Object.keys(React)`) or has a property deleted keeps its CommonJS wrapper, so
+  `Object.defineProperty`, `delete`, and `Object.freeze` on it affect later reads again -- a
+  1.4.1 regression (release notes).
+- Builds with many entry points use far less memory (800 entries into one 200,000-export file:
+  2,121 MB to 276 MB peak), fixing a 1.4.1 regression that could abort on Windows with
+  `memory allocation of N bytes failed` (release notes).
+
+### Executables (`--compile`)
+
+- `--compile --bytecode` executables start faster without any flag, and `--bytecode` output is
+  3-6% smaller. Profile-guided layout and the JIT policy are opt-in
+  (`bundling-and-compilation.md`, "Startup Tuning").
+- `--compile --bytecode --format=esm --splitting` builds are reproducible again (release notes).
+
+### Test Runner
+
+- **Negated asymmetric matchers are correct for primitives.**
+  `expect(5).toEqual(expect.not.any(Number))` passed on 1.4.2 and fails on 1.4.3, as do
+  `expect.resolvesTo.any()` / `expect.rejectsTo.any()` misuses -- a suite that leaned on the bug
+  turns red on upgrade.
+- `--coverage-reporter` implies `--coverage`; `--coverage-reporter=lcov` alone ran the tests and
+  wrote no report.
+- `mock.module()` with an async factory for an already-imported module returns a promise that
+  resolves once the exports are replaced -- `await` it. It spun at 100% CPU before (release
+  notes).
+- `bun test --parallel` exits 143 on SIGTERM instead of 130 (release notes).
+- Under `--isolate` / `--parallel`, a promise, callback, or `FinalizationRegistry` callback left
+  by a finished file no longer runs inside the next file (release notes).
+
+### Platform
+
+- `oven/bun:alpine` is based on Alpine 3.24.
+- Bundled root certificates follow NSS 3.128: Entrust Root Certification Authority, ePKI, Atos
+  TrustedRoot 2011, and SecureSign Root CA12 are removed (SECOM and Telia added). A registry or
+  server chaining only to a removed root fails verification -- pass `--cafile` / `tls.ca`, or
+  run with `--use-system-ca` (release notes).
+
+### Regressions Fixed in 1.4.3
+
+Upgrade instead of working around these (release notes):
+
+- **1.4.0, Linux under seccomp** (Docker, Kubernetes): a profile that fails `faccessat2` with
+  `EPERM` / `EINVAL` made a hoisted install from a warm cache fail with
+  `package was not found in the cache`, and one that denies `prlimit64` made `bun install`,
+  `bun build`, and `bun run <script>` panic.
+- **1.4.0:** `bun install` rejected a root `file:` package's relative `file:` dependencies that
+  point outside the project; `bun pm pack` and `bun publish` panicked with `int cast` on a failed
+  tarball write (now `ENOSPC`, exit 1).
+- **1.4.1 bundler:** a bundled `const { v } = require("./b.js")` of an ES module inside an import
+  cycle saw a later value of `v`; `--minify-syntax` output threw `ReferenceError: m is not
+  defined` after `const m = await import(...)`; `--react-compiler` broke a component calling
+  `require()` / `import()` in its body; and with `--splitting`, a chunk shared by several entries
+  could order an import cycle so a hoisted `var` read `undefined` (opencode hit it on 1.4.1 and
+  1.4.2).
+- **1.3.14, Linux:** `bun build --compile` run from inside a compiled executable
+  (`BUN_BE_BUN=1` or `Bun.build({ compile })`) wrote a binary that crashed at startup.

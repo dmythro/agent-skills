@@ -272,7 +272,7 @@ Cheapest first, stopping at the first failure and attributing it before moving o
 
 ```bash
 bun install --frozen-lockfile     # npm ci / pnpm install --frozen-lockfile / yarn install --immutable
-bun run typecheck                 # or: bunx tsc --noEmit
+bun run typecheck                 # or: bun --check (Bun >= 1.4.3, never runs a "check" script), bunx tsc --noEmit
 bun run lint
 bun run build
 bun test                          # or the project's own test script

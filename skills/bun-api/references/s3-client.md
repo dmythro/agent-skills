@@ -16,6 +16,12 @@ Added since v1.3.14: `requestPayer: true` on the client or per operation sends
 `checksumAlgorithme` still resolves but is non-enumerable, so it no longer appears in
 `Object.keys()` or `JSON.stringify()` output.
 
+**Changed in 1.4.3:** S3 requests go through the proxy that `HTTP_PROXY` / `HTTPS_PROXY` /
+`ALL_PROXY` / `NO_PROXY` select for the endpoint, as `fetch()` does. Multipart uploads stream:
+`Bun.write(s3file, Bun.file(path))` and `s3file.writer()` held the whole payload in memory
+before (a 500 MB upload raised peak RSS by about 850 MB), and a `writer()` garbage-collected
+without `end()` leaked its buffer and left the multipart upload open -- still call `end()`.
+
 ### Credentials
 
 Bun reads S3 credentials from environment variables automatically:
