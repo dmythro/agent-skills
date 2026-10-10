@@ -61,8 +61,8 @@ Bun.serve({
 
 Replaces `express.static`, `serve-static`, and `sirv`. Files stream with `sendfile`, and Bun
 handles `Content-Type`, `Last-Modified`, a weak `ETag`, `If-None-Match`/`If-Modified-Since`
-(`304`), and `Range` (`206`). A directory without a trailing slash gets a `301`; with one,
-`index.html` is served. Missing files return `404`.
+(`304`), `Range` (`206`), and `If-Range` (v1.4.3+, see Range Requests). A directory without a
+trailing slash gets a `301`; with one, `index.html` is served. Missing files return `404`.
 
 Paths are percent-decoded once and opened relative to `dir`; non-canonical paths (`.`, `..`,
 empty segments, `%2F`) are rejected with `404`, and on Linux the open uses
@@ -264,6 +264,25 @@ Bun.serve({
 })
 ```
 
+### If-Range (v1.4.3+)
+
+A client resuming a download sends `Range` with `If-Range` set to the `Last-Modified` date of
+its first response. Bun returns the range (`206`) only if the file is unchanged, and the full
+body (`200`) otherwise, so a resumed download never splices two versions. This covers
+`Bun.file()` responses and `{ dir }` routes. Only the date form matches: a `Bun.file()` response
+carries no `ETag`, and a directory route's `ETag` is weak, which never matches `If-Range`. Bun
+1.4.2 ignored `If-Range` and always answered `206`.
+
+```typescript
+const first = await fetch('http://localhost:3000/big.bin')
+const lastModified = first.headers.get('last-modified')!
+// ...connection drops after 1000 bytes...
+const rest = await fetch('http://localhost:3000/big.bin', {
+  headers: { Range: 'bytes=1000-', 'If-Range': lastModified },
+})
+rest.status   // 206 if unchanged, 200 with the whole file if it changed
+```
+
 ### Conditional Requests (v1.4+)
 
 Static routes, directory routes, and `Bun.file()` bodies also handle conditional requests:
@@ -296,6 +315,13 @@ Bun.serve({
 Manual throttling written for 1.3 can usually be removed where every stage of the pipeline
 honors backpressure. Buffered consumers (`.text()`,
 `.json()`, `.arrayBuffer()`) opt out and still receive the whole body at once.
+
+As of v1.4.3, a `new Response(asyncIterable)` body calls the iterator's `return()` as soon as the
+consumer leaves -- a client disconnect, a `break`, a failed write -- so a generator's `finally`
+block runs; it kept pulling before. A generator parked in an `await` stays there until it
+settles, so pass `req.signal` to whatever it waits on. A `ReadableStream` that an earlier
+response already sent cannot back a second `Response`: Bun now errors where it answered `200`
+with an empty body.
 
 ## TLS / HTTPS
 

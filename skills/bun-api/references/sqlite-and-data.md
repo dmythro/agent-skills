@@ -2,7 +2,15 @@
 
 ## bun:sqlite
 
-Built-in SQLite3 with zero dependencies. Faster than `better-sqlite3`. Bundles SQLite 3.53.0 (as of Bun v1.3.14).
+Built-in SQLite3 with zero dependencies. Faster than `better-sqlite3`. Bundles SQLite 3.53.4 on
+Linux and Windows (as of Bun v1.4.3); on macOS it loads the system SQLite (3.54.0 on macOS 27),
+which `Database.setCustomSQLite(path)` replaces before the first `new Database()`.
+
+**Changed in 1.4.3:** statements with more than 65535 parameters bind correctly -- a 70,000-value
+`IN (...)` threw `expected 4464 values, received 70000`, and named parameters past the limit were
+silently bound as `NULL`. `Database.deserialize()` accepts an `ArrayBuffer`, a detached
+TypedArray binds an empty BLOB (was `NULL`), and a 2 GiB `Uint8Array` throws `SQLITE_TOOBIG`.
+A Worker may repeat `setCustomSQLite()` with the path the process already loaded.
 
 > Full API: `node_modules/bun-types/docs/runtime/sqlite.mdx`.
 

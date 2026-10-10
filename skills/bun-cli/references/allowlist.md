@@ -11,6 +11,11 @@ obvious broad patterns unsafe:
 
 Use the exact patterns below for those two.
 
+**`bun check` (v1.4.3+) is not always read-only.** It type checks and never writes files --
+unless `package.json` defines a `check` script, which it then runs like `bun run check`. It
+therefore sits with the script patterns below, not the inspection list. `bun --check <file>`
+runs the file after checking it, so it is never read-only.
+
 ## Read-Only / Inspection
 
 ```json
@@ -46,10 +51,11 @@ These run project-defined scripts — safe if your scripts are read-only:
 
 ```json
 "Bash(bun run:*)",
-"Bash(bun test:*)"
+"Bash(bun test:*)",
+"Bash(bun check:*)"
 ```
 
-Note: `bun run` covers all package.json scripts including `dev`, `build`, `lint`, `check-types`, etc. Only allowlist this if you trust your project's scripts.
+Note: `bun run` covers all package.json scripts including `dev`, `build`, `lint`, `check-types`, etc. Only allowlist this if you trust your project's scripts. `bun check` belongs here because a `check` script takes precedence over the type checker.
 
 ## Recommended: Broad Patterns
 
@@ -74,7 +80,8 @@ Note: `bun run` covers all package.json scripts including `dev`, `build`, `lint`
       "Bash(bun dedupe --check:*)",
       "Bash(bun prune --dry-run:*)",
       "Bash(bun run:*)",
-      "Bash(bun test:*)"
+      "Bash(bun test:*)",
+      "Bash(bun check:*)"
     ]
   }
 }

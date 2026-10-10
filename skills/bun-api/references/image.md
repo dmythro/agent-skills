@@ -41,6 +41,13 @@ is bundled.
 await new Bun.Image('photo-cmyk.jpg').resize(400, 400).webp().bytes()  // v1.4.2+
 ```
 
+**Damaged JPEGs (v1.4.3+).** A JPEG that libjpeg-turbo can finish with only a warning -- stray
+bytes between segments, a missing end-of-image marker, truncated scan data -- decodes instead
+of rejecting with `ERR_IMAGE_DECODE_FAILED` (verified with a truncated file and one missing its
+end marker: 1.4.2 rejects both). Blocks with no data come out flat grey; a progressive file cut
+after its first scan returns the whole picture at lower detail. `metadata()` reads only the
+header, so it can resolve for a file whose terminal call still rejects.
+
 ## Clipboard (v1.4+)
 
 ```typescript

@@ -1,26 +1,27 @@
 ---
 name: bun-cli
 description: >-
-  Bun CLI reference for package management, script running, testing, bundling,
-  and compilation. Covers bun install/add/remove/update, bun run, bun test, bun build, bunx,
-  bun patch, bun audit fix, bun dedupe, bun prune, bun why, bun pm, bun repl,
-  bunfig.toml, bun.lock, workspace catalogs, isolated installs and the global virtual store,
-  offline installs, self-contained workspaces, zero-config frontend dev, parallel/sequential
-  execution, test sharding and parallelism, code splitting, bytecode and cross-compiled
-  executables, compile-to-browser, and replacing npm/npx/yarn/pnpm
-  with bun equivalents. Use for package management, lockfile issues, test runner config,
-  bundler setup, or frontend dev server
+  Bun CLI reference for package management, script running, type checking, testing, bundling,
+  and compilation. Covers bun install/add/remove/update, bun run, bun check and --check,
+  bun test, bun build, bunx, bun patch, bun audit fix, bun dedupe, bun prune, bun why, bun pm,
+  bun repl, bunfig.toml, bun.lock, workspace catalogs, isolated installs and the global virtual
+  store, offline installs, self-contained workspaces, zero-config frontend dev,
+  parallel/sequential execution, test sharding and parallelism, code splitting, bytecode,
+  profile-guided bytecode layout and cross-compiled executables, compile-to-browser, and
+  replacing npm/npx/yarn/pnpm and tsc --noEmit with bun equivalents. Use for package
+  management, lockfile issues, type checking, test runner config, bundler setup, or frontend
+  dev server
   Not for Bun runtime APIs (Bun.file(), Bun.$(), Bun.sql()) -- use bun-api skill
 ---
 
 # Bun CLI
 
-Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, and test runner. Bun runs TypeScript natively — `bun file.ts` directly, no compile step, no `tsc`, no `ts-node`. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
+Bun is an all-in-one JavaScript/TypeScript runtime, package manager, bundler, test runner, and (v1.4.3+) type checker. Bun runs TypeScript natively — `bun file.ts` directly, no compile step, no `tsc`, no `ts-node` — and `bun check` replaces `tsc --noEmit`. Always use `bun` instead of `node`, `npm`, `npx`, `yarn`, or `pnpm` in Bun projects.
 
-**Verified against Bun v1.4.2** (2026-09-05). Features are tagged with the version that
-introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`). Where a release changed existing behavior, both
-behaviors are stated so this skill stays correct on older projects -- run `bun --version`
-before relying on a version-tagged item.
+**Verified against Bun v1.4.3** (2026-10-10). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`, `v1.4.3+`). Where a release changed existing
+behavior, both behaviors are stated so this skill stays correct on older projects -- run
+`bun --version` before relying on a version-tagged item.
 
 ## Check the Version, Then Check Bun's Docs
 
@@ -38,9 +39,18 @@ node_modules/bun-types/docs/runtime/bunfig.mdx
 node_modules/bun-types/CLAUDE.md             # Bun's own agent rules
 ```
 
-1. **Verify the docs match the runtime.** Compare `bun --version` to
-   `node_modules/bun-types/package.json`. `bun init` installs `@types/bun@latest`, which lags
-   behind releases -- correct it with `bun add -d bun-types@<runtime-version>`.
+1. **Depend on `bun-types`, not `@types/bun`.** `bun-types` ships with every Bun release and
+   carries both the docs and the types. `@types/bun` lags every release, often by a day or
+   more, yet `bun init` adds it as `latest` -- so `bun check` rejects the newest APIs
+   (`TS2339`, `TS2353`). Adding `bun-types` beside `@types/bun` fixes only the docs path:
+   type checking keeps `@types/bun`'s nested, pinned copy. Switch both:
+
+   ```bash
+   bun remove @types/bun
+   bun add -d bun-types@$(bun --version)   # then "types": ["bun-types"] in tsconfig.json
+   ```
+
+   Compare `bun --version` with `node_modules/bun-types/package.json` before trusting either.
 2. **Open by explicit path.** With the global virtual store enabled, `node_modules/bun-types`
    is a symlink, so `find node_modules -name '*.mdx'` and `rg <pattern> node_modules` return
    nothing. `find node_modules/bun-types/docs -name '*.mdx'` works.
@@ -54,6 +64,7 @@ node_modules/bun-types/CLAUDE.md             # Bun's own agent rules
 | Install behavior, lockfile, linkers | `pm/cli/install.mdx`, `pm/lockfile.mdx`, `pm/isolated-installs.mdx`, `pm/global-store.mdx` |
 | Workspaces, catalogs, filters, overrides | `pm/workspaces.mdx`, `pm/catalogs.mdx`, `pm/filter.mdx`, `pm/overrides.mdx` |
 | Registries, auth, lifecycle scripts | `pm/scopes-registries.mdx`, `pm/npmrc.mdx`, `pm/lifecycle.mdx` |
+| Type checking (`bun check`, `--check`) | `runtime/check.mdx` |
 | Test runner | `test/index.mdx`, `test/discovery.mdx`, `test/configuration.mdx`, `test/code-coverage.mdx`, `test/reporters.mdx`, `test/mocks.mdx` |
 | Bundler, executables, loaders | `bundler/index.mdx`, `bundler/executables.mdx`, `bundler/loaders.mdx`, `bundler/plugins.mdx` |
 | Config | `runtime/bunfig.mdx` |
@@ -77,6 +88,7 @@ A project uses Bun if any of these are present:
 - Execute binaries: `bunx tool` (not `npx tool`)
 - Install packages: `bun add pkg` (not `npm install pkg`)
 - Run tests: `bun test` (not `npx jest` or `node --test`)
+- Type check: `bun check` (not `tsc --noEmit`; v1.4.3+)
 
 ## Read-Only Commands (safe, no side effects)
 
@@ -100,6 +112,7 @@ A project uses Bun if any of these are present:
 | `bun dedupe --check` | Exit 1 if the lockfile has removable duplicates (v1.4+) |
 | `bun prune --dry-run` | Show what would be removed from `node_modules` (v1.4+) |
 | `bun test` | Run test suite |
+| `bun --check` | Type check the whole project and exit; never writes files or runs a script (v1.4.3+). `bun check` does the same unless `package.json` defines a `check` script, which it runs instead |
 | `bun run lint` | Run linter (project-specific) |
 | `bun run check-types` | Type checking (project-specific) |
 
@@ -120,6 +133,7 @@ A project uses Bun if any of these are present:
 | `node file.js` | `bun file.js` |
 | `node --watch file.js` | `bun --watch file.js` |
 | `npm test` | `bun test` |
+| `tsc --noEmit` | `bun check` (v1.4.3+) |
 | `npm pack` | `bun pm pack` |
 | `npm publish` | `bun publish` |
 | `npm info pkg` | `bun info pkg` |
@@ -153,6 +167,13 @@ bun install --prefer-offline   # Cached metadata regardless of age; download onl
 missing package fails by name (`no cached manifest for 'left-pad'`). `--prefer-offline` skips
 the staleness check but still fetches uncached packages. Both have `bunfig.toml` forms:
 `[install] offline = true` and `[install] prefer = "offline"`.
+
+**Changed in 1.4.3 -- installs cache only what they place.** Without a lockfile, `bun install`
+and `bun add` no longer download tarballs that never land in `node_modules`: groups dropped by
+`--production` or `--omit`, other platforms' optional packages, bundled dependencies. A cache
+warmed by `bun install --production` then fails a full `--offline` install with
+`"left-pad" is not in the cache`. Warm an offline cache with an install that places at least
+the same packages, on the same platform.
 
 ### Adding/Removing Packages
 
@@ -332,6 +353,8 @@ bun --env-file .env.local --env-file .env file.ts  # Multiple env files
 bun --no-env-file file.ts      # Skip automatic .env loading (CI/prod; `env = false` in bunfig)
 bun --env-file=<(op inject -i .env.tpl) file.ts   # 1Password CLI renders dotenv lines; any pipe/FIFO//dev/stdin works (v1.4.1+)
 bun --no-ffi-cc file.ts        # cc() from bun:ffi throws ERR_FFI_CC_DISABLED (v1.4.1+)
+bun --check file.ts            # Type check the file and its imports first; nothing runs on an error (v1.4.3+)
+bun --disallow-code-generation-from-strings=strict server.ts   # eval/new Function/node:vm/data: imports throw EvalError (v1.4.3+)
 bun --no-orphans run dev       # Die with the parent, SIGKILL every descendant on exit
 bun repl                       # Native REPL: highlighting, history, completion (v1.3.10+)
 bun repl -p '{ a: 1 }'         # Evaluate and print with REPL semantics
@@ -392,6 +415,40 @@ Bun automatically transpiles TypeScript, JSX, TSX, and CSS linked from the HTML.
 
 > **Reference**: See `references/running-and-execution.md` for complete details.
 
+## Type Checking (v1.4.3+)
+
+`bun check` is a built-in port of TypeScript 7: it reads `tsconfig.json`, reports what `tsc`
+reports, uses every CPU core, needs no `typescript` package, and never writes files. Exit 1 on
+any error, 0 when clean, and 1 when there is nothing to check.
+
+```bash
+bun check                          # the project of the nearest tsconfig.json
+bun check src/index.ts             # one file and everything it imports
+bun check -b                       # every project in `references`, like tsc -b -- nothing pre-built
+bun --check src/index.ts           # type check, then run; nothing runs on an error
+bun test --check                   # no test runs on an error
+bun build --check ./app.ts --outdir dist   # nothing is written on an error
+bun --watch --check src/index.ts   # re-check before every restart (there is no bun check --watch)
+```
+
+- **Point `types` at `bun-types`.** With no Bun types, or a stale `@types/bun`, `Bun`,
+  `bun:test`, and every API newer than the installed types fail to check. See "Check the
+  Version" above.
+- **A `check` script wins.** When `package.json` defines `check`, `bun check` runs that script;
+  `bun --check` still type checks. Name the type-check script `typecheck`, as `bun init` does --
+  on an older Bun, `"check": "bun check"` calls itself forever.
+- **Agent output.** With `CLAUDECODE=1`, `AGENT=1`, or `REPL_ID=1` set, errors print as
+  `<error file= line= column= code=>` blocks with the source lines. `--no-pretty` gives one
+  `file(line,col): error TSxxxx: ...` line per error, the default when piped; the summary goes to
+  stderr.
+- **TypeScript 7 rules apply** whatever `typescript` is installed: `strict` is on, `types` is
+  empty unless listed, and a removed option (`baseUrl`, `moduleResolution: "node"`,
+  `target: "es5"`) stops the check before any file is checked.
+- **Keep `tsc` for `.d.ts` output** -- `bun check` emits nothing.
+
+> **Reference**: See `references/type-checking.md` for what `--check` covers, output formats,
+> monorepos, CI, and the TypeScript 5-to-7 migration table.
+
 ## Testing
 
 Bun includes a built-in test runner compatible with Jest-like syntax.
@@ -412,6 +469,7 @@ bun test --only                   # Run only tests marked with .only
 bun test --todo                   # Include .todo tests
 bun test --only-failures          # Print failures and the summary only
 bun test --pass-with-no-tests     # Exit 0 when nothing matches (monorepos)
+bun test --check                  # Type check test files + imports first; no test runs on an error (v1.4.3+)
 ```
 
 **`--filter` is not a test-name filter.** In `bun test`, `--filter` is another **file path**
@@ -429,6 +487,9 @@ bun test --coverage               # Enable code coverage
 bun test --coverage-reporter text # Coverage format: 'text' and/or 'lcov' -- there is no 'json'
 bun test --coverage-dir ./cov     # Output directory
 ```
+
+`--coverage-reporter` implies `--coverage` as of v1.4.3. Before, `--coverage-reporter=lcov`
+alone ran the tests and wrote no report.
 
 ### Parallelism, Sharding, Isolation
 
@@ -486,6 +547,7 @@ bun build ./src/index.ts --minify                   # Minify output
 bun build ./src/index.ts --sourcemap external        # Sourcemaps: external, inline, linked, none
 bun build ./src/index.ts --splitting                # Code splitting (ESM only)
 bun build ./src/index.ts --splitting --min-chunk-size=16384   # Fold tiny side-effect-free chunks into their loaders (v1.4.1+)
+bun build ./src/index.ts --outdir ./dist --check    # Type check first; nothing is written on an error (v1.4.3+)
 ```
 
 **Changed in 1.4.1 -- splitting output.** Code shared between an entry and its lazy routes stays
@@ -494,6 +556,14 @@ for every chunk an entry or `import()` loads (`--no-module-preload` to disable),
 turns `require()` of an ES module into its own chunk (`--no-split-require` to inline), and
 `export * as` / `const { x } = await import()` tree-shake unused exports -- `zod` and `effect`
 bundles shrink 50-80%. Snapshot tests of build output will change.
+
+**Changed in 1.4.3 -- chunk names.** Large `--splitting` builds no longer fail with
+`Multiple files share the same output path`: two different chunks whose 8-character `[hash]`
+collided now both get extra characters until they differ. `[hash9]` through `[hash13]` set a
+wider minimum (`[hash13]` is the full 64-bit hash; 1.4.2 printed the token literally and failed).
+Shared code no longer folds into an entry chunk whose name has no `[hash]`, so an entry loaded
+with a query string (`index.js?v=1`) cannot run twice -- a 1.4.1 regression. Each split
+`import()` in `metafile.inputs` names the file it loads in `entryPoint`.
 
 ### Standalone Executables
 
@@ -517,6 +587,7 @@ bun build ... --external pkg        # Exclude from bundle
 bun build ... --define 'KEY=VALUE'  # Define compile-time constants
 bun build ... --loader .ext=type    # Custom loaders (js, jsx, ts, tsx, json, css, text, file, base64, dataurl, binary)
 bun build ... --entry-naming [dir]/[name].[ext]   # Output naming pattern
+bun build ... --chunk-naming 'chunk-[hash13].[ext]'   # Wider minimum hash: [hash9]..[hash13] (v1.4.3+)
 bun build ... --public-path /cdn/   # Public path prefix for assets
 bun build ... --react-compiler      # React auto-memoization, no Babel/SWC (v1.4+)
 bun build ... --metafile meta.json  # esbuild-format build metadata
@@ -544,6 +615,23 @@ limits ahead-of-time compilation to N nesting levels (deeper functions compile o
 and cross-compiling with `--bytecode` works for every target, `bun-windows-x64` from macOS or
 Linux included, with byte-identical output.
 
+**Profile-guided bytecode layout (v1.4.3+).** `--bytecode-order` puts the bytecode a recorded
+run used at the front of a `--compile --bytecode` executable, so it reads and decodes less of
+itself (one large CLI: cold start 1.01 s to 0.53 s). It requires `--compile --bytecode`.
+
+```bash
+bun build ./src/cli.ts --compile --bytecode --outfile mycli                               # 1. build
+BUN_BYTECODE_ORDER_OUT=mycli.order ./mycli --help                                         # 2. run it as users do; written on exit
+bun build ./src/cli.ts --compile --bytecode --bytecode-order=mycli.order --outfile mycli  # 3. rebuild with the profile
+```
+
+Functions are matched by a hash of their syntax, so last week's profile still applies --
+commit or cache it. `--bytecode-order=a.order,b.order` takes several, most common first, and
+`bytecodeOrderStats()` from `bun:jsc` reports how much of a run the profile covered.
+`--compile-jit-policy <n>` starts the executable with JIT tier-up thresholds scaled by `n`, so
+run-once startup code stays in the interpreter; call `Bun.unsafe.setJITPolicy(1)` once the app
+is interactive. `--no-optimize-bytecode` skips the build-time bytecode optimizer.
+
 > **Reference**: See `references/bundling-and-compilation.md` for complete options.
 
 ## Project Initialization
@@ -562,6 +650,11 @@ bun create next-app my-app     # Example: create Next.js app
 substitution list, and the HTML-imports frontend pattern. Recommend running it in new Bun
 projects: it gives every agent working in the repo the same baseline, and points at the
 shipped docs.
+
+**Changed in 1.4.3:** `bun init` adds a `"typecheck": "bun check"` script, and the copied rules
+say `bun check` instead of `tsc --noEmit`. It still adds `"@types/bun": "latest"` with
+`"types": ["bun"]`, which resolves to the previous release for a day or more after each Bun
+release -- swap it for `bun-types` (see "Check the Version").
 
 **Changed in 1.4:** `bun init` writes `typescript: ^7` (it wrote `^5`, or nothing in the React
 templates), and with a non-TTY stdin (CI, a piped spawn) it behaves as `bun init -y` instead
@@ -632,6 +725,9 @@ Bun has many capabilities built in that eliminate the need for external packages
 ### Native TypeScript
 Bun runs `.ts`, `.tsx` files directly — no `tsc`, `ts-node`, or `tsx` needed. The transpiler is built into the runtime. Use `bun file.ts` to run any TypeScript file immediately.
 
+### Built-in Type Checker
+`bun check` (v1.4.3+) replaces `tsc --noEmit`, and `--check` gates `bun <file>`, `bun test`, and `bun build` on a clean type check — no `typescript` package needed. Keep `tsc` only to emit `.d.ts` files.
+
 ### Workspace Catalogs
 Bun supports `catalog:` protocol in `package.json` for centralized dependency version management across monorepo workspaces — no need for tools like `syncpack` or `manypkg`:
 
@@ -698,11 +794,11 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 5. **Workspace protocol**: Use `"workspace:*"` in package.json to reference workspace packages
 6. **Global binaries**: Installed with `bun add -g`, located in `~/.bun/bin/`
 7. **Node.js compatibility**: Bun implements most Node.js APIs but some edge cases differ. Check https://bun.sh/docs/runtime/nodejs-apis for compatibility
-8. **TypeScript**: Bun runs TypeScript natively with no compilation step. Uses its own transpiler (not tsc)
+8. **TypeScript**: Bun runs TypeScript natively with no compilation step. Uses its own transpiler (not tsc), and running never type checks -- use `bun check` or `--check` (v1.4.3+)
 9. **Auto-install**: Bun can auto-install missing packages on import (disabled by default, enable with `[install] auto = true` in bunfig.toml)
 10. **`bun run` vs `bun`**: `bun run script` runs a package.json script; `bun file.ts` runs a file directly. `bun script` tries script first, then falls back to file
 11. **`--filter` is not a name filter for tests.** In `bun test` it filters **file paths**, same as a positional argument (`-F` is rejected; workspace selection is `bun run --filter '*' test`). `bun test -t <regex>` (or `--grep`) filters test names. Getting this wrong matches nothing and exits 1 -- unless `--pass-with-no-tests` is set, which turns it into a green run that tested nothing
-12. **Coverage reporters are `text` and `lcov` only** -- `--coverage-reporter=json` is rejected
+12. **Coverage reporters are `text` and `lcov` only** -- `--coverage-reporter=json` is rejected. As of v1.4.3 the flag implies `--coverage`
 13. **`bunfig.toml` is strict TOML as of v1.4.** Unquoted values, missing newlines between pairs, and integers past `Number.MAX_SAFE_INTEGER` now fail at startup with a `SyntaxError`. `linker = isolated` must be `linker = "isolated"`
 14. **Bun invoked as `node` no longer loads `.env` (v1.4+).** Under `bun --bun`, `bunx --bun`, or a `node` symlink, a script calling `node` sees those variables as `undefined`. Pass `--env-file`, matching Node's behavior
 15. **The isolated linker is not on by default for existing projects** -- it is chosen by the lockfile's `configVersion`, not the Bun version. See "Install Layout" above
@@ -711,12 +807,17 @@ TC39 standard ES decorators supported natively (v1.3.10+) — no `experimentalDe
 18. **Bundled namespace objects will become getter-only.** `import * as ns` / `export * as ns` from `bun build` currently accept `ns.x = 1` silently; `--no-deprecated-namespace-object-setters` (or `deprecatedNamespaceObjectSetters: false`) opts into the future default now (v1.4.1+)
 19. **`bun run --filter`, `--workspaces`, `--parallel`, and `--sequential` ignored an auto-discovered `bunfig.toml`** before 1.4.1 unless `--config` was passed; `bun run` also reused a stale transpile cache for files of 4 KiB or more after `[define]` or `--drop` changed
 20. **Bun 1.4.1's `bun build` could rename a nested `var` onto a `let` in the same block**, so bundles importing Elysia failed to load with `SyntaxError: Cannot declare a var variable that shadows a let/const/class variable`, and a `let` could take a parameter's or `catch` binding's name and compute wrong values. Fixed in 1.4.2 -- upgrade rather than patch the output, and do not pin 1.4.1 for bundling
+21. **A `check` script shadows `bun check` (v1.4.3+).** When `package.json` defines `check`, `bun check` runs it; `bun --check` type checks regardless. Name the type-check script `typecheck` -- on an older Bun, `"check": "bun check"` calls itself forever
+22. **`@types/bun` lags every Bun release**, often by a day or more, so `bun check` rejects the newest APIs (`TS2339`, `TS2353`). Depend on `bun-types@<runtime-version>` with `"types": ["bun-types"]` instead; installing `bun-types` beside `@types/bun` does not change what gets type checked
+23. **Installs no longer cache what they skip (v1.4.3+).** A `--production` or `--omit` install without a lockfile downloads no tarballs for the dropped groups, so it cannot warm a cache for a later full `--offline` install. Warm it with an install that places the same packages, on the same platform
+24. **`--disallow-code-generation-from-strings` is enforced as of 1.4.3** -- Bun accepted and ignored it before. `eval()` and `new Function()` now throw `EvalError` process-wide, Workers included; `=strict` also blocks `node:vm`, `data:`/`blob:` imports, and plugins that return source text, and refuses `--inspect`
 
 ## References
 
-> - `references/migration-1.4.md` -- what changed between 1.3 and 1.4 for the CLI, package manager, and test runner
+> - `references/migration-1.4.md` -- what changed from 1.3 through 1.4.3 for the CLI, package manager, bundler, and test runner
 > - `references/package-management.md` -- install/add/update/audit/pm flags, workspaces, linkers
-> - `references/running-and-execution.md` -- runtime flags, bunx, profiling, watch/hot
+> - `references/running-and-execution.md` -- runtime flags, bunx, profiling, watch/hot, code-generation lockdown
+> - `references/type-checking.md` -- `bun check`, `--check`, output formats, TypeScript 7 defaults, monorepos, CI
 > - `references/testing.md` -- test runner API, mocking, coverage, CI shaping
 > - `references/bundling-and-compilation.md` -- `bun build`, targets, standalone executables
 > - `references/configuration.md` -- full `bunfig.toml` reference

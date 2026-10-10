@@ -2,7 +2,8 @@
 name: bun-api
 description: >-
   Bun runtime API reference for TypeScript scripts. Covers Bun.serve() HTTP/HTTP/2 server
-  with routes and WebSockets, fetch() transport options, Bun.file(), Bun.write(),
+  with routes and WebSockets, fetch() transport options, proxies and Bun.FetchSession
+  connection pools, Bun.ModuleGraph multi-instance apps, Bun.file(), Bun.write(),
   Bun.$() shell, Bun.spawn(), Bun.Glob, Bun.env, bun:sqlite, Bun.sql() for PostgreSQL/MySQL
   via DATABASE_URL, Bun.s3 for S3-compatible storage, Bun.redis for Redis/Valkey,
   Bun.Archive for tarballs, Bun.Image image processing, Bun.WebView headless browser
@@ -18,14 +19,14 @@ description: >-
 
 # Bun Runtime API
 
-Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build step. Run any `.ts` file directly with `bun file.ts`. Use Bun's native APIs instead of Node.js equivalents — they're faster, more ergonomic, and require no additional dependencies.
+Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build step. Run any `.ts` file directly with `bun file.ts`; running never type checks, so use `bun check` (v1.4.3+, see the `bun-cli` skill) for that. Use Bun's native APIs instead of Node.js equivalents — they're faster, more ergonomic, and require no additional dependencies.
 
-**Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
+**Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `bun-types` / `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
 
-**Verified against Bun v1.4.2** (2026-09-05). Features are tagged with the version that
-introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`). Where a release changed existing behavior, both
-behaviors are stated so this skill stays correct on older projects -- check `bun --version`
-before relying on a version-tagged item.
+**Verified against Bun v1.4.3** (2026-10-10). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`, `v1.4.3+`). Where a release changed existing
+behavior, both behaviors are stated so this skill stays correct on older projects -- check
+`bun --version` before relying on a version-tagged item.
 
 ## Read Bun's Own Docs First
 
@@ -41,9 +42,17 @@ node_modules/bun-types/CLAUDE.md       # Bun's own agent rules
 **Consult them before writing non-trivial Bun code.** This skill covers which API to reach
 for; the shipped docs cover exact signatures and options.
 
-1. **Check the version.** Compare `bun --version` against `node_modules/bun-types/package.json`.
-   `bun init` installs `@types/bun@latest`, which lags behind the runtime -- correct it with
-   `bun add -d bun-types@<runtime-version>`.
+1. **Depend on `bun-types`, not `@types/bun`.** `bun-types` ships with every Bun release and
+   carries both the docs and the types. `@types/bun` lags every release, often by a day or
+   more, yet `bun init` adds it as `latest`, so the newest APIs fail type checking (`TS2339`,
+   `TS2353`). Adding `bun-types` beside `@types/bun` fixes only the docs path -- type checking
+   keeps `@types/bun`'s nested, pinned copy. Switch both, then compare `bun --version` with
+   `node_modules/bun-types/package.json`:
+
+   ```bash
+   bun remove @types/bun
+   bun add -d bun-types@$(bun --version)   # then "types": ["bun-types"] in tsconfig.json
+   ```
 2. **Open by explicit path.** With Bun's global virtual store enabled, `node_modules/bun-types`
    is a symlink: `find node_modules -name '*.mdx'` and `rg <pattern> node_modules` return
    nothing, while `find node_modules/bun-types/docs -name '*.mdx'` works.
@@ -62,6 +71,7 @@ for; the shipped docs cover exact signatures and options.
 | Parsers | `runtime/json5.mdx`, `runtime/jsonl.mdx`, `runtime/xml.mdx`, `runtime/toml.mdx`, `runtime/yaml.mdx`, `runtime/markdown.mdx`, `runtime/file-types.mdx` |
 | Images, WebView, cron, secrets, archives | `runtime/image.mdx`, `runtime/webview.mdx`, `runtime/cron.mdx`, `runtime/secrets.mdx`, `runtime/archive.mdx` |
 | Hashing, utils, semver, glob, cookies, CSRF | `runtime/hashing.mdx`, `runtime/utils.mdx`, `runtime/semver.mdx`, `runtime/glob.mdx`, `runtime/cookies.mdx`, `runtime/csrf.mdx` |
+| App instances, string-eval lockdown (v1.4.3+) | `runtime/module-graph.mdx`, `runtime/code-generation-from-strings.mdx` |
 | Node.js compatibility | `runtime/nodejs-compat.mdx` |
 
 ## When to Use
@@ -121,6 +131,11 @@ that opens with the HTTP/2 preface (`curl --http2-prior-knowledge`, `node:http2`
 `http1: false` refuses HTTP/1.x clients. `server.upgrade()` (WebSockets) and response
 trailers are HTTP/1.1-only, so gRPC does not work over it yet.
 
+**File responses resume safely (v1.4.3+).** `Bun.file()` bodies and `{ dir }` routes already
+answer `Range` with `206`; they now also honor `If-Range`. A `Range` request whose `If-Range`
+matches the `Last-Modified` date gets the range, any other gets the full `200` -- the weak
+`ETag` never matches. Bun 1.4.2 ignored `If-Range` and always sent the range.
+
 > **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming
 > responses, static file serving, and 1.4 behavior changes. Full API in
 > `node_modules/bun-types/docs/runtime/http/server.mdx` and `runtime/http/routing.mdx`.
@@ -141,6 +156,51 @@ const server = Bun.listen({
 ```
 
 > **Reference**: See `references/networking.md` for TCP/UDP handlers, Unix sockets, the WebSocket client (`ws+unix://`), and `fetch()` transport options (HTTP/2, HTTP/3, proxies, system CA).
+
+## fetch() Sessions and Proxies (v1.4.3+)
+
+`Bun.FetchSession` gives a group of requests their own TLS, proxy, and keep-alive settings and a
+private connection pool. Reach for it instead of an `undici` `Agent` / `dispatcher`: Bun's
+built-in `undici` exports those classes so imports succeed, but `fetch()` ignores `dispatcher`.
+
+```typescript
+const session = new Bun.FetchSession({
+  tls: { ca: await Bun.file('corp-ca.pem').text() },
+  proxy: { url: 'http://proxy.internal:8080' },
+  keepAlive: { idleTimeout: 30, maxIdleSockets: 8 },   // false: a new connection per request
+})
+
+const client = new SomeClient({ fetch: session.fetch }) // bound -- hand it to any client
+await fetch('https://api.example.com/v1', { session })  // the same, through the global fetch
+session.close()                                         // closes idle connections; stays usable
+```
+
+- Sessions never share a connection with each other or with plain `fetch()`. Request options
+  override the session's, and a request's `tls` replaces the session's `tls` as a whole.
+- **Pin certificates on the session, not the request.** A per-request
+  `tls.checkServerIdentity` opens a dedicated TLS connection and closes it after the response
+  (3 requests: 3 handshakes; 1.4.2 reused one). On a session it runs once per connection, which
+  is then pooled.
+- `session.fetch` has no `preconnect`; where an option is typed `typeof fetch`, pass
+  `session.fetch as typeof fetch`.
+
+**Proxy selection.** `proxy: false` connects directly whatever `HTTP_PROXY` / `HTTPS_PROXY` /
+`ALL_PROXY` say. `ALL_PROXY` now applies when the scheme-specific variable is unset (1.4.2
+ignored it). `NO_PROXY` accepts `*.example.com`, CIDR blocks (`10.0.0.0/8`), bare IPv6, and
+`host:port`, and also bypasses an explicit `proxy` unless that sets `respectNoProxy: false`. A
+proxy that refuses `CONNECT` makes `fetch()` reject with `ERR_PROXY_TUNNEL` -- 1.4.2 resolved
+with the proxy's reply as if the origin had sent it:
+
+```typescript
+try {
+  await fetch(url, { proxy: { url: 'http://proxy.internal:8080', respectNoProxy: false } })
+} catch (e: any) {
+  if (e.code === 'ERR_PROXY_TUNNEL') console.error(e.status, e.headers.get('proxy-authenticate'))
+}
+```
+
+> **Reference**: See `references/networking.md` for session options, the `NO_PROXY` syntax, and
+> `checkServerIdentity` rules; `node_modules/bun-types/docs/runtime/networking/fetch.mdx`.
 
 ## File I/O
 
@@ -509,7 +569,7 @@ await extracted.extract("./out", { glob: ["src/**", "!**/*.test.ts"] })
 const files = await extracted.files()              // -> Map<string, File>
 ```
 
-**Gotcha (verified on v1.4.0 through v1.4.2):** `Bun.write(path, archive)` ignores the constructor's
+**Gotcha (verified on v1.4.0 through v1.4.3):** `Bun.write(path, archive)` ignores the constructor's
 `compress` option and writes an uncompressed tar under your `.tar.gz` filename. Bun's own
 docs show `Bun.write(path, archive)` as compressing -- it does not. Always pass
 `await archive.bytes()` (or `await archive.blob()`), which do honor `compress`
@@ -692,6 +752,17 @@ Bun.zstdCompressSync(data, { level: 3 })
 
 All compression functions accept `Uint8Array | string | ArrayBuffer` and return `Uint8Array`.
 
+For streams, `CompressionStream` takes a `level` as of v1.4.3 -- brotli otherwise runs at
+quality 11, which is slow for large dynamic responses. Ranges: `gzip` / `deflate` /
+`deflate-raw` 0-9, `brotli` 0-11, `zstd` 1-22; out of range throws `RangeError`. Bun 1.4.2
+accepts the option and ignores it.
+
+```typescript
+// Inside a Bun.serve handler
+const body = Bun.file('big.json').stream().pipeThrough(new CompressionStream('brotli', { level: 4 }))
+return new Response(body, { headers: { 'Content-Encoding': 'br' } })
+```
+
 ## Utilities
 
 ```typescript
@@ -804,7 +875,9 @@ platforms; HEIC/AVIF/TIFF (and GIF/BMP on macOS/Windows) go through the OS backe
 are no `.gif()`/`.bmp()`/`.tiff()` encoder methods -- re-encode those decodes as
 JPEG/PNG/WebP. CMYK and YCCK JPEGs (print-oriented exports from Photoshop and press PDFs)
 decode as of v1.4.2, converted to RGB so every transform and every encoder the platform
-supports works on them; 1.4.1 and earlier rejected them with `Image: decode failed`.
+supports works on them; 1.4.1 and earlier rejected them with `Image: decode failed`. As of
+v1.4.3 a slightly damaged JPEG (stray bytes, missing end marker, truncated scan data) decodes
+too, with missing blocks in flat grey, where 1.4.2 rejected it with `ERR_IMAGE_DECODE_FAILED`.
 
 > **Reference**: See `references/image.md`, and
 > `node_modules/bun-types/docs/runtime/image.mdx` for the full compatibility matrix.
@@ -852,6 +925,14 @@ Untagged rows landed in 1.4.0.
 | `fetch(url, { unix })` keep-alive (v1.4.1+) | Reused Unix-socket connections; `tls: { ca }` honored | `runtime/networking/fetch.mdx` |
 | `binaryType: "blob"` on `ServerWebSocket` (v1.4.1+) | Receiving binary frames as `Blob`, as the client does | `runtime/http/websockets.mdx` |
 | `import x from "./f" with { type: "text" }` typed (v1.4.1+) | Loader-typed imports on TypeScript 7.1+ (`text`, `file`, `md`, `markdown`, `toml`, `yaml`, `jsonc`, `json5`, `xml`, `sqlite`, `html`) | `bun-types/ts7.1/import-attributes.d.ts` |
+| `Bun.FetchSession` (v1.4.3+) | Per-client TLS, proxy, and keep-alive settings with a private pool; replaces `undici` `Agent` / `dispatcher` | `runtime/networking/fetch.mdx` |
+| `fetch(url, { proxy: false })`, `respectNoProxy` (v1.4.3+) | Skipping the proxy environment for one request, or ignoring `NO_PROXY` for an explicit proxy | `runtime/networking/fetch.mdx` |
+| `Bun.ModuleGraph` (v1.4.3+, experimental) | Many instances of one app in one process, each with fresh module state and its own timers and I/O; not a sandbox | `runtime/module-graph.mdx` |
+| `--disallow-code-generation-from-strings[=strict]` (v1.4.3+) | Making `eval()` / `new Function()` -- and with `=strict`, `node:vm` and `data:` imports -- throw `EvalError` | `runtime/code-generation-from-strings.mdx` |
+| `new CompressionStream(format, { level })` (v1.4.3+) | Trading ratio for speed on streamed bodies | no docs page -- see `bun-types/globals.d.ts` |
+| `If-Range` in `Bun.serve` (v1.4.3+) | Resumable downloads that restart in full when the file changed | `runtime/http/routing.mdx` |
+| `Bun.secrets.set({ persist: "local" })` (v1.4.3+) | Keeping a Windows credential on this machine instead of roaming with the account | `runtime/secrets.mdx` |
+| `Bun.unsafe.setJITPolicy()` (v1.4.3+) | Restoring the normal JIT once a `--compile-jit-policy` executable is interactive | `bundler/executables.mdx` |
 
 `ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
 backpressure automatically — `Bun.serve` pauses a request/response body when the socket
@@ -860,9 +941,11 @@ Streaming code that previously buffered whole payloads no longer needs hand-roll
 throttling, provided every stage of the pipeline honors backpressure.
 
 > **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4,
-> 1.4.1, and 1.4.2 (TLS verification against the URL hostname, `localhost` loopback resolution,
-> `ws` `ArrayBuffer` frames, `.json()` error messages, and the regressions each patch fixed) --
-> the one thing Bun's shipped docs do not cover, since they describe only the current state.
+> 1.4.1, 1.4.2, and 1.4.3 (TLS verification against the URL hostname, `localhost` loopback
+> resolution, `ws` `ArrayBuffer` frames, `.json()` error messages, a TLS connection per
+> request-level `checkServerIdentity`, unhandled `fetch()` rejections, and the regressions each
+> patch fixed) -- the one thing Bun's shipped docs do not cover, since they describe only the
+> current state.
 
 ## Script Patterns
 
@@ -951,13 +1034,17 @@ db.close()
 23. **Use `Bun.secrets`** instead of writing credentials to a dotfile (v1.4+)
 24. **Use `Bun.Terminal`** instead of `node-pty` for pseudo-terminals
 25. **Use `URLPattern`** instead of `path-to-regexp`
-26. **Use `CompressionStream`/`DecompressionStream`** for streaming compression
+26. **Use `CompressionStream`/`DecompressionStream`** for streaming compression -- with a `level` for brotli on hot paths (v1.4.3+)
 27. **Read `node_modules/bun-types/docs/**/*.mdx`** before writing non-trivial Bun code --
     open by explicit path, and never edit anything under `node_modules/`
+28. **Use `Bun.FetchSession`** for per-client TLS, proxy, or keep-alive settings instead of an
+    `undici` `Agent` / `dispatcher`, which Bun's `fetch()` ignores (v1.4.3+)
+29. **Depend on `bun-types`** (pinned to `bun --version`), not `@types/bun`, which trails every
+    release -- see "Read Bun's Own Docs First"
 
 ## References
 
-> - `references/migration-1.4.md` -- what changed between 1.3 and 1.4 (breaking behavior)
+> - `references/migration-1.4.md` -- what changed from 1.3 through 1.4.3 (breaking behavior)
 > - `references/http-server.md` -- `Bun.serve` routes, TLS, WebSockets, static files
 > - `references/file-io.md`, `references/shell-and-process.md`, `references/networking.md`
 > - `references/sql-client.md`, `references/sqlite-and-data.md`, `references/redis-client.md`, `references/s3-client.md`

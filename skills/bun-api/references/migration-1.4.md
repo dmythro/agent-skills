@@ -1,8 +1,8 @@
 # Bun 1.3 to 1.4: Runtime Behavior Changes
 
 **What changed under existing code.** Bun's shipped docs describe the current state only --
-this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1 and
-1.4.2 changes at the end. CLI and package manager changes live in the `bun-cli` skill's
+this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1, 1.4.2,
+and 1.4.3 changes at the end. CLI and package manager changes live in the `bun-cli` skill's
 `references/migration-1.4.md`.
 
 Check `bun --version` before applying any of this. On 1.3.x the pre-1.4 behavior still holds.
@@ -279,3 +279,169 @@ Upgrade instead of working around these on a 1.4.1 runtime:
 - On Linux, when registering a `Bun.file().writer()` `FileSink` with epoll failed (for example
   with `fs.epoll.max_user_watches` exhausted), its file descriptor was closed twice, which could
   close an unrelated descriptor that had reused the number.
+
+## 1.4.3
+
+New APIs -- `Bun.FetchSession`, `Bun.ModuleGraph`, `CompressionStream` levels, `If-Range` -- are
+in the SKILL. What changes under existing code is below. Verified on the 1.4.3 runtime against
+1.4.2 except items marked (release notes).
+
+### Most Likely to Bite
+
+1. **A per-request `tls.checkServerIdentity` costs a TLS connection per request.** The request
+   opens its own connection and closes it after the response, so no other request's function
+   vouches for it: 3 requests make 3 handshakes and 3 calls, where 1.4.2 reused one connection.
+   Move certificate pinning to `new Bun.FetchSession({ tls: { checkServerIdentity } })`, which
+   verifies once per connection and pools it. A value that is not a function now rejects with
+   `ERR_INVALID_ARG_TYPE`.
+2. **An unawaited promise that `fetch()` returns already rejected is an unhandled rejection.**
+   `fetch("http://[bad")` with nothing awaiting it exited 0 on 1.4.2 and exits 1 on 1.4.3; the
+   same holds for `Bun.write()`, `server.fetch()`, and `Bun.resolve()`. Await or `.catch()`
+   fire-and-forget calls.
+3. **The proxy environment reaches more requests.** `ALL_PROXY` is used when `HTTP_PROXY` /
+   `HTTPS_PROXY` is unset (1.4.2 ignored it), and `NO_PROXY` gains wildcards, CIDR blocks, bare
+   IPv6, and `host:port`. A proxy refusing `CONNECT` makes `fetch()` reject with
+   `ERR_PROXY_TUNNEL` instead of resolving with the proxy's `407` as if the origin sent it.
+   `proxy: false` and `respectNoProxy: false` are new; `NO_PROXY` bypassing an explicit `proxy`
+   is not (1.4.2 did it too).
+4. **`--disallow-code-generation-from-strings` is enforced.** Bun accepted the flag and ignored
+   it; `eval()` and `new Function()` now throw `EvalError` process-wide, Workers included, so a
+   deployment that carried the flag over from Node fails wherever a dependency compiles a
+   string. `=strict` also refuses `node:vm`, `data:` / `blob:` imports, and plugin source text.
+5. **`sql.begin()` rejects when Postgres rolled the transaction back.** A callback that caught a
+   failed query's error resolved while the server rolled back everything; it now rejects with
+   `ERR_POSTGRES_COMMIT_ROLLED_BACK` (release notes). See `sql-client.md` for the other
+   `Bun.SQL` changes.
+6. **Root certificates follow NSS 3.128.** Entrust Root Certification Authority, ePKI, Atos
+   TrustedRoot 2011, and SecureSign Root CA12 are removed. A server chaining only to one of them
+   fails verification -- pass `tls: { ca }` or run with `--use-system-ca` (release notes).
+
+### fetch() and Streams
+
+- `fetch("file://host/path")` rejects with `ERR_INVALID_FILE_URL_HOST` unless the host is empty
+  or `localhost`; it read the local path.
+- A `Content-Length` header that disagrees with a `ReadableStream` body rejects with
+  `ERR_HTTP_CONTENT_LENGTH_MISMATCH` (an `Error`, not a `TypeError`) before sending; it failed
+  with `ECONNRESET`.
+- A `res.body` stream taken before `await res.text()` (or `json()`, `blob()`, ...) is locked
+  afterwards, as in undici and browsers, so `getReader()` on it throws.
+- `delete process.env.HTTPS_PROXY`, or reassigning a deleted proxy variable, applies to the next
+  `fetch()`; it was ignored.
+- A temporary DNS failure (SERVFAIL, every nameserver timing out) reports `EAI_AGAIN`, not
+  `ETIMEOUT`, from `fetch()`, `Bun.connect()`, and `dns.lookup()` on macOS and Windows or with
+  the `system` / `libc` backend. Retry logic keyed on `ETIMEOUT` must switch (release notes).
+- `new Response(asyncIterable)` calls the iterator's `return()` when the consumer stops early,
+  so generator `finally` blocks run; it kept pulling (release notes).
+- Direct streams (`type: "direct"`): `controller.write()` returns a promise once
+  `highWaterMark` bytes (64 KiB) wait for a JavaScript reader, `cancel(reason)` is called on
+  `reader.cancel()` or a `break`, and writes after `close()` are dropped (release notes).
+- Web streams throw `RangeError: Out of memory` at a size limit instead of aborting the process.
+
+### Bun.serve
+
+- `If-Range` is honored: a range request whose `If-Range` matches `Last-Modified` gets `206`,
+  any other gets the full `200`. 1.4.2 always answered `206`.
+- A second `Response` reusing a `ReadableStream` an earlier response sent errors; it answered
+  `200` with an empty body (release notes).
+- Chunked request bodies with bare-LF line endings are rejected, as llhttp does (release notes).
+
+### Files, Processes, Runtime
+
+- `await Bun.write(dest, Bun.file(src))` resolves to the byte count on macOS when `dest` exists
+  or sits on another volume; it resolved `0` though the copy was complete.
+- `Bun.file(path).exists()` checks the disk again; after one `false` it kept returning `false`
+  once the file existed.
+- `Bun.spawn`, `Bun.spawnSync`, and `child_process` report pipe errors (`EIO`, `ENOBUFS`)
+  instead of returning truncated output, and throw `EMFILE` when out of descriptors instead of
+  hanging or crashing (release notes).
+- On macOS, `signalCode` and `kill()` use macOS signal numbers: a child killed by SIGBUS read
+  `"SIGUSR1"`, and `kill("SIGUSR1")` sent SIGBUS (release notes). `signalCode` is typed
+  `NodeJS.Signals | number | null` -- a nameless signal is its number.
+- On macOS, `process.memoryUsage().rss` reports the physical footprint Activity Monitor shows,
+  equal to `Bun.unsafe.memoryFootprint()` -- dashboards see lower numbers (the same script read
+  84 MB on 1.4.2 and 47 MB on 1.4.3). `process.resourceUsage().maxRSS` reports its peak.
+- `drainMicrotasks()` from `bun:jsc` drains only microtasks and `process.nextTick`; completed
+  I/O and message callbacks wait for the current callback to return (release notes).
+- Runtime plugins: `onResolve` runs once per `import` / `require()` as it executes (it could run
+  up to three times, including on its own result); a `require()` of a namespaced path loads
+  through `onLoad`; an `a -> b`, `b -> c` mapping loads `b` for `a`; and a throwing `onResolve`
+  can be caught around the `require()` (release notes).
+- `Error.stackTraceLimit` is read from the `Error` constructor when a stack is captured, as in
+  V8; `node:vm` contexts start at 10 (release notes).
+- Bun Shell's `.then()` / `.catch()` return a rejected promise when the shell fails to start
+  (`.cwd()` to a missing directory); 1.4.2 threw `ENOENT` synchronously, so a `.catch()`
+  handler never ran. `await` saw a rejection either way.
+
+### Node.js APIs
+
+- `http.Server#listen()` on a listening server throws `ERR_SERVER_ALREADY_LISTEN`; it leaked the
+  first listener, which kept the process alive after `close()`.
+- `child_process.spawnSync()` of a command that cannot be spawned returns `status: null`,
+  `pid: 0`, and `output: null` (it returned `undefined`, `undefined`, `[null, null, null]`).
+- `util.format("%s", x)` prints `toString()` for `Buffer`, `URL`, and `URLSearchParams`, as Node
+  does; it printed `<Buffer 61 62>`.
+- Per-encoding `Buffer` writers (`buf.utf8Write(123)`, `hexWrite()`, ...) throw
+  `ERR_INVALID_ARG_TYPE` for a non-string; they wrote its string form.
+- An exception thrown in a `node:net` `'data'` or server `'connection'` listener goes to
+  `uncaughtException`, as in Node; it became the socket's `'error'` and closed the socket.
+  `net.Socket#write()` returns `false` and sets `socket.errored` when a send fails at once
+  (release notes).
+- `crypto.hkdf()` / `hkdfSync()` with `keylen` 0 fail as in Node, and `node:fs` opens files with
+  `O_CLOEXEC`, so children forked by native code (`node-pty`, an addon calling `system()`) no
+  longer inherit them (release notes).
+- `node:http2` servers rate-limit stream resets (CVE-2023-44487, CVE-2025-8671): the
+  `streamResetBurst` and `streamResetRate` options take effect, as in Node; they were accepted
+  and ignored (release notes).
+
+### JavaScriptCore
+
+- `BigInt("-")`, `BigInt("+")`, and `BigInt("0x")` throw `SyntaxError`; they returned `0n`.
+- `(a?.b)(x)` throws `TypeError` when `a` is nullish; it returned `undefined` as if the
+  parentheses were not there.
+- `RegExp.escape()` leaves supplementary code points unescaped, a strict-mode async generator's
+  `return someCall()` awaits the promise, and `` super.tag`x` `` passes the current `this`
+  (release notes).
+- WebAssembly wide arithmetic (`i64.add128`, `i64.mul_wide_u`) is on by default.
+
+### Parsers, Images, SQLite
+
+- `Bun.Image` decodes slightly damaged JPEGs (missing end marker, truncated scan data) that
+  rejected with `ERR_IMAGE_DECODE_FAILED`; a fallback path catching that error is no longer
+  reached.
+- `bun:sqlite` binds more than 65535 parameters correctly and `Database.deserialize()` accepts
+  an `ArrayBuffer` (`sqlite-and-data.md`).
+- `YAML.stringify()` with an indent other than 2 drops the trailing space after keys, keeps
+  empty `[]` / `{}` inline, and aligns nested sequences -- snapshot tests of its output change
+  (release notes).
+- `Bun.markdown`: a backslash before whitespace in a link destination is literal text, so
+  `[a](te\ st)` is no longer a link (release notes).
+
+### Types (`bun-types` 1.4.3)
+
+- `TextEncoder#encodeInto()` requires both arguments; calls missing one type-checked and threw.
+- `test("label", { retry: 1 }, fn)`, `test.todo("label")`, `YAML.parse(bytes)`, and
+  `Blob#slice()` without `lib.dom` type check.
+- `Bun.WebView` history methods are typed `goBack()` / `goForward()`, the names the runtime has
+  always had; 1.4.2 declared `back()` / `forward()`.
+- `@types/bun` 1.4.2 -- what `bun init` resolves on release day -- lacks every 1.4.3 API.
+  Depend on `bun-types@1.4.3` (SKILL.md, "Read Bun's Own Docs First").
+
+### Regressions Fixed in 1.4.3
+
+Upgrade instead of working around these on 1.4.0 through 1.4.2 (release notes):
+
+- **1.4.1:** after a few hundred `util.promisify()` calls, `util.promisify(setTimeout)` could
+  return the promisified `setImmediate` or `setInterval`, so `await sleep(300)` resolved at once.
+- **1.4.1:** after more than 64 concurrent `fetch()` calls to one keep-alive origin, the surplus
+  idle connections were closed with RST, so servers logged `ECONNRESET`.
+- **1.4.1:** a `wss://` WebSocket to an IP address, or through an HTTPS proxy at one, closed
+  with 1006 when a TLS 1.2 server renegotiated.
+- **1.4.0:** `for await (const line of rl)` over `node:readline` threw `ERR_USE_AFTER_CLOSE` and
+  dropped the last line when 1,026 or more lines arrived in one chunk (`Readable.from([text])`,
+  HTTP responses).
+- **1.4.0:** `destroy()` in a `'data'` listener on `child.stdout` emitted one more `'data'`, so
+  `exec()` overshot `maxBuffer`; a `Bun.spawn({ terminal })` child that exited with input still
+  queued leaked its PTY and spun the CPU.
+- **1.4.0:** on Linux, `http2.connect()` to a closed port reported `ECONNRESET` instead of
+  `ECONNREFUSED`, and was swallowed without an `'error'` listener; `crypto.randomInt()` was about
+  20x slower per call.

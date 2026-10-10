@@ -33,7 +33,7 @@ bun install [flags]
 | `--config path` | Load specific bunfig.toml |
 | `--no-verify` | Skip checksum verification |
 | `--no-cache` | Disable package cache |
-| `--offline` | Never touch the network; every manifest and tarball must already be cached, a missing one fails by name (v1.4.1+) |
+| `--offline` | Never touch the network; every manifest and tarball must already be cached, a missing one fails by name (v1.4.1+). Warm the cache with an install that places the same packages on the same platform -- see below |
 | `--prefer-offline` | Use cached manifests regardless of age; download only packages not in the cache (v1.4.1+) |
 | `--cache-dir path` | Custom cache directory |
 | `--omit dev\|optional\|peer` | Exclude a dependency type |
@@ -45,6 +45,14 @@ bun install [flags]
 | `--network-concurrency N` | Max concurrent network requests (default 48) |
 
 Since v1.3.13, `bun install` streams tarballs to disk during download instead of buffering them in memory, so large installs use dramatically less memory.
+
+**Changed in 1.4.3 -- installs fetch only what they place.** Without a lockfile, `bun install`
+and `bun add` skip the tarballs of packages that never land in `node_modules`: groups dropped by
+`--production` or `--omit`, other platforms' optional packages, and bundled dependencies
+(`npm@10.9.2` from a cold cache: 196 tarballs down to 1). The cache then holds only what was
+placed, so a cache warmed by `bun install --production` fails a later full `--offline` install
+with `--offline: "left-pad" is not in the cache`. Warm an `--offline` cache with an install
+that places at least the same packages, on the same platform.
 
 ### Lockfile Behavior
 

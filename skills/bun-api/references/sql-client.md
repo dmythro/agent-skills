@@ -27,6 +27,27 @@ MySQL `TIMESTAMP` column landed at the wrong instant under a non-UTC session tim
 `close()`/`ref()`/`unref()` crashed after the server dropped the connection, and `sql.close()`
 fired `onclose` for pool connections that never connected.
 
+**Changed in 1.4.3** (from the release notes):
+
+- **`sql.begin()` rejects when Postgres rolled the transaction back.** A callback that caught a
+  failed query's error used to resolve while `COMMIT` was answered with `ROLLBACK`; it now
+  rejects with `ERR_POSTGRES_COMMIT_ROLLED_BACK`, and nothing was committed. Let errors
+  propagate, or use `tx.savepoint()` for the step that may fail.
+- **One bad value fails one query.** A parameter that throws while encoding, or a result value
+  the client cannot decode (a multidimensional array, MariaDB `JSON` that `JSON.parse` refuses),
+  rejects only that query; it closed the connection and failed every pipelined query and the
+  open transaction. A write with `RETURNING` may already be stored when its decode fails -- do
+  not retry it blindly; cast the column to `text` or use `.raw()` to read it.
+- **Postgres `bytea` rejects non-binary values.** Binding a `number[]`, a plain object, or a
+  `Date` throws `TypeError`; it silently stored an empty `bytea`.
+- **`tls: Bun.file("ca.pem")`** (or `ssl:`) is the CA to verify against with `verify-full`, the
+  same as `tls: { ca: Bun.file("ca.pem") }` -- the shorthand for an RDS or Cloud SQL bundle.
+- A `numeric(p, s)` zero reads as `"0.0000"`, not `"0"`, through prepared statements.
+- Correctness fixes worth an upgrade: after a failed pipelined Postgres query, a statement new to
+  that connection could resolve with another query's rows (every time behind pgdog), and a MySQL
+  query that failed client-side in a connection's queue never settled while the next one got its
+  rows.
+
 For PgBouncer transaction pooling, construct with `new Bun.SQL({ prepare: false })` -- since
 v1.3.11 Bun sends each such query's Parse+Bind+Execute as one atomic batch, so PgBouncer can
 no longer split it across connections and return the wrong result.
