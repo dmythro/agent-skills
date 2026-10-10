@@ -435,6 +435,8 @@ bot_tick() {
 
 Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix push was stamped `Review skipped: incremental reviews are disabled`, and a manual `@coderabbitai review` bounced (`Review rate limited`, the bucket empty). In the same minute both chat answers still arrived ("verified ... this addresses the finding", "confirmed ... Review thread resolved"), and both threads show `resolvedBy: coderabbitai[bot]`. Observed again 2026-10-08 with the same setting, across two rounds of one PR: four replies -- one outright decline, one kept with a related fix, two partly taken -- each got an answer within about a minute. CodeRabbit withdrew or accepted every point, recorded a learning for each, and resolved all four threads itself, while both fix pushes spent no review.
 
+**Where incremental reviews are on, the fix push's own review can close the threads first.** Observed on this repo 2026-10-10: both addressed threads showed `resolvedBy: coderabbitai[bot]` while the incremental review of the fix push was still running, and neither "Fixed in" reply got a chat answer. `bot_status` then reads the completed review at HEAD (exit `0`), not `7` -- and that review's body still needs triage: it carried an outside-diff finding.
+
 | | Thread confirmation | Incremental review of the fix push |
 |---|---|---|
 | Checks | Whether that one finding is fixed -- or its rejection sound -- against HEAD | All new code in the push, as code |
