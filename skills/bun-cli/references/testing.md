@@ -320,6 +320,7 @@ global is defined without importing (v1.3.1+).
 
 ```typescript
 import { mock, spyOn, jest } from 'bun:test'
+import { foo } from './module'   // imported before mocking -- the async-factory case below
 
 // Mock function
 const fn = mock(() => 42)
@@ -341,8 +342,8 @@ mock.module('module-name', () => ({
   namedExport: 'mocked',
 }))
 
-// Async factory for an already-imported module: returns a promise that resolves once
-// the exports are replaced (v1.4.3+; it spun at 100% CPU before). await it in a test or hook.
+// Async factory for ./module, already imported above: returns a promise that resolves once
+// `foo` is replaced (v1.4.3+; it spun at 100% CPU before). await it in a test or hook.
 await mock.module('./module', async () => ({ foo: (await import('./fixture.json')).default.foo }))
 
 // Timer mocking (jest-compatible API)

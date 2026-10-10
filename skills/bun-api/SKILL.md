@@ -132,9 +132,11 @@ that opens with the HTTP/2 preface (`curl --http2-prior-knowledge`, `node:http2`
 trailers are HTTP/1.1-only, so gRPC does not work over it yet.
 
 **File responses resume safely (v1.4.3+).** `Bun.file()` bodies and `{ dir }` routes already
-answer `Range` with `206`; they now also honor `If-Range`. A `Range` request whose `If-Range`
-matches the `Last-Modified` date gets the range, any other gets the full `200` -- the weak
-`ETag` never matches. Bun 1.4.2 ignored `If-Range` and always sent the range.
+answer `Range` with `206`; they now also honor `If-Range`. The range is sent only when
+`If-Range` matches the `Last-Modified` date or a strong `ETag` the response carries (Bun sets
+none on a `Bun.file()` response -- add your own), and any other `If-Range` value gets the full
+`200`. A `{ dir }` route's weak `ETag` never matches. Bun 1.4.2 ignored `If-Range` and always
+sent the range.
 
 > **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming
 > responses, static file serving, and 1.4 behavior changes. Full API in

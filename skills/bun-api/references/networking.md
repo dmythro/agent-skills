@@ -236,8 +236,8 @@ const client = new SomeClient({ fetch: session.fetch as typeof fetch })
 verifies. Return `undefined` to approve; return or throw an `Error` to reject (the `fetch()`
 promise rejects with it). As of v1.4.3, as in Node, any other truthy return also fails the
 request -- a `Promise` or `true` gives `ERR_INVALID_RETURN_VALUE`, so an `async` function
-approves nothing -- while `false` approves, and a value that is not a function rejects with
-`ERR_INVALID_ARG_TYPE`.
+approves nothing -- while `false` approves. `null` or `undefined` means no function; any other
+non-function value rejects with `ERR_INVALID_ARG_TYPE`.
 
 **Changed in 1.4.3 -- one connection per request.** A request that passes its own
 `checkServerIdentity` opens a dedicated TLS connection and closes it after the response, so no

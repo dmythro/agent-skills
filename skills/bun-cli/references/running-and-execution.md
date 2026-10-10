@@ -37,7 +37,7 @@ bun run [flags] <script|file> [args...]
 | `--env-file path` | Load env file(s); repeatable, left takes priority. Pipes, FIFOs, and `/dev/stdin` are accepted (v1.4.1+) |
 | `--no-ffi-cc` | Make `cc()` from `bun:ffi` throw `ERR_FFI_CC_DISABLED`; `--no-addons` disables it too (v1.4.1+) |
 | `--check` | Type check first; nothing runs on a type error. A file checks itself and its imports; a `package.json` script checks the whole project (v1.4.3+) |
-| `--disallow-code-generation-from-strings[=strict]` | Make code compiled from strings throw `EvalError` -- see below (v1.4.3+) |
+| `--disallow-code-generation-from-strings[=strict]` | Make `eval()` and `new Function()` throw `EvalError`; `=strict` also blocks `node:vm`, `data:` imports, and the other string-to-code paths -- see below (v1.4.3+) |
 | `--shell bun\|system` | Which shell to use for scripts (macOS/Linux default: system; Windows: bun) |
 | `--bun` | Force Bun runtime instead of Node.js |
 | `--cwd path` | Set working directory |
@@ -288,8 +288,9 @@ pre-populated values as shell overrides. `bun file.js` still loads them. A `pack
 
 ## Blocking Code Generation From Strings (v1.4.3+)
 
-`--disallow-code-generation-from-strings` makes code compiled from a string throw a catchable
-`EvalError`, for the whole process. Bun 1.4.2 and earlier accepted the flag and ignored it.
+`--disallow-code-generation-from-strings` makes `eval()` and the `Function` constructors throw a
+catchable `EvalError`, for the whole process; `=strict` extends that to every way a string
+becomes code. Bun 1.4.2 and earlier accepted the flag and ignored it.
 
 ```bash
 bun --disallow-code-generation-from-strings server.ts          # eval() and the Function constructors, as in Node

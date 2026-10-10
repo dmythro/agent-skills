@@ -31,7 +31,8 @@ file. It replaces `tsc --noEmit`. Keep `tsc` only to emit `.d.ts` files.
 3. **The `typescript` package is not needed.** Editors still run their own TypeScript; to keep
    them in agreement, install the matched version:
    `bun add -d typescript@$(bun -p process.versions.typescript)`.
-4. `bun init` (v1.4.3+) adds `"typecheck": "bun check"` to `package.json`.
+4. `bun init` (v1.4.3+) adds `"typecheck": "bun check"` to `package.json`. Switch it to
+   `bun --check` when the project has a `check` script (next section).
 
 ## Commands
 
@@ -96,7 +97,7 @@ When `package.json` has a `check` script, `bun check` runs that script, like `bu
 `bun --check` with no file then type checks the project.
 
 ```json
-{ "scripts": { "check": "biome check", "typecheck": "bun check" } }
+{ "scripts": { "check": "biome check", "typecheck": "bun --check" } }
 ```
 
 ```bash
@@ -105,10 +106,12 @@ bun --check       # type checks the project
 bun run typecheck # type checks the project
 ```
 
-Inside the `check` script `bun check` is the type checker, so `"check": "bun check"` works on
-1.4.3 -- but an older Bun, including an old `bun` in `node_modules/.bin` that scripts find first,
-runs it again and again without end. Name the script `typecheck`, as `bun init` does. Under
-`--filter` / `--workspaces`, `check` always means each package's `check` script.
+Only inside the `check` script itself is `bun check` the type checker, so `"check": "bun check"`
+works on 1.4.3 -- but an older Bun, including an old `bun` in `node_modules/.bin` that scripts
+find first, runs it again and again without end. Inside any other script `bun check` still runs
+the `check` script: with the scripts above, `"typecheck": "bun check"` (what `bun init` writes)
+would run `biome check`. In scripts, write `bun --check`. Under `--filter` / `--workspaces`,
+`check` always means each package's `check` script.
 
 ## Output
 

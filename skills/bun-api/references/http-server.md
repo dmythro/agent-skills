@@ -266,12 +266,13 @@ Bun.serve({
 
 ### If-Range (v1.4.3+)
 
-A client resuming a download sends `Range` with `If-Range` set to the `Last-Modified` date of
-its first response. Bun returns the range (`206`) only if the file is unchanged, and the full
-body (`200`) otherwise, so a resumed download never splices two versions. This covers
-`Bun.file()` responses and `{ dir }` routes. Only the date form matches: a `Bun.file()` response
-carries no `ETag`, and a directory route's `ETag` is weak, which never matches `If-Range`. Bun
-1.4.2 ignored `If-Range` and always answered `206`.
+A client resuming a download sends `Range` with `If-Range` set to a validator from its first
+response. Bun returns the range (`206`) only if that validator still matches, and the full body
+(`200`) otherwise, so a resumed download never splices two versions. This covers `Bun.file()`
+responses and `{ dir }` routes. Two validators match: the `Last-Modified` date, and a strong
+`ETag` -- which a `Bun.file()` response carries only if you set one in its headers. A directory
+route's `ETag` is weak and never matches. A `Range` request without `If-Range` still gets `206`.
+Bun 1.4.2 ignored `If-Range` and always answered `206`.
 
 ```typescript
 const first = await fetch('http://localhost:3000/big.bin')

@@ -262,8 +262,8 @@ bytecode layout, and an enforced `--disallow-code-generation-from-strings`. Veri
   "Check the Version").
 - `--disallow-code-generation-from-strings` is enforced, and `=strict` extends it to `node:vm`,
   `data:` imports, and plugins returning source text. Bun 1.4.2 accepted the flag and ignored it,
-  so a deployment that already passes it starts throwing `EvalError` wherever a dependency
-  compiles a string (`running-and-execution.md`).
+  so a deployment that already passes it starts throwing `EvalError` wherever a dependency calls
+  `eval()` or `new Function()` (`running-and-execution.md`).
 
 ### Package Manager
 

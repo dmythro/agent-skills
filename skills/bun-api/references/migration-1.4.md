@@ -292,8 +292,8 @@ in the SKILL. What changes under existing code is below. Verified on the 1.4.3 r
    opens its own connection and closes it after the response, so no other request's function
    vouches for it: 3 requests make 3 handshakes and 3 calls, where 1.4.2 reused one connection.
    Move certificate pinning to `new Bun.FetchSession({ tls: { checkServerIdentity } })`, which
-   verifies once per connection and pools it. A value that is not a function now rejects with
-   `ERR_INVALID_ARG_TYPE`.
+   verifies once per connection and pools it. A value other than a function, `null`, or
+   `undefined` now rejects with `ERR_INVALID_ARG_TYPE`.
 2. **An unawaited promise that `fetch()` returns already rejected is an unhandled rejection.**
    `fetch("http://[bad")` with nothing awaiting it exited 0 on 1.4.2 and exits 1 on 1.4.3; the
    same holds for `Bun.write()`, `server.fetch()`, and `Bun.resolve()`. Await or `.catch()`
@@ -306,8 +306,9 @@ in the SKILL. What changes under existing code is below. Verified on the 1.4.3 r
    is not (1.4.2 did it too).
 4. **`--disallow-code-generation-from-strings` is enforced.** Bun accepted the flag and ignored
    it; `eval()` and `new Function()` now throw `EvalError` process-wide, Workers included, so a
-   deployment that carried the flag over from Node fails wherever a dependency compiles a
-   string. `=strict` also refuses `node:vm`, `data:` / `blob:` imports, and plugin source text.
+   deployment that carried the flag over from Node fails wherever a dependency calls `eval()`
+   or `new Function()`. `=strict` also refuses `node:vm`, `data:` / `blob:` imports, and plugin
+   source text.
 5. **`sql.begin()` rejects when Postgres rolled the transaction back.** A callback that caught a
    failed query's error resolved while the server rolled back everything; it now rejects with
    `ERR_POSTGRES_COMMIT_ROLLED_BACK` (release notes). See `sql-client.md` for the other
@@ -339,8 +340,9 @@ in the SKILL. What changes under existing code is below. Verified on the 1.4.3 r
 
 ### Bun.serve
 
-- `If-Range` is honored: a range request whose `If-Range` matches `Last-Modified` gets `206`,
-  any other gets the full `200`. 1.4.2 always answered `206`.
+- `If-Range` is honored: a range request whose `If-Range` matches `Last-Modified` (or a strong
+  `ETag` set on the response) gets `206`, any other `If-Range` value gets the full `200`. 1.4.2
+  always answered `206`.
 - A second `Response` reusing a `ReadableStream` an earlier response sent errors; it answered
   `200` with an empty body (release notes).
 - Chunked request bodies with bare-LF line endings are rejected, as llhttp does (release notes).
