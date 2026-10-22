@@ -418,10 +418,21 @@ bun pm migrate          # Migrate from npm/yarn/pnpm lockfile without installing
 `bun pm licenses` takes `--json`, `--prod`, `--dev`, `--long`, and `--filter <pattern>`.
 
 `bun pm fetch` writes neither `node_modules` nor the lockfile and runs no scripts, so a Dockerfile
-can download in a layer keyed on `package.json` and `bun.lock` alone, then install with
-`--offline --frozen-lockfile` after copying the source. In a monorepo the fetch step needs only the
-root `package.json` and the lockfile. `bun pm cache pack` / `unpack` move the same cache between
-CI runners; `unpack` rejects a corrupted pack entirely (release notes).
+can download in a layer keyed on `package.json` and `bun.lock`, then install with
+`--offline --frozen-lockfile` after copying the source. With a lockfile it downloads only what
+the cache lacks; `--dry-run` reports how many packages are missing, `--os` / `--cpu` fetch another
+platform's packages, and `-g` fetches for global installs.
+
+In a monorepo the root `package.json` and the lockfile cover every workspace, even ones not on
+disk yet -- with exceptions the fetch layer must also copy (`pm/cli/pm.mdx`):
+
+- `bunfig.toml` and `.npmrc` when they set a registry -- cache entries are keyed by the registry's
+  host, so without them the later `bun install` downloads everything again;
+- patch files and local tarballs that the lockfile names;
+- any workspace the root `package.json` depends on with `workspace:`.
+
+`bun pm cache pack` / `unpack` move the same cache between CI runners; `unpack` rejects a
+corrupted pack entirely (release notes).
 
 **Changed in 1.4.4:** `bun pm pkg set` takes arrays and bracketed keys
 (`keywords[]=cli`, `exports[./package.json]=./package.json`); `bun pm version <increment>` computes

@@ -307,8 +307,8 @@ RUN bun prune --production
 ### CI Caches and Docker Layers (v1.4.4+)
 
 `bun pm fetch` downloads every package `bun.lock` pins into the cache and nothing else -- no
-`node_modules`, no scripts, no lockfile write -- so the download layer is rebuilt only when the
-lockfile changes:
+`node_modules`, no scripts, no lockfile write -- so the download layer is rebuilt only when
+`package.json` or `bun.lock` changes:
 
 ```dockerfile
 COPY package.json bun.lock ./
@@ -316,6 +316,11 @@ RUN bun pm fetch
 COPY . .
 RUN bun install --offline --frozen-lockfile
 ```
+
+In a monorepo those two root files cover every workspace, with exceptions the layer must also
+copy: `bunfig.toml` / `.npmrc` when they set a registry (cache entries are keyed by registry host,
+so without them the install downloads everything again), patch files and local tarballs the
+lockfile names, and any workspace the root `package.json` depends on with `workspace:`.
 
 `bun pm cache pack <file>` writes the cache entries the lockfile needs into one file, and
 `bun pm cache unpack <file>` restores them on another runner, adding only what is missing:

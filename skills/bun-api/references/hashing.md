@@ -42,7 +42,7 @@ Fast hashing for non-security purposes: hash tables, checksums, deduplication, c
 
 ```typescript
 // Default: wyhash (fastest general-purpose hash). Returns a bigint, not a number.
-Bun.hash(input: string | ArrayBufferView | ArrayBuffer): bigint
+Bun.hash(input: string | ArrayBufferView | ArrayBuffer | SharedArrayBuffer): bigint
 Bun.hash(input, seed: number | bigint): bigint
 ```
 
@@ -99,7 +99,9 @@ As of v1.4.4 these run 1.2x to 2.3x faster on short strings (release notes).
 const hash = Bun.hash(await Bun.file('data.bin').bytes())
 
 // Consistent hashing with seed: stay in bigint, convert at the end
-const shard = Number(Bun.hash(key, 42) % BigInt(numShards))
+const key = 'user-123'
+const numShards = 16
+const shard = Number(Bun.hash(key, 42) % BigInt(numShards))   // 0..15
 
 // CRC32 checksum (a number)
 const checksum = Bun.hash.crc32(content)

@@ -506,10 +506,10 @@ PostgreSQL and MySQL behavior is all from the release notes.
 - `idleTimeout: 0` means never (it closed after about 256 s); `idleTimeout: 65536` and other
   out-of-range sizes no longer wrap around; `maxPayloadLength` no longer applies to Ping, Pong, and
   Close frames (release notes).
-- `perMessageDeflate.compress` values from `"4KB"` to `"256KB"` and `"dedicated"` use their own
-  window sizes instead of `"3KB"`, which costs more memory per connection (`"dedicated"`: 149 KB
-  to 282 KB), and `{ compress: false, decompress: true }` stops compressing outgoing messages
-  (release notes).
+- `perMessageDeflate.compress` accepts `"3KB"` through `"256KB"` and `"dedicated"`; 1.4.3
+  treated every value above `"3KB"` as `"3KB"`. Each now uses its own window size, which costs
+  more memory per connection (`"dedicated"`: 149 KB to 282 KB), and
+  `{ compress: false, decompress: true }` stops compressing outgoing messages (release notes).
 - `server.upgrade(req, { headers })` sends `Upgrade` / `Connection` / `Sec-WebSocket-Accept` once
   and accepts `headers: {}`; an empty `Sec-WebSocket-Protocol` declines a subprotocol; an error
   thrown after `server.upgrade()` reaches `error()` (release notes).

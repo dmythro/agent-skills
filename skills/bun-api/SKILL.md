@@ -835,7 +835,7 @@ whether a statement returns rows or writes, and `db[Symbol.for('sqlite-type')]` 
 // Non-cryptographic (fast, for hash tables/checksums)
 Bun.hash('input')                        // bigint (64-bit wyhash, fastest) -- not a number
 Bun.hash.crc32('input')                  // number (CRC32)
-Number(Bun.hash(key) % 16n)              // shard index: mix bigints, then convert
+Number(Bun.hash('user-123') % 16n)       // shard index 0..15: mix bigints, then convert
 
 // Cryptographic
 new Bun.CryptoHasher('sha256').update('data').digest('hex')
