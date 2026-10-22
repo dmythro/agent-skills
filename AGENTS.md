@@ -149,6 +149,8 @@ Every skill that documents a CLI's flags records the version it was verified aga
 
 Verify against the tool itself, not memory or web docs: diff `--help` of every subcommand the skill uses, and read the changelog entries between the old pin and the new version. Update the pin only for what was actually checked; a tool that was not verified says so (`not verified`) instead of carrying a guessed version. When a new release changes behavior, tag the affected text with the version (`gh >= 2.97`, `v0.8.2`) so older installs still read correctly.
 
+State version differences, not just the latest behavior: where a release changed something, give both sides ("`1005` on 1.4.4; 1.4.3 reported `1000`"), and list the regressions each release fixes so an agent upgrades instead of working around them. A skill for a tool that ships often (Bun) keeps a **Version Guide** table right after its pin line, one row per release of the current line: what it adds, what it changes under existing code, and when upgrading to it pays off -- or why to skip it.
+
 ## Naming Conventions
 
 - **Skill directories**: `kebab-case` (e.g., `bun-api`, `git-commit`)

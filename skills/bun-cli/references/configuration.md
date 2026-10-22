@@ -67,7 +67,12 @@ publicHoistPattern = []             # Globs hoisted to the root node_modules (is
 hoistPattern = ["*"]                # Globs hoisted into node_modules/.bun/node_modules
 hoist = true                        # false: skip that fallback dir entirely, so undeclared
                                     #   requires fail with MODULE_NOT_FOUND (v1.4+)
-minimumReleaseAge = 0               # Only install packages published at least N seconds ago
+minimumReleaseAge = "3d"            # Only install versions at least this old. A number is seconds;
+                                    #   units ("90m", "12 hours", "2 weeks") are v1.4.4+ -- 1.4.3
+                                    #   rejects a string with "Invalid Bunfig"
+minimumReleaseAgeExcludes = ["@types/bun", "typescript@5.9.3"]
+                                    # A name exempts every version; name@version (v1.4.4+) only
+                                    #   that release. --minimum-release-age-excludes replaces it
 offline = false                     # true: never touch the network; every package must be
                                     #   cached, a missing one errors by name (v1.4.1+)
 prefer = "online"                   # "offline": cached manifests regardless of age, fetch only
@@ -81,6 +86,31 @@ disable = false                     # Disable cache
 save = true                         # Save lockfile
 print = "default"                   # "default" or "yarn"
 ```
+
+As of v1.4.4, `~` expands and a relative path resolves against the file that sets it, for
+`cache.dir`, `globalDir`, `globalBinDir`, and `cafile` (1.4.3 created a directory literally named
+`~`); a relative path in a flag (`--cache-dir`, `--cafile`, `--config`) resolves against the
+working directory. `dryRun = true` applies to every package manager command, `bun publish`,
+`bun pm pack`, `bun prune`, `bun dedupe`, and `bun audit fix` included, and `env = false` turns off
+`.env` loading for them too (release notes and `runtime/bunfig.mdx`).
+
+### Formatter (v1.4.4+)
+
+```toml
+[fmt]
+printWidth = 100                    # every Prettier option, by its camelCase name; a flag wins
+semi = false
+singleQuote = true
+sortImports = true                  # off by default; also sortTailwindcss, sortPackageJson, jsdoc
+ignorePatterns = ["vendor/", "**/*.gen.ts"]
+
+[[fmt.overrides]]
+files = ["*.test.ts", "scripts/**"]
+options = { printWidth = 120 }
+```
+
+`bun fmt` uses the nearest `bunfig.toml` with a `[fmt]` section, walking up from the working
+directory; an unknown key exits `2`. See `formatting.md`.
 
 ### Scoped Registries
 

@@ -136,7 +136,7 @@ Default: `[dir]/[name].[ext]` for entries, `./chunk-[hash].[ext]` for chunks, an
 | `--manifest` | Generate build manifest file |
 | `--metafile [path]` | Bundle metadata in esbuild's format -- works with esbuild's analyzer (v1.3.6+). With `--splitting`, each split `import()` in `inputs` carries `entryPoint`, the `inputs` key of the file it loads, and `outputs[...].bytes` is accurate (v1.4.3+) |
 | `--metafile-md [path]` | Module graph as a Markdown report: summary, largest inputs, per-entry breakdown, dependency chains (v1.3.8+) |
-| `--server-components` | Enable React Server Components support |
+| `--server-components` | Experimental React Server Components support; gone from `bun build --help` in v1.4.4 but still accepted |
 | `--css-chunking` | Enable CSS code splitting |
 | `--emit-dce-annotations` | Emit dead code elimination annotations |
 | `--react-compiler` | Run React's auto-memoization compiler inside Bun's parser -- no Babel or SWC (v1.4+) |
@@ -216,6 +216,14 @@ bun build --compile [flags] <entrypoint>
 **Changed in v1.3.4:** compiled binaries no longer auto-load `tsconfig.json` or `package.json`
 from the runtime working directory, so a binary can no longer pick up unrelated config from
 wherever it happens to run. `.env` and `bunfig.toml` still auto-load.
+
+**Changed in v1.4.4 -- `=strict` executables run only the code they embed.** Built with
+`--compile-exec-argv="--disallow-code-generation-from-strings=strict"`, an executable refuses to
+`import()`, `require()`, or start a `Worker` from a JavaScript or TypeScript file on disk -- even a
+file it just wrote, which 1.4.3 ran -- and exits on `--preload` in `BUN_OPTIONS`. JSON, TOML, YAML,
+and SQLite files on disk still load; `.txt` and `.md` imports from disk are refused -- read text
+with `Bun.file()`, and bundle any code that must run into the executable
+(`running-and-execution.md`).
 
 ### Startup Tuning (v1.4.3+)
 
