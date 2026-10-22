@@ -145,7 +145,8 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai pause` / `resume` | Stop / restart automatic reviews on this PR |
 | `@coderabbitai ignore` | In the PR **description**: permanently disable auto-review for the PR |
 | `@coderabbitai resolve` | Resolve all CodeRabbit review threads |
-| `@coderabbitai autofix` | Apply fixes for unresolved findings (commit or stacked PR) |
+| `@coderabbitai fix comments` | Fix comments: apply fixes for unresolved findings once, as a commit (`fix comments stacked pr`: as a stacked PR). `autofix`, `fix` and `fix-comments` are legacy aliases of this one-off repair, not of Autofix |
+| `@coderabbitai autopilot` / `autopilot resume` / `autopilot stop` | Turn Autofix (formerly Autopilot) on for the PR, resume it after a pause, or turn it off -- it keeps fixing review feedback and failing CI until the PR is ready |
 | `@coderabbitai rate limit` | Remaining PR review allowance + next availability -- **consumes no review** (aliases `rate-limit`, `limits`, `quota`) |
 | `@coderabbitai configuration` | Dump the resolved config with per-setting sources |
 | `@coderabbitai generate configuration` | Open a PR adding a `.coderabbit.yaml` |

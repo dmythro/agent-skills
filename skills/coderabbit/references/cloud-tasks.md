@@ -1,6 +1,6 @@
 # Cloud Coding Agent Tasks
 
-Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta, v0.9.0) in agent mode: the record stream, what to do with each outcome, and which reruns are safe. Distilled from the [cloud task docs](https://docs.coderabbit.ai/cli/cloud-tasks) and v0.9.0 `--help`; only the read-only `code ls` was exercised here.
+Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta since v0.9.0) in agent mode: the record stream, what to do with each outcome, and which reruns are safe. Distilled from the [cloud task docs](https://docs.coderabbit.ai/cli/cloud-tasks) and v0.9.1 `--help`; only the read-only `code ls` was exercised here. The docs do not cover the v0.9.1 additions yet -- `goal`, `archive`, `new --goal`/`--private`/`--access`, `resume --interactive` -- so their notes come from `--help` alone.
 
 ## Before Scripting
 
@@ -8,6 +8,7 @@ Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta, v
 - **Coding Agent must be enabled for the organization**, and the first task starts its trial if it has not begun. `billing_required` means a person must start a trial or set up billing in the web app.
 - **A task starts from the branch on `origin`** that the current branch tracks (or the same-named branch), never from the working tree: push first. A detached HEAD is refused, and `new` warns with `unpushed_commits`, `uncommitted_changes` or `branch_not_on_origin`.
 - **`handoff` needs a clean checkout on a pushed branch.** Untracked files count as changes, so keep the summary and plan files outside the repository. Each run creates another task.
+- **`--access full`** (v0.9.1, on `new` and `handoff`) requests full repository access, which needs a GitHub authorization in the browser -- a person's step, like `authorize_github`.
 - **Pass `--agent` right after the command name**, and before `--plan` on `new`. Every `code` command except `skills import` accepts it; only an explicit `--agent` turns argument errors into JSON.
 
 ## The Record Stream
@@ -41,7 +42,7 @@ A last record whose `status` or `action` is not covered here: stop and ask a per
 - `message_dropped` and `steer_not_delivered` mean the send did not land: send again.
 - No last record (killed, or exit `130`/`143`) and no commit point seen from `new` or `handoff`? A task may still exist: check `coderabbit code ls --agent --repo .` before rerunning.
 - After `-m`, keep `clientOperationId` from `message_sent`: the turn is yours when its `turn.queueItemId` matches. Never resend `-m`.
-- **Safe to rerun**: `ls`, `show`, `plan` without `--approve`, and `push` with identical flags -- unless its last record was `delivery_failed`, `delivery_conflicts` or `push_rejected`. Never rerun `cancel` to wait: it stops whatever turn runs then and drops the queue.
+- **Safe to rerun**: `ls`, `show`, `plan` without `--approve`, `goal` without `--set` or `--clear`, `archive` (a repeat succeeds), and `push` with identical flags -- unless its last record was `delivery_failed`, `delivery_conflicts` or `push_rejected`. Never rerun `cancel` to wait: it stops whatever turn runs then, and queued messages do not run after it.
 
 ## Outcomes by Command
 
@@ -58,6 +59,8 @@ A last record whose `status` or `action` is not covered here: stop and ask a per
 ### resume
 
 Watch with no send option, or send at most one of `-m`, `--steer`, `--answer` (all need `--agent`; `-` reads stdin). The run follows the turn until it ends, the agent asks a blocking question, or 9 minutes pass.
+
+`--interactive` (v0.9.1, with `--agent`) keeps one bidirectional NDJSON session open on piped stdin instead: `message`, `steer`, `answer`, `cancel`, `show` and `close` requests go in, correlated responses and live trace events come out, and EOF detaches without stopping the task. A `message`, `steer` or `answer` sent through it starts billed work like `-m`; the request shapes are not documented yet, so prefer one send per `resume` run.
 
 | Last record | Next step |
 |-------------|-----------|
@@ -91,11 +94,13 @@ Billed from `question_sent` on. A task holds 3 open side chats, an idle one expi
 | `error` `task_busy`, `turn_active`, `pending_queue_exists` | Nothing was pushed: wait, then rerun |
 | `error` `delivery_failed`, `delivery_conflicts`, `push_rejected` | Report it; fix the cause (conflicts: on the task page) before pushing again |
 
-### cancel, plan, autopilot
+### cancel, plan, autofix, goal, archive
 
-- **`cancel`**: `complete` `cancel_pending` is not final -- poll `code show --agent <task>` until `task.turnStatus` is not `in_progress` and `task.cancellationPending` is false.
+- **`cancel`**: `complete` `cancel_pending` is not final -- poll `code show --agent <task>` until `task.turnStatus` is not `in_progress` and `task.cancellationPending` is false. Queued messages do not run afterwards: CodeRabbit pauses them where queue pause has rolled out (resume them from the task page in the web app), and automated tasks such as pull request monitoring drop them.
 - **`plan`**: `plan_stale` -- show the plan again and get approval again; `plan_not_found` -- no finished plan yet, and a code-mode task never has one.
-- **`autopilot`**: `autopilot_paused` (`on` only) -- run `code autopilot resume --agent` on the same target; `billing_required` -- a person acts.
+- **`autofix`** (v0.9.1; `autopilot` on v0.9.0, an alias since): the records keep the `autopilot` field and `autopilot_*` status codes. `autopilot_paused` (`on` only) -- run `code autofix resume --agent` on the same target; `billing_required` -- a person acts.
+- **`goal`** (v0.9.1): reads the goal by default. `--set <objective>` (1--4,000 characters, `-` for stdin) keeps a paused or limited state but restarts a completed goal; `--clear` removes it. Get the user's OK for either.
+- **`archive`** (v0.9.1): hides the task from `ls` (`show` still reads it), makes it read-only and pauses its schedules; it can be unarchived later. Running, starting or stopping turns must finish first, and it neither cancels turns nor deletes the task.
 
 ### Any command
 
@@ -112,4 +117,4 @@ Billed from `question_sent` on. A task holds 3 open side chats, an idle one expi
 | `show` | Up to 20 seconds for pull request health, then warns and still succeeds |
 | Prompts, messages, steers, questions | 65,536 characters; stdin 262,144 bytes |
 
-`cancel`, `handoff`, `plan`, `autopilot`, `ls` and `show` write no keep-alive records -- size CI idle timeouts from this table.
+`cancel`, `handoff`, `plan`, `autofix`, `ls` and `show` write no keep-alive records -- size CI idle timeouts from this table.

@@ -22,7 +22,7 @@ The CLI version each skill was last verified against. A newer installed version 
 | Skill | Tool | Verified against | Checked |
 |---|---|---|---|
 | `bun-cli`, `bun-api` | Bun | v1.4.4 | 2026-10-22 |
-| `coderabbit` | CodeRabbit CLI | v0.9.0 | 2026-10-10 |
+| `coderabbit` | CodeRabbit CLI | v0.9.1 | 2026-10-22 |
 | `git-pr`, `git-ci`, `git-project` | GitHub CLI (`gh`) | v2.102.0 | 2026-09-30 |
 | `git-pr`, `git-ci` | GitLab CLI (`glab`) | not verified | -- |
 | `deps-upgrade` | bun / npm / pnpm / yarn | 1.3.14 / 11.19.0 / 11.21.0 / 4.18.0 | 2026-08-15 |
