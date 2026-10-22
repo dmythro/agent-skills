@@ -134,8 +134,17 @@ bunx [flags] <package[@version]> [args...]
 | Flag | Description |
 |---|---|
 | `--bun` | Force Bun runtime |
-| `--cwd path` | Set working directory |
-| `-p, --packages pkg` | Additional packages to install |
+| `--cwd path` | Run the tool in another directory (v1.4.4+) |
+| `-p, --package pkg` | Install `pkg`, then run the command with `pkg`'s binaries first in `PATH`, like npx (v1.4.4 semantics) |
+| `--env-file path` | Load environment variables for the tool (v1.4.4+) |
+| `--minimum-release-age N` | Apply the release-age gate to what `bunx` downloads (v1.4.4+) |
+| `--registry url`, `--ca`, `--cafile` | Registry and CA for the download (v1.4.4+) |
+| `--trust` | Run lifecycle scripts of the package and all its dependencies (v1.4.4+) |
+| `--ignore-scripts` | Run no lifecycle scripts while installing (v1.4.4+) |
+
+Like the package manager commands, `bunx` rejects an unknown flag of its own as of v1.4.4
+(`error: bunx has no --frobnicate flag. Flags for the package go after its name.`); 1.4.3
+ignored it and ran the tool. Flags after the package name go to the tool.
 
 ### Resolution Order
 
@@ -258,6 +267,12 @@ echo A=1 | bun --env-file=/dev/stdin app.ts
 bun --env-file=<(op inject -i .env.tpl) app.ts   # 1Password CLI renders .env.tpl to dotenv lines
 ```
 
+As of v1.4.4, `--env-file`, `--no-env-file`, and `env = false` also work with every package
+manager command and `bunx` -- `bun install --env-file ci.env` hands the variables to lifecycle
+scripts; 1.4.3 read `ci.env` as a package name and failed with a 404. With `NODE_ENV=development`
+or `test`, `bun install` now reads the same `.env` files as `bun run`, not `.env.production`
+(release notes).
+
 Disable automatic loading entirely (v1.3.3+) -- useful in production and CI, where variables
 come from the environment and a stray `.env` should be ignored. Explicit `--env-file` arguments
 are still honored.
@@ -292,6 +307,12 @@ pre-populated values as shell overrides. `bun file.js` still loads them. A `pack
 catchable `EvalError`, for the whole process; `=strict` extends that to every way a string
 becomes code. Bun 1.4.2 and earlier accepted the flag and ignored it.
 
+**Changed in 1.4.4 -- `=strict` decides by origin.** 1.4.3 blocked a fixed list of APIs. 1.4.4
+lets the engine run only static code -- Bun's built-ins, the modules the loader reads from where
+the program is stored, and the program given to `bun -e` or stdin -- and refuses everything else
+wherever it comes from. In a `--compile` executable only the executable counts, so a JavaScript
+file on disk no longer runs, even one the program just wrote.
+
 ```bash
 bun --disallow-code-generation-from-strings server.ts          # eval() and the Function constructors, as in Node
 bun --disallow-code-generation-from-strings=strict server.ts   # every way a string becomes code (Bun only)
@@ -301,10 +322,24 @@ bun --disallow-code-generation-from-strings=strict server.ts   # every way a str
 |---|---|---|
 | `eval()`, `new Function()`, and the async/generator function constructors | refused | refused |
 | `node:vm`: `Script`, `runIn*Context`, `compileFunction`, `SourceTextModule` | allowed | refused |
-| `import()` / `require()` of a `data:` or `blob:` URL, `new Worker(code, { eval: true })` | allowed | refused |
+| `import()` / `require()` of a `data:` or `blob:` URL holding code, `new Worker(code, { eval: true })` | allowed | refused |
 | `module._compile()`, so `require.extensions` transpilers (`ts-node`, `@babel/register`) | allowed | refused |
-| A plugin `onLoad` returning `contents` for the `js`/`jsx`/`ts`/`tsx` loaders | allowed | refused |
+| A plugin `onLoad` returning `contents` -- any loader as of v1.4.4; only `js`/`jsx`/`ts`/`tsx` on 1.4.3 | allowed | refused |
+| Macros, and `Bun.serve()` with the experimental `app` option (v1.4.4+) | allowed | refused |
 | The inspector: `--inspect*` exits at startup, `inspector.open()` throws | allowed | refused |
+
+A `data:` URL holding JSON loads under `=strict` as of v1.4.4 (1.4.3 refused it), and so does a
+plugin that returns an `exports` object instead of `contents`.
+
+Inside a `--compile` executable built with `=strict` (v1.4.4+):
+
+| At run time | Result |
+|---|---|
+| `import()`, `require()`, `new Worker()` of a file in the executable | works |
+| The same for a JavaScript or TypeScript file on disk | refused, even a file the program just wrote (1.4.3 ran it) |
+| `--preload`, `--import`, or `--require` in `BUN_OPTIONS` | refused: Bun prints the error and exits |
+| `.json`, `.jsonc`, `.json5`, `.toml`, `.yaml`, `.xml` files, and `{ type: "sqlite" }` imports, on disk | work |
+| `.txt` / `.md` files or `{ type: "text" }` imports on disk | refused -- read them with `Bun.file()` |
 
 - **Nothing turns it off.** Every `Worker`, `ShadowRealm`, and `Bun.ModuleGraph` gets the
   process's level. A `Worker` given the flag in its own `execArgv` throws

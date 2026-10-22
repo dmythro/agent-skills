@@ -237,7 +237,7 @@ File contents may be `string`, `Blob` (including `Bun.file()`), `ArrayBufferView
 ### Compression Gotcha
 
 **`Bun.write(path, archive)` ignores the constructor's `compress` option** and writes a plain
-tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0 through v1.4.3: the output carries a POSIX
+tar, even when the filename ends in `.tar.gz`. Verified on v1.4.0 through v1.4.4: the output carries a POSIX
 tar header, not the gzip magic bytes. Bun's own docs show this form as compressing -- it does
 not (tracked upstream: oven-sh/bun#30234). `.bytes()` and `.blob()` do honor `compress`:
 
@@ -272,7 +272,9 @@ await archive.extract("./output", { glob: ["src/**", "!node_modules/**"] })
 
 `extract()` creates the target directory, rejects absolute paths and unsafe symlink targets,
 and normalizes away `..` traversal. Windows always skips symlinks. `files()` loads contents
-into memory and returns regular files only -- prefer `extract()` for large archives.
+into memory and returns regular files only -- prefer `extract()` for large archives. As of
+v1.4.4, `extract(dir, { glob })` and `files()` reject a truncated or corrupted archive, like
+`extract(dir)`; 1.4.3 resolved with the entries read so far (release notes).
 
 > **Reference**: `node_modules/bun-types/docs/runtime/archive.mdx`
 
@@ -332,6 +334,11 @@ import { JSONL } from "bun"
 const records = JSONL.parse('{"a":1}\n{"a":2}\n{"a":3}')
 // [{ a: 1 }, { a: 2 }, { a: 3 }]
 ```
+
+**Avoid 1.4.3 for streaming JSONL.** In 1.4.3 only, `JSONL.parseChunk()` could report a `read`
+offset before a value it had already returned, and `parse()` / `parseChunk()` could return a value
+twice, when blank lines preceded it and a stray `,`, `]`, or `}` followed -- a reader that resumes
+from `read` re-emits records. Fixed in 1.4.4 (release notes).
 
 ## cron / Bun.cron
 
@@ -571,7 +578,7 @@ Bun.sliceAnsi(coloredText, 0, 5)       // Grapheme/ANSI-aware slicing
 ### Gzip
 
 ```typescript
-Bun.gzipSync(data: Uint8Array | string | ArrayBuffer, options?: { level?: number; memLevel?: number; windowBits?: number }): Uint8Array
+Bun.gzipSync(data: Uint8Array | string | ArrayBuffer, options?: { level?: number; memLevel?: number; windowBits?: number; strategy?: number }): Uint8Array
 Bun.gunzipSync(data: Uint8Array | ArrayBuffer): Uint8Array
 ```
 
@@ -584,10 +591,14 @@ new TextDecoder().decode(original)  // 'hello world'
 Bun.gzipSync(data, { level: 9 })
 ```
 
+`memLevel` (1-9) and `strategy` (0-4) take effect for `gzipSync()` and `deflateSync()` as of
+v1.4.4, and a value out of range throws `RangeError` (`ERR_OUT_OF_RANGE`); 1.4.3 ignored both
+options and compressed with the defaults.
+
 ### Deflate
 
 ```typescript
-Bun.deflateSync(data: Uint8Array | string | ArrayBuffer, options?: { level?: number; memLevel?: number; windowBits?: number }): Uint8Array
+Bun.deflateSync(data: Uint8Array | string | ArrayBuffer, options?: { level?: number; memLevel?: number; windowBits?: number; strategy?: number }): Uint8Array
 Bun.inflateSync(data: Uint8Array | ArrayBuffer): Uint8Array
 ```
 
@@ -669,7 +680,31 @@ interface GlobScanOptions {
 | `?` | Single character except `/` |
 | `[abc]` | Character class |
 | `[!abc]` or `[^abc]` | Negated character class |
-| `{a,b,c}` | Alternation |
+| `{a,b,c}` | Alternation; nests to any depth as of v1.4.4 (10 levels and 10 groups before) |
+| `{1..3}`, `{01..10}`, `{a..e}`, `{1..9..2}` | A number or letter in the range; the third value is the step (v1.4.4+) |
+| `?(a\|b)`, `*(a\|b)`, `+(a\|b)` | Zero or one, zero or more, one or more of the patterns (v1.4.4+) |
+| `@(a\|b)` | Exactly one of the patterns (v1.4.4+) |
+| `!(a\|b)` | Anything in a path segment except the patterns (v1.4.4+) |
+
+```typescript
+new Bun.Glob('**/!(*.test).ts').match('src/cart.test.ts')   // false
+new Bun.Glob('v{01..10}.ts').match('v05.ts')                 // true; 'v5.ts' -> false
+new Bun.Glob('*[(]1).txt').match('copy(1).txt')              // true: a literal "(" -- see below
+```
+
+**Changed in 1.4.4 -- extglob and ranges.** Bun 1.4.3 matched these characters literally. Patterns
+that relied on that change meaning: `*(1).txt` matched `copy(1).txt` and now means "zero or more
+`1`, then `.txt`"; `!(g)/a.ts` negated the literal `(g)/a.ts` (everything else matched) and now
+means `a.ts` in any folder but `g`; `{1..3}` was the text `1..3`. Escape a literal parenthesis as
+`[(]`. Parentheses without a
+prefix stay literal (`app/(marketing)/**`), file names containing these characters still match
+ordinary patterns, and the same syntax applies wherever Bun takes a glob: `--filter`, and
+`workspaces`, `files`, and `sideEffects` in `package.json`. Bun Shell still treats quoted text and
+`${}` values literally.
+
+Also fixed in 1.4.4: `**` inside braces (`{src/**,lib/**}`) matched like `*`; and `scan()` /
+`scanSync()` treated a truthy non-`true` option (`{ dot: 1 }`) as `false` (release notes for the
+last). `match()` is 1.6x to 5x faster; create the `Glob` once and reuse it.
 
 ### Examples
 

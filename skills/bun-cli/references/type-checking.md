@@ -5,8 +5,14 @@
 
 `bun check` (v1.4.3+) is a port of typescript-go built into Bun. It reads `tsconfig.json`,
 reports the errors `tsc` from TypeScript 7 reports (the exact version is
-`process.versions.typescript`, `7.0.2` in Bun 1.4.3), uses every CPU core, and never writes a
-file. It replaces `tsc --noEmit`. Keep `tsc` only to emit `.d.ts` files.
+`process.versions.typescript`, `7.0.2` in Bun 1.4.3 and 1.4.4), uses every CPU core, and never
+writes a file. It replaces `tsc --noEmit`. Keep `tsc` only to emit `.d.ts` files.
+
+**Changed in 1.4.4:** 1.4x to 7.8x faster on large projects (MUI `docs`: 10.3 s to 1.3 s, 11.2 GB
+to 1.3 GB peak), dozens of false errors fixed, and TS2321 ("Excessive stack depth comparing
+types") no longer reported, following TypeScript 7.1. Some errors `tsc` reports that 1.4.3 missed
+now appear (TS2367, TS7022, TS2540, TS2445, TS2589), so a project clean on 1.4.3 can fail on 1.4.4
+-- fix those rather than pinning the old version (release notes).
 
 ## Setup
 
@@ -44,6 +50,7 @@ bun check -b                           # follow `references` like tsc -b; nothin
 bun check --noUncheckedIndexedAccess   # any compiler option as a flag; overrides tsconfig.json
 bun check --no-pretty                  # one line per error (tsc --pretty false); default when piped
 bun check --threads 4 --timing         # cap threads on shared runners; print load/check times
+bun check --no-script -b               # the type checker even with a "check" script, any flags (v1.4.4+)
 ```
 
 | Instead of | Run |
@@ -93,26 +100,35 @@ no `bun check --watch`; use `bun --watch --check`.
 
 ## A `check` Script Shadows the Type Checker
 
-When `package.json` has a `check` script, `bun check` runs that script, like `bun run check`.
-`bun --check` with no file then type checks the project.
+When `package.json` has a `check` script, `bun check` runs that script, like `bun run check`,
+and appends your flags: `bun check -b` runs `biome check -b`. `bun check --no-script` (v1.4.4+)
+and `bun --check` with no file type check the project instead.
 
 ```json
 { "scripts": { "check": "biome check", "typecheck": "bun --check" } }
 ```
 
 ```bash
-bun check         # runs "biome check"
-bun --check       # type checks the project
-bun run typecheck # type checks the project
+bun check                  # runs "biome check"
+bun check --no-script      # type checks the project (v1.4.4+)
+bun check --no-script -b   # ... with any other flag or path
+bun --check                # type checks the project, on 1.4.3 too
+bun run typecheck          # type checks the project
 ```
 
+On 1.4.3, `--no-script` is not a flag: `bun check --no-script` runs the `check` script with
+`--no-script` appended. A tool or CI step that runs in projects you do not control should use
+`bun check --no-script` where it knows the Bun version is 1.4.4 or newer, and `bun --check`
+otherwise.
+
 Inside the `check` script, and in any script it starts, `bun check` is the type checker, so
-`"check": "bun check"` works on 1.4.3 -- but an older Bun, including an old `bun` in
+`"check": "bun check"` works on 1.4.3 and later -- but an older Bun, including an old `bun` in
 `node_modules/.bin` that scripts find first, runs it again and again without end. Anywhere else,
 other scripts included, `bun check` runs the `check` script: with the scripts above,
 `"typecheck": "bun check"` (what `bun init` writes) would run `biome check`. In scripts, write
-`bun --check`. Under `--filter` / `--workspaces`, `check` always means each package's `check`
-script.
+`bun --check`, or `bun check --no-script` on 1.4.4+. Under `--filter` / `--workspaces`, `check`
+always means each package's `check` script. `bun fmt` and a `fmt` script follow the same rules
+(v1.4.4+, `formatting.md`).
 
 ## Output
 
@@ -167,7 +183,9 @@ A removed option stops the check before any file is checked, exactly as `tsc` 7 
   projects are read from source, so nothing has to be built first.
 - `-b` checks every project in `references`, in build order, each with its own options.
   Compiler flags apply to all of them (`tsc -b --strict` is an error; `bun check -b --strict`
-  is not).
+  is not). As of v1.4.4 the projects share parsed declaration files and module resolution, and up
+  to 16 small projects are checked at once (4 before): up to 15x faster with many projects, but a
+  monorepo of large projects uses more memory (release notes).
 - A root `tsconfig.json` with only `references` (the `create vite` layout) is followed rather
   than reported as empty.
 - No `tsconfig.json` at or above the directory, but some below: Bun lists them and stops.
