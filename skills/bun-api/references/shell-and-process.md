@@ -57,9 +57,12 @@ await $`cat ${filename}`                // Safe: properly quoted
 const files = ['a.txt', 'b.txt', 'c.txt']
 await $`cat ${files}`                   // Arrays are expanded with proper escaping
 
-// Template expressions (NOT escaped — use for building command parts)
-const flags = '--verbose --color'
-await $`ls ${$.raw(flags)}`             // Raw insertion (careful!)
+// Raw insertion (NOT escaped — use for building command parts). There is no $.raw()
+const flags = '-l -a'
+await $`ls ${{ raw: flags }}`           // careful: the string is parsed as shell syntax
+
+// Escape by hand when building a string for elsewhere
+$.escape('$(rm -rf /)')                 // '"\$(rm -rf /)"' -- always a string as of v1.4.4
 ```
 
 ### Modifiers
@@ -80,6 +83,8 @@ await $`echo $MY_VAR`.env({ MY_VAR: 'hello' })
 
 // Working directory
 await $`ls`.cwd('/tmp')
+// v1.4.4+: a NUL byte in an .env() value or .cwd() path throws ERR_INVALID_ARG_VALUE
+// (1.4.3 silently cut the value at the NUL)
 
 // Timeout (ms)
 await $`slow-command`.timeout(5000)
@@ -140,6 +145,10 @@ Bun's shell supports these builtins (cross-platform):
 - `cd`, `echo`, `pwd`, `which`, `rm`, `mv`, `cp`, `mkdir`, `cat`, `touch`
 - `ls`, `exit`, `true`, `false`, `yes`, `seq`, `dirname`, `basename`
 - `source`, `export`, `test`/`[`
+
+As of v1.4.4, `mv -n` no longer overwrites an existing destination and `cp -n` no longer exits 1
+when the destination exists (release notes). Glob extglob syntax from `Bun.Glob` (v1.4.4) does
+not change Bun Shell: quoted text and `${}` values stay literal.
 
 ### Error Handling
 

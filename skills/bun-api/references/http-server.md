@@ -344,6 +344,32 @@ const server = Bun.serve({
 })
 ```
 
+### Client Certificates (mTLS) -- Changed in 1.4.4
+
+A server asks clients for a certificate only with `requestCert: true`; `ca` names the CAs those
+certificates are verified against. On 1.4.3, setting `ca` alone already made the server request a
+client certificate -- an mTLS setup that relied on that must add `requestCert: true` on 1.4.4
+(verified by watching the handshake: 1.4.3 sent a `CertificateRequest` with only `ca` set, 1.4.4
+does not).
+
+```typescript
+Bun.serve({
+  tls: {
+    key: Bun.file('./key.pem'),
+    cert: Bun.file('./cert.pem'),
+    ca: Bun.file('./client-ca.pem'),      // CA that issues the client certificates
+    requestCert: true,                    // required for mTLS
+    crl: Bun.file('./client-ca.crl.pem'), // optional: refuse revoked client certificates
+  },
+  fetch: () => new Response('hi'),
+})
+```
+
+With `requestCert: true`, clients without a certificate that `ca` verifies are refused unless
+`rejectUnauthorized: false`; `NODE_TLS_REJECT_UNAUTHORIZED` does not change a server. The same
+applies to `Bun.listen` and `node:tls` servers. A `tls` array with an RSA and an ECDSA pair now
+serves each client one it supports (1.4.3 served only the last pair; release notes).
+
 Multiple TLS certificates (SNI):
 
 ```typescript
@@ -430,15 +456,74 @@ const server = Bun.serve({
       // Called when backpressure is relieved
     },
 
+    error(error, ws) {
+      // A handler above threw; `ws` is that socket (v1.4.4+; 1.4.3 passed only the error)
+      ws.close(1011)
+    },
+    // ping(ws, data) {}, pong(ws, data) {} -- every handler is optional, `message` included
+
     // Options
     maxPayloadLength: 16 * 1024 * 1024,  // 16 MB (default)
-    idleTimeout: 120,                     // seconds (default: 120)
+    idleTimeout: 120,                     // seconds (default: 120); 0 = never (fixed in 1.4.4)
     backpressureLimit: 1024 * 1024,       // 1 MB
     perMessageDeflate: true,              // Compression
     binaryType: 'nodebuffer',             // 'nodebuffer' (default) | 'arraybuffer' | 'uint8array' | 'blob' (v1.4.1+)
   },
 })
 ```
+
+**Check `Origin` before `server.upgrade()`.** The same-origin policy does not apply to WebSocket
+handshakes, so a page on another site can open a socket that carries your user's cookies
+(cross-site WebSocket hijacking). Reject origins outside an allowlist with `403` first.
+
+### Pausing a Fast Client (v1.4.4+)
+
+```typescript
+import { createWriteStream } from 'node:fs'
+
+const sink = createWriteStream('./uploads.log')   // write() returns false when its buffer is full
+
+Bun.serve({
+  fetch(req, server) {
+    if (server.upgrade(req)) return
+    return new Response('Upgrade required', { status: 426 })
+  },
+  websocket: {
+    message(ws, message) {
+      if (!sink.write(message)) {
+        ws.pause()                          // stop reading: the client sees TCP backpressure
+        sink.once('drain', () => ws.resume())
+      }
+    },
+  },
+})
+```
+
+`ws.isPaused` reports the state, and the idle timeout is suspended while paused. Messages already
+read from the socket are still delivered.
+
+### Close Codes (Changed in 1.4.4)
+
+| Event | 1.4.4 | 1.4.3 |
+|---|---|---|
+| `ws.close()` without a code (either side) | `1005` on both ends | `1000` |
+| `server.stop(true)` | `1001 Server closed` | `1006 Connection ended` |
+| Protocol error, invalid UTF-8, message over `maxPayloadLength` | Close frame with `1002` / `1007` / `1009` and a reason | `1006` (release notes) |
+
+### Compression
+
+`perMessageDeflate: true` negotiates compression, but `ws.send()` and `ws.publish()` compress
+only when you pass `true` as the last argument, while `server.publish()` compresses unless you
+pass `false` -- short messages grow when compressed. An object configures each direction:
+
+```typescript
+perMessageDeflate: { compress: '16KB', decompress: 'shared' }
+```
+
+`"shared"` / `true` uses one compressor for all sockets; `"3KB"` to `"256KB"` (and `"dedicated"`,
+the same as `"256KB"`) keep a per-socket compressor of that size. As of v1.4.4 those sizes are
+honored -- 1.4.3 treated them all as `"3KB"` -- so per-connection memory grows (`"dedicated"`:
+149 KB to 282 KB), and `{ compress: false }` really stops compressing (release notes).
 
 ### WebSocket Methods
 
@@ -448,19 +533,29 @@ interface ServerWebSocket<T> {
   readyState: number                    // 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
   remoteAddress: string
 
-  send(data: string | Uint8Array | ArrayBuffer): void
+  send(data: string | BufferSource | Blob, compress?: boolean): number   // bytes, 0 dropped, -1 backpressure
   close(code?: number, reason?: string): void
+  terminate(): void                     // Close without the closing handshake
 
   // Pub/Sub
-  subscribe(topic: string): void
-  unsubscribe(topic: string): void
-  publish(topic: string, data: string | Uint8Array): void
+  subscribe(topic: string): boolean     // false on a closed socket
+  unsubscribe(topic: string): boolean
+  publish(topic: string, data: string | BufferSource | Blob, compress?: boolean): number
   isSubscribed(topic: string): boolean
 
   // Backpressure
   cork(callback: () => void): void      // Batch multiple sends
+  pause(): void                         // Stop reading from the client (v1.4.4+)
+  resume(): void                        // Read again (v1.4.4+)
+  readonly isPaused: boolean            // v1.4.4+
 }
 ```
+
+`send()` and `publish()` return the bytes sent, `0` when the message was dropped (closed socket,
+or more than `backpressureLimit` already buffered -- and for an empty payload), or `-1` under
+backpressure, after which `drain` runs once the buffer empties. A Close frame and messages that
+`send()` already accepted are no longer dropped by `ws.close()` over the backpressure limit,
+`terminate()`, or `server.stop(true)` (v1.4.4, release notes).
 
 ## Error Handler
 

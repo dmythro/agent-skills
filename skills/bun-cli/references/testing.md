@@ -27,10 +27,10 @@ bun test [flags] [file/dir patterns...]
 | `--max-concurrency N` | Max concurrent tests (default 20) |
 | `--randomize` / `--seed N` | Randomize test order / fix the seed |
 | `--watch` | Re-run on file changes |
-| `--update-snapshots` | Update snapshot files |
+| `--update-snapshots` | Update snapshot files. As of v1.4.4 a run that ends early (`--bail`) keeps the old contents; 1.4.3 emptied the file (release notes) |
 | `--preload module` | Preload script before tests |
 | `--check` | Type check the test files and everything they import first; no test runs on a type error (v1.4.3+). Missing from the help's flag list, shown in its examples |
-| `--coverage` | Enable code coverage |
+| `--coverage` | Enable code coverage. Counts are stricter as of v1.4.4 -- see Coverage Configuration |
 | `--coverage-reporter type` | `text` and/or `lcov` only -- **there is no `json`**. Implies `--coverage` (v1.4.3+; before, it ran the tests and wrote no report) |
 | `--coverage-dir path` | Coverage output directory |
 | `--reporter name` | `junit` (requires `--reporter-outfile`) or `dots` only -- **not** `default`, `spec`, `tap`, or `json` |
@@ -326,6 +326,7 @@ import { foo } from './module'   // imported before mocking -- the async-factory
 const fn = mock(() => 42)
 fn()
 expect(fn).toHaveBeenCalled()
+expect(fn).toHaveBeenCalledOnce()     // typed in bun-types as of v1.4.4; worked at runtime before
 expect(fn).toHaveBeenCalledTimes(1)
 expect(fn).toHaveBeenCalledWith(/* args */)
 expect(fn).toHaveReturnedWith(42)
@@ -446,6 +447,21 @@ Or via CLI:
 ```bash
 bun test --coverage --coverage-reporter lcov --coverage-dir ./coverage
 ```
+
+### Coverage Counts Changed in 1.4.4
+
+Code that never ran stops counting as covered, so `% Lines` can drop below `coverageThreshold`
+on upgrade without any code change -- re-baseline the threshold rather than pinning 1.4.3:
+
+- the untaken side of `||`, `&&`, `??`, or `?:` written on its own line;
+- code skipped by `?.`, `||=`, `&&=`, `??=`, or an unused default value, and an untaken `break`;
+- lines after an `await` or `yield` that the function never resumed past.
+
+`% Funcs` no longer counts implicit constructors, class field initializers, `static` blocks, or
+the bodies of generators and async functions as separate functions, so it can rise: a fully
+tested class could show 50% before. `Uncovered Line #s` ranges for functions that never ran are
+exact, and `lcov.info` `DA:` lines carry real hit counts (release notes for these two). Measured on
+one file: 100% lines / 83.33% funcs on 1.4.3, 66.67% / 100% on 1.4.4.
 
 ## Test Configuration in bunfig.toml
 

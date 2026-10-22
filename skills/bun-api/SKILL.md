@@ -23,10 +23,25 @@ Bun runs TypeScript natively — no `tsc` compilation, no `ts-node`, no build st
 
 **Critical**: In a Bun project (has `bun.lock`, `bun.lockb`, `bunfig.toml`, or `bun-types` / `@types/bun` in devDependencies), always use Bun to run scripts (`bun file.ts`, not `node file.ts`) and prefer Bun-native APIs over Node.js equivalents. Mixing runtimes causes subtle bugs and unnecessary retries.
 
-**Verified against Bun v1.4.3** (2026-10-10). Features are tagged with the version that
-introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`, `v1.4.3+`). Where a release changed existing
-behavior, both behaviors are stated so this skill stays correct on older projects -- check
-`bun --version` before relying on a version-tagged item.
+**Verified against Bun v1.4.4** (2026-10-22). Features are tagged with the version that
+introduced them (`v1.4+`, `v1.4.1+`, `v1.4.2+`, `v1.4.3+`, `v1.4.4+`). Where a release changed
+existing behavior, both behaviors are stated so this skill stays correct on older projects --
+check `bun --version` before relying on a version-tagged item.
+
+## Version Guide: What Each 1.4.x Release Changes
+
+| Release | Adds | Changes under existing code | Upgrade to it when |
+|---|---|---|---|
+| **1.4.0** (2026-08-20) | `Bun.XML`, `TOML.stringify()`, `Bun.secrets`, `spawn({ cgroup })`, `{ dir }` routes, `textStream()`, `fetch({ compress })`, ML-DSA / ML-KEM, native web streams with backpressure | `Bun.cron` reads local time, duplicate headers join with `", "`, `Temporal` is on, Node 26 target (`NODE_MODULE_VERSION` 147), `rejectUnauthorized: true` for `Bun.connect` / `Bun.listen`, MySQL dates decode as UTC, `fetch` network errors are `TypeError` | You want the 1.4 APIs -- audit cron schedules, self-signed dev servers, and MySQL date offsets first |
+| **1.4.1** (2026-09-04) | `Bun.serve({ http2 })`, streaming `Bun.write(path, response)`, client `WebSocket#pause()`, `crypto.argon2Sync()`, Unix-socket keep-alive | `fetch()` verifies TLS against the URL host, not a `Host` header; `localhost` resolves without the system resolver | Never as a target: `AsyncLocalStorage` values leak and a worker's `'online'` fires after its first message -- use 1.4.2 or later |
+| **1.4.2** (2026-09-05) | Nothing (bugfix release) | `.json()` rejects with the `JSON.parse` message; CMYK / YCCK JPEGs decode | You are on 1.4.1 |
+| **1.4.3** (2026-10-10) | `Bun.FetchSession`, `Bun.ModuleGraph`, `CompressionStream` levels, `If-Range`, `fetch({ proxy: false })` | A per-request `checkServerIdentity` costs a connection per request, an unawaited rejected `fetch()` exits 1, `ALL_PROXY` and wider `NO_PROXY` syntax apply, the code-generation flag is enforced, `sql.begin()` rejects rolled-back transactions | You need per-client TLS or proxy settings, or hit 1.4.1-era bugs (`promisify(setTimeout)`, keep-alive `ECONNRESET`s) |
+| **1.4.4** (2026-10-22) | `bun:sqlite` functions and update hooks, `SQL.camel` transforms, `sql.json()`, working `query.cancel()`, PostgreSQL `COPY` streams, server `ws.pause()`, `error(error, ws)`, extglob in `Bun.Glob`, `createWebSocketStream()` | WebSocket close codes (`1005`, `1006`, `1001`) and `ws` events, glob meaning of `*(...)` / `{1..3}`, mTLS needs `requestCert`, multi-statement SQLite errors throw, `Bun.hash()` without data throws | You use `bun:sqlite`, `Bun.SQL`, `ws`, or WebSocket servers -- and leave 1.4.3 if you stream JSONL |
+
+**Default to the newest patch.** Each patch fixes regressions from the ones before it (listed per
+release in `references/migration-1.4.md`), so pinning an older "known good" 1.4.x keeps known bugs.
+Before moving a codebase up, read the "Changes under existing code" column for every release in
+between: those are the edits an upgrade can force.
 
 ## Read Bun's Own Docs First
 
@@ -138,6 +153,19 @@ none on a `Bun.file()` response -- add your own), and any other `If-Range` value
 `200`. A `{ dir }` route's weak `ETag` never matches. Bun 1.4.2 ignored `If-Range` and always
 sent the range.
 
+**WebSockets (Changed in 1.4.4).** `ws.pause()` / `ws.resume()` / `ws.isPaused` on a server
+socket stop reading from a client that sends faster than you consume, and suspend the idle
+timeout. `websocket.error(error, ws)` receives the socket whose handler threw (1.4.3 passed no
+socket), and every handler is optional. Close codes follow the protocol: `ws.close()` without a
+code reports `1005` on both ends (1.4.3: `1000`), `server.stop(true)` sends `1001 Server closed`
+(1.4.3: `1006`), and protocol errors close with `1002` / `1007` / `1009` (release notes). Check
+`Origin` against an allowlist before `server.upgrade()` -- the same-origin policy does not cover
+WebSocket handshakes.
+
+**mTLS (Changed in 1.4.4).** A `Bun.serve` / `Bun.listen` / `node:tls` server asks for a client
+certificate only with `requestCert: true`; `ca` alone no longer does (1.4.3 sent a certificate
+request whenever `ca` was set). Set both for mutual TLS.
+
 > **Reference**: See `references/http-server.md` for TLS, WebSocket upgrade, streaming
 > responses, static file serving, and 1.4 behavior changes. Full API in
 > `node_modules/bun-types/docs/runtime/http/server.mdx` and `runtime/http/routing.mdx`.
@@ -157,7 +185,16 @@ const server = Bun.listen({
 })
 ```
 
-> **Reference**: See `references/networking.md` for TCP/UDP handlers, Unix sockets, the WebSocket client (`ws+unix://`), and `fetch()` transport options (HTTP/2, HTTP/3, proxies, system CA).
+**WebSocket client (Changed in 1.4.4).** `close` fires after the server's Close frame, as in
+browsers: a script ending in `ws.close()` takes one more round trip to exit, and per the release
+notes a server that never answers gets `1006` after 30 s (`BUN_CONFIG_WS_CLOSE_TIMEOUT`;
+`ws.terminate()` closes at once). A failed connection fires `error` (with `event.error.code`,
+such as `ECONNREFUSED`), then `close` with `1006` and an empty `reason`. The built-in `ws`
+package now behaves like npm `ws` on Node: `'error'` gets an `Error` with `.code`, `'close'` gets
+a `Buffer` reason, an `'error'` without a listener crashes the process, and
+`createWebSocketStream()` works -- add an `'error'` listener to every `ws` socket.
+
+> **Reference**: See `references/networking.md` for TCP/UDP handlers, Unix sockets, the WebSocket client (`ws+unix://`, close codes, the `ws` package), and `fetch()` transport options (HTTP/2, HTTP/3, proxies, system CA).
 
 ## fetch() Sessions and Proxies (v1.4.3+)
 
@@ -420,7 +457,20 @@ glob.scan({
   absolute: false,               // Return absolute paths (default: false)
   followSymlinks: false,         // Follow symlinks (default: false)
 })
+
+// Extglob and brace ranges (v1.4.4+)
+new Bun.Glob('**/!(*.test).ts').match('src/cart.ts')      // true; src/cart.test.ts -> false
+new Bun.Glob('src/@(app|lib)/**/*.ts').match('src/app/a.ts') // true
+new Bun.Glob('shard-{1..3}.json').match('shard-2.json')   // true; also {01..10}, {a..e}, {1..9..2}
 ```
+
+**Changed in 1.4.4 -- glob syntax.** `?(...)`, `*(...)`, `+(...)`, `@(...)`, and `!(...)` are
+extglob operators and `{1..3}` is a range, everywhere Bun uses globs: `Bun.Glob`, `--filter`, and
+`workspaces`, `files`, and `sideEffects` in `package.json` (`"workspaces": ["packages/!(internal)"]`
+works). 1.4.3 matched these literally, so `*(1).txt` matched `copy(1).txt` and now means "zero or
+more `1`, then `.txt`" -- write `*[(]1).txt` for the literal. Parentheses without a prefix stay
+literal (`app/(marketing)/**`), Bun Shell treats quoted text and `${}` values literally as before,
+and `{src/**,lib/**}` now matches `src/a/b.ts` (1.4.3 treated `**` inside braces as `*`).
 
 ## Environment and Arguments
 
@@ -483,7 +533,43 @@ await sql.begin(async (tx) => {
 // Auto-committed on success, rolled back on error
 ```
 
-> **Reference**: See `references/sql-client.md` for connection options, pool management, savepoints, MySQL specifics, and prepared statement configuration.
+### New in 1.4.4
+
+```typescript
+import { sql, SQL } from "bun"
+
+// snake_case columns, camelCase code -- both directions, every adapter
+const db = new SQL({ url: process.env.DATABASE_URL, transform: SQL.camel })
+await db`INSERT INTO users ${db({ firstName: "Alice" })}`   // INSERT INTO users ("first_name") ...
+const [u] = await db`SELECT first_name FROM users`          // u.firstName === "Alice"
+
+await sql`INSERT INTO settings (data) VALUES (${sql.json(42)})`   // JSON 42; a bare null stays SQL NULL
+await sql`SELECT * FROM users WHERE id = ANY(${[1, 2, 3]})`       // PostgreSQL: arrays bind to array types
+
+const q = sql`SELECT pg_sleep(30)`.execute()
+setTimeout(() => q.cancel(), 100)               // PostgreSQL: the server stops it; q rejects
+
+const r = await sql`SELECT id, tags FROM posts`
+r.columns                                       // [{ name, type: <OID>, ... }]; null on SQLite
+r.affectedRows                                  // rows written; 0 for a SELECT
+
+// PostgreSQL COPY as web streams with backpressure
+await Bun.file("users.csv").stream().pipeTo(sql`COPY users (id, name) FROM STDIN (FORMAT csv)`.writable())
+const csv = new Response(sql`COPY users TO STDOUT (FORMAT csv, HEADER)`.readable())
+```
+
+**Changed in 1.4.4:** `Bun.SQL` no longer reads the `PASSWORD` environment variable (use
+`PGPASSWORD`, `MYSQL_PASSWORD`, the URL, or `password`); `new SQL({ filename })` selects SQLite
+without `adapter` (1.4.3 tried PostgreSQL); a SQLite string of several statements runs all of them
+(1.4.3 ran only the first when it returned rows); `affectedRows` is set on SQLite and PostgreSQL
+(it was always `null`); a query cancelled before it is sent rejects with
+`ERR_SQLITE_QUERY_CANCELLED` / `ERR_POSTGRES_QUERY_CANCELLED` / `ERR_MYSQL_QUERY_CANCELLED` (1.4.3
+never settled it); and a second `sql.begin()` on SQLite waits instead of failing with
+`cannot start a transaction within a transaction`. PostgreSQL and MySQL specifics -- array
+binding, `COPY`, server-side cancel, `channelBinding`, connection reuse under `bun --hot` -- are
+from the release notes; no database server was available to check them.
+
+> **Reference**: See `references/sql-client.md` for connection options, pool management, savepoints, MySQL specifics, prepared statement configuration, transforms, result metadata, `COPY`, and cancellation.
 
 ## S3 Client (Bun.s3)
 
@@ -571,7 +657,7 @@ await extracted.extract("./out", { glob: ["src/**", "!**/*.test.ts"] })
 const files = await extracted.files()              // -> Map<string, File>
 ```
 
-**Gotcha (verified on v1.4.0 through v1.4.3):** `Bun.write(path, archive)` ignores the constructor's
+**Gotcha (verified on v1.4.0 through v1.4.4):** `Bun.write(path, archive)` ignores the constructor's
 `compress` option and writes an uncompressed tar under your `.tar.gz` filename. Bun's own
 docs show `Bun.write(path, archive)` as compressing -- it does not. Always pass
 `await archive.bytes()` (or `await archive.blob()`), which do honor `compress`
@@ -707,14 +793,49 @@ insertMany([
 db.close()
 ```
 
-> **Reference**: See `references/sqlite-and-data.md` for Database constructor, Statement API, transactions, and column types.
+### New in 1.4.4: JavaScript Functions and Update Hooks
+
+```typescript
+db.function('add2', (a, b) => a + b)                       // SQL function; arity = fn.length
+db.query('SELECT add2(12, 4) AS sum').get()                 // { sum: 16 }
+
+db.run('CREATE TABLE expenses (category TEXT, dollars INTEGER)')
+db.aggregate('add_all', { start: 0, step: (total, v) => total + v })   // like sum(); inverse -> window fn
+db.query('SELECT category, add_all(dollars) AS total FROM expenses GROUP BY category').all()
+
+db.onInsert = (_db, table, rowid) => console.log(`inserted ${table} ${rowid}`)   // also onUpdate, onDelete
+db.onInsert = null                                          // remove
+```
+
+Errors thrown in a function surface from the `get()` / `all()` / `run()` that ran the query, the
+signatures match better-sqlite3, and neither a function nor a hook may query its own `Database`
+(`This database connection is busy executing a query`). `stmt.reader` / `stmt.readonly` report
+whether a statement returns rows or writes, and `db[Symbol.for('sqlite-type')]` is `'bun:sqlite'`.
+
+**Changed in 1.4.4:**
+
+- **Named parameters bind with or without the prefix**, in both modes: `{ name: 'A' }` fills
+  `$name` without `strict: true` (1.4.3 bound `NULL`), and `{ $name: 'A' }` works with `strict: true`
+  (1.4.3 threw `Missing parameter`).
+- **A failing statement stops `db.run()` / `db.exec()`** of a multi-statement string and throws;
+  1.4.3 swallowed a runtime error such as a `UNIQUE` violation in any statement but the last and ran
+  the rest.
+- **Binding a `Date`, `Map`, or `Promise` throws `TypeError`** (it bound `NULL`), and
+  `{ readonly: true, create: true }` throws instead of opening read-write.
+- **`db.transaction(fn)` rolls back** when `fn` returns an already-rejected promise -- an `async`
+  function that throws before its first `await` (1.4.3 committed). Keep transaction functions
+  synchronous: work after an `await` runs outside the transaction.
+- **`changes` counts the statement's own rows**, not rows written by triggers or cascades.
+
+> **Reference**: See `references/sqlite-and-data.md` for Database constructor, Statement API, transactions, user-defined functions, hooks, and column types.
 
 ## Hashing and Passwords
 
 ```typescript
 // Non-cryptographic (fast, for hash tables/checksums)
-Bun.hash('input')                        // number (wyhash, fastest)
-Bun.hash.crc32('input')                  // CRC32
+Bun.hash('input')                        // bigint (64-bit wyhash, fastest) -- not a number
+Bun.hash.crc32('input')                  // number (CRC32)
+Number(Bun.hash(key) % 16n)              // shard index: mix bigints, then convert
 
 // Cryptographic
 new Bun.CryptoHasher('sha256').update('data').digest('hex')
@@ -728,6 +849,12 @@ const valid = await Bun.password.verify('password', hash)
 import { argon2Sync, randomBytes } from 'node:crypto'
 argon2Sync('argon2id', { message: 'pw', nonce: randomBytes(16), parallelism: 1, tagLength: 32, memory: 65536, passes: 3 })  // Buffer
 ```
+
+`Bun.hash()` and its 64-bit algorithms return a `bigint` (verified on 1.4.3 and 1.4.4; `@types/bun`
+typed it `number | bigint` until 1.4.4), so `Bun.hash(key) % 16` throws `TypeError`. As of v1.4.4,
+`Bun.hash()` with no argument, `undefined`, `null`, or a `Bun.file()` / S3 file throws `TypeError`
+instead of hashing `""`, `"undefined"`, `"null"`, or nothing -- read the file first
+(`await file.bytes()`).
 
 > **Reference**: See `references/hashing.md` for all hash algorithms, CryptoHasher streaming API, and password hashing options (bcrypt vs argon2id, cost parameters).
 
@@ -753,6 +880,9 @@ Bun.zstdCompressSync(data, { level: 3 })
 ```
 
 All compression functions accept `Uint8Array | string | ArrayBuffer` and return `Uint8Array`.
+`memLevel` and `strategy` take effect as of v1.4.4, and out-of-range values (`memLevel` outside
+1-9, `strategy` outside 0-4) throw `RangeError`; 1.4.3 ignored both and compressed with the
+defaults.
 
 For streams, `CompressionStream` takes a `level` as of v1.4.3 -- brotli otherwise runs at
 quality 11, which is slow for large dynamic responses. Ranges: `gzip` / `deflate` /
@@ -935,6 +1065,18 @@ Untagged rows landed in 1.4.0.
 | `If-Range` in `Bun.serve` (v1.4.3+) | Resumable downloads that restart in full when the file changed | `runtime/http/routing.mdx` |
 | `Bun.secrets.set({ persist: "local" })` (v1.4.3+) | Keeping a Windows credential on this machine instead of roaming with the account | `runtime/secrets.mdx` |
 | `Bun.unsafe.setJITPolicy()` (v1.4.3+) | Restoring the normal JIT once a `--compile-jit-policy` executable is interactive | `bundler/executables.mdx` |
+| `db.function()` / `db.aggregate()` (v1.4.4+) | SQL functions, aggregates, and window functions written in JavaScript in `bun:sqlite` | `runtime/sqlite.mdx` |
+| `db.onInsert` / `onUpdate` / `onDelete` (v1.4.4+) | Reacting to each row this `Database` writes (no queries inside the hook) | `runtime/sqlite.mdx` |
+| `new SQL({ transform: SQL.camel })` (v1.4.4+) | `first_name` columns as `firstName` both ways, any adapter; also `SQL.pascal`, `SQL.kebab` | `runtime/sql.mdx` |
+| `sql.json(value)` (v1.4.4+) | Storing a number, string, boolean, or JSON `null` as JSON | `runtime/sql.mdx` |
+| `query.cancel()` (v1.4.4+, working) | Stopping a running PostgreSQL query; the method existed but did nothing | `runtime/sql.mdx` |
+| `query.writable()` / `query.readable()` (v1.4.4+) | PostgreSQL `COPY ... FROM STDIN` / `TO STDOUT` as web streams | `runtime/sql.mdx` |
+| `result.columns` / `result.statement` (v1.4.4+) | Column types and the statement text on PostgreSQL and MySQL | `runtime/sql.mdx` |
+| `ServerWebSocket#pause()` / `resume()` / `isPaused` (v1.4.4+) | Server-side backpressure against a client that sends too fast | `runtime/http/websockets.mdx` |
+| `websocket.error(error, ws)` (v1.4.4+) | Closing the socket whose handler threw | `runtime/http/websockets.mdx` |
+| `new WebSocket(url, { proxy: { url, tls } })` (v1.4.4+) | Separate TLS options for an HTTPS proxy and the server | no docs page -- see `bun-types/bun.d.ts` |
+| `createWebSocketStream()` from `ws` (v1.4.4+) | A Node `Duplex` over a `ws` socket; threw "Not supported yet in Bun" | npm `ws` docs |
+| `Bun.Glob` extglob and `{1..3}` (v1.4.4+) | `!(*.test).ts`, `@(app\|lib)`, numbered shards -- also in `workspaces` and `--filter` | `runtime/glob.mdx` |
 
 `ReadableStream`, `WritableStream`, and `TransformStream` are native as of 1.4 and apply
 backpressure automatically — `Bun.serve` pauses a request/response body when the socket
@@ -942,12 +1084,12 @@ cannot accept more, and `fetch()` pauses the socket when nothing is consuming th
 Streaming code that previously buffered whole payloads no longer needs hand-rolled
 throttling, provided every stage of the pipeline honors backpressure.
 
-> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4,
-> 1.4.1, 1.4.2, and 1.4.3 (TLS verification against the URL hostname, `localhost` loopback
-> resolution, `ws` `ArrayBuffer` frames, `.json()` error messages, a TLS connection per
-> request-level `checkServerIdentity`, unhandled `fetch()` rejections, and the regressions each
-> patch fixed) -- the one thing Bun's shipped docs do not cover, since they describe only the
-> current state.
+> **Reference**: See `references/migration-1.4.md` for behavior that **changed** in 1.4 through
+> 1.4.4 (TLS verification against the URL hostname, `localhost` loopback resolution, `ws`
+> `ArrayBuffer` frames, `.json()` error messages, a TLS connection per request-level
+> `checkServerIdentity`, unhandled `fetch()` rejections, WebSocket close codes, glob syntax,
+> `bun:sqlite` error handling, and the regressions each patch fixed) -- the one thing Bun's
+> shipped docs do not cover, since they describe only the current state.
 
 ## Script Patterns
 
@@ -1043,10 +1185,15 @@ db.close()
     `undici` `Agent` / `dispatcher`, which Bun's `fetch()` ignores (v1.4.3+)
 29. **Depend on `bun-types`** (pinned to `bun --version`), not `@types/bun`, which trails every
     release -- see "Read Bun's Own Docs First"
+30. **Use `db.function()` / `db.aggregate()`** for logic SQLite should run per row, instead of
+    reading rows out to compute in JavaScript and writing them back (v1.4.4+)
+31. **Use `transform: SQL.camel`** instead of hand-mapping `snake_case` columns (v1.4.4+)
+32. **Add an `'error'` listener to every `ws` socket** -- since 1.4.4 an unhandled one crashes
+    the process, as on Node -- and check `Origin` before `server.upgrade()`
 
 ## References
 
-> - `references/migration-1.4.md` -- what changed from 1.3 through 1.4.3 (breaking behavior)
+> - `references/migration-1.4.md` -- what changed from 1.3 through 1.4.4 (breaking behavior)
 > - `references/http-server.md` -- `Bun.serve` routes, TLS, WebSockets, static files
 > - `references/file-io.md`, `references/shell-and-process.md`, `references/networking.md`
 > - `references/sql-client.md`, `references/sqlite-and-data.md`, `references/redis-client.md`, `references/s3-client.md`

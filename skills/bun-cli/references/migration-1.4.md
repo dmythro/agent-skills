@@ -1,8 +1,8 @@
 # Bun 1.3 to 1.4: CLI, Package Manager, and Test Runner Changes
 
 **What changed under existing projects.** Bun's shipped docs describe the current state only --
-this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1,
-1.4.2, and 1.4.3 changes at the end. Runtime and API changes live in the `bun-api` skill's
+this file is for upgrading a repo or a CI pipeline written against 1.3.x, plus the 1.4.1
+through 1.4.4 changes at the end. Runtime and API changes live in the `bun-api` skill's
 `references/migration-1.4.md`.
 
 Run `bun --version` first. On 1.3.x the pre-1.4 behavior still holds.
@@ -353,3 +353,165 @@ Upgrade instead of working around these (release notes):
   1.4.2).
 - **1.3.14, Linux:** `bun build --compile` run from inside a compiled executable
   (`BUN_BE_BUN=1` or `Bun.build({ compile })`) wrote a binary that crashed at startup.
+
+## 1.4.4
+
+`bun fmt` (see `formatting.md`), a package manager release that closed 133 issues, and stricter
+coverage. Verified on the 1.4.4 runtime against 1.4.3 except items marked (release notes).
+
+### Most Likely to Bite
+
+1. **Package manager commands reject unknown flags.** `install`, `ci`, `add`, `remove`,
+   `update`, and `bunx` exit 1 on a flag that no package manager has
+   (`error: bun install has no --frozen-lockfil flag.`); 1.4.3 ignored it and ran a plain install.
+   npm, Yarn, and pnpm flags with a Bun equivalent are translated -- `bun add --save-dev x` writes
+   `devDependencies`, where 1.4.3 wrote `dependencies` -- and unsupported ones are skipped together
+   with their value: 1.4.3 read `--network-timeout 100000` as a request to install a package named
+   `100000`.
+2. **Peer dependencies resolve like pnpm.** A fresh resolve can pick a different, in-range version
+   of a peer: next to `@modelcontextprotocol/sdk`, `@remix-run/express` gets a nested `express@4`
+   for its `^4.20.0` peer, where 1.4.3 gave it the hoisted `express@5`. Versions already in
+   `bun.lock` stay; remove and re-add a package to re-resolve its peer.
+3. **Coverage counts are stricter.** `% Lines` can fall below `coverageThreshold` with no code
+   change: the untaken side of `||` / `&&` / `??` / `?:` on its own line and lines after an `await`
+   the function never resumed past no longer count as covered. `% Funcs` stops counting implicit
+   constructors, field initializers, and `static` blocks, so it can rise. One file: 100% lines and
+   83% funcs on 1.4.3, 67% and 100% on 1.4.4.
+4. **The hoisted linker removes what `package.json` dropped.** After deleting a dependency from
+   `package.json`, `bun install` on 1.4.3 left it (and what only it needed) in `node_modules`, so
+   code still importing it kept working by accident; 1.4.4 removes it.
+5. **`bun install --dry-run` stops running lifecycle scripts.** 1.4.3 ran the project's
+   `postinstall` during a dry run. `bun install --frozen-lockfile --dry-run` is now a lockfile check
+   that changes nothing.
+6. **`--disallow-code-generation-from-strings=strict` inside `--compile` executables** refuses
+   JavaScript files on disk, even one the program just wrote; JSON, TOML, and YAML still load
+   (`running-and-execution.md`).
+
+### New Commands and Flags
+
+- `bun fmt`: `--check`, `-l`, `--staged`, `--changed[=ref]`, `--stdin-filepath`, `--init`,
+  `--doctor`, `--debug-check`, `--no-script`, and every Prettier option as a flag; `[fmt]` in
+  `bunfig.toml`.
+- `bun check --no-script`: the type checker even when `package.json` has a `check` script. 1.4.3
+  has no such flag and hands `--no-script` to the script.
+- `bun pm fetch`; `bun pm cache pack|unpack <file>`; `bun pm cache prune` (`--max-age <days>`,
+  `--dry-run`); `--dry-run` on `bun pm cache rm` and `bun pm trust`; `bun pm ls <names...>` and
+  `--prod`; `bun pm diff` with `pkg@1.0.0:lib` subpaths, `--stat`, `--name-only`, `-U n`, `--json`;
+  several properties in `bun info` / `bun pm view` (`bun info zod version license`).
+- `bun publish --recursive` / `--filter <pattern>`.
+- `install`, `add`, `remove`, `update`, `outdated`, and `ci`: `--libc`, `--env-file` /
+  `--no-env-file`, `--minimum-release-age-excludes`, `--use-system-ca` / `--use-openssl-ca` /
+  `--use-bundled-ca`; `install` and `add`: `--save-prod`. The `--network-concurrency` default rose
+  from 48 to 64.
+- `bun update --depth 0`, `bun prune --check`, and `bun audit --prod` / `--omit <type>`.
+- `bunx --cwd`, `--env-file`, `--minimum-release-age`, `--registry`, `--ca` / `--cafile`,
+  `--trust`, and `--ignore-scripts`. `bunx -p pkg cmd` runs `cmd` with `pkg`'s binaries first in
+  `PATH`, like npx.
+- `bun link --save <name>` adds `"<name>": "link:<name>"` to `package.json`. Plain
+  `bun link <name>` never edited it, although the 1.4.3 help listed `--save` as the default.
+- `minimumReleaseAge` and `--minimum-release-age` take units (`"3d"`, `"90m"`, `"12 hours"`,
+  `"2 weeks"`; a number is still seconds) -- 1.4.3 fails with `Invalid Bunfig` on a string -- and
+  `minimumReleaseAgeExcludes` takes `name@version` entries that exempt one release.
+- `packageExtensions` in the root `package.json` and `link:./path` dependencies (SKILL.md).
+
+### Package Manager
+
+- **Yarn Berry lockfiles migrate.** All or nothing: workspaces, `npm:` aliases, `resolutions`, and
+  git, tarball, and `file:` dependencies keep their pins, `patch:` entries become
+  `patchedDependencies`, and catalogs are read from `.yarnrc.yml`. An `exec:` dependency or a
+  registry set only in `.yarnrc.yml` makes Bun resolve from `package.json` instead, with the reason
+  printed. `npm-shrinkwrap.json` migrates too, and when several lockfiles exist Bun tries
+  `npm-shrinkwrap.json`, `package-lock.json`, `yarn.lock`, then `pnpm-lock.yaml` (release notes).
+- **Retries back off.** A failed request is retried five times after 50, 100, 200, 400, and
+  800 ms, with 20% jitter; 429 and 408 count, and `Retry-After` is honored up to 60 s.
+  `BUN_CONFIG_HTTP_RETRY_BACKOFF` sets the first wait (`0` retries at once, as 1.4.3 did, all five
+  within about 5 ms) and `BUN_CONFIG_HTTP_RETRY_COUNT` the count (release notes).
+- **Linux installs filter by libc.** Optional native packages marked `"libc": ["musl"]` or
+  `["glibc"]` install only for the matching system; `--libc musl` targets Alpine from a glibc
+  machine and `--libc '*'` installs both. macOS does not filter. Lockfiles from older Bun pick up
+  the field when a package updates (release notes).
+- `bun add -d` / `--optional` / `--peer` / `--save-prod` move a package between groups, `--exact`
+  pins the installed version (`is-number@7` writes `7.0.0`, not `7`), and deprecated direct
+  dependencies print a `warn: deprecated` line.
+- `bun publish` refuses a prerelease without `--tag` or `publishConfig.tag`
+  (`prerelease needs a tag`). `publishConfig.registry` is honored, and `--provenance`,
+  `publishConfig.provenance`, and `NPM_CONFIG_PROVENANCE` are errors until Bun can generate
+  provenance -- they were ignored, so the package went out without it (release notes).
+- `--frozen-lockfile` / `bun ci` failures name the dependency that changed (`is-odd was added`),
+  and a direct dependency locked outside its `package.json` range, or at a version an `overrides`
+  rule forbids, fails the frozen install instead of installing (release notes).
+- `bun.lock` records `packageExtensions`, normalized `libc` values, and `"hasInstallScript": true`
+  for packages with install scripts (release notes for the last two); an older Bun drops
+  `hasInstallScript` the next time it saves.
+- `--dry-run` takes effect on `bun link`, `bun unlink`, `bun pm version`, `bun pm cache rm`,
+  `bun pm trust`, `bun pm pkg`, and `bun pm migrate`, which wrote their changes regardless, and
+  `dryRun = true` in `bunfig.toml` applies to every package manager command (release notes).
+- `bun install` reads `NPM_CONFIG_USERCONFIG`, the `.npmrc` that `actions/setup-node` writes, and
+  `NPM_CONFIG_IGNORE_SCRIPTS=true`; `--use-system-ca` works on package manager commands; and with
+  `NODE_ENV=development` or `test` it reads the `.env` files `bun run` reads, not
+  `.env.production` (release notes).
+- `~` and relative paths in `cache.dir`, `globalDir`, `globalBinDir`, and `cafile` expand and
+  resolve against the file that sets them; 1.4.3 created a directory literally named `~`
+  (release notes).
+- `bun outdated a b` lists packages matching either pattern (1.4.3 required both), and
+  `bun pm version <increment>` computes what `npm version` does: `1.0.0-rc.1` plus `major` is
+  `1.0.0` (release notes).
+- Git dependencies need Git 2.24 or newer, and `gitlab:`, `bitbucket:`, `gist:`, and `sourcehut:`
+  entries are written as `git+ssh://` URLs so a clean machine can install them (release notes).
+- `bun create <local template> <dir>` merges into an existing directory, listing conflicts and
+  overwriting only with `--force`; it deleted the directory (release notes).
+- `bun patch` applies hunks by context, like `git apply`, and `--commit` changes nothing unless
+  every check passes (release notes).
+
+### Type Checking
+
+- `bun check` is 1.4x to 7.8x faster on large projects and follows TypeScript 7.1 in no longer
+  reporting TS2321 ("Excessive stack depth comparing types"). Dozens of false errors are gone, and
+  some errors `tsc` reports that 1.4.3 missed (TS2367, TS7022, TS2540, TS2445) now appear, so a
+  project clean on 1.4.3 can fail on 1.4.4 (release notes). `process.versions.typescript` is still
+  `7.0.2`.
+- `bun check -b` shares parsed declaration files across projects and checks up to 16 small
+  projects at once instead of 4, so a monorepo of large projects uses more memory (release notes).
+
+### Test Runner
+
+- Coverage counts (Most Likely to Bite). `lcov.info` `DA:` lines carry real hit counts
+  (release notes).
+- `--update-snapshots` keeps a snapshot file's old contents when the run ends early, as with
+  `--bail`; it emptied the file (release notes).
+- `toHaveBeenCalledOnce()` is declared in `bun-types`; it already worked at runtime.
+
+### Bundler and Dev Server
+
+- `bun ./index.html --port 3000` honors the port written with a space; 1.4.3 served on 3000
+  whatever the flag said. The error overlay groups similar errors, scrolls, and follows the
+  system's light or dark theme (release notes).
+- A CSS rule's `translate`, `rotate`, or `scale` declared before `transform` is kept, where
+  `bun build` dropped it; `--minify` no longer gives two parenthesized default-exported functions
+  the same name; source maps put `export default function`, `import()`, and `require()` in the
+  right column (release notes).
+- `--server-components` is gone from `bun build --help` but still accepted (experimental).
+
+### Runtime Flags
+
+- `--disallow-code-generation-from-strings=strict` decides by origin: only Bun's built-ins and
+  the program's own files run. Plugins returning `contents` for any loader and macros are refused;
+  an `import()` of a `data:` URL holding JSON is allowed again (`running-and-execution.md`).
+- As PID 1 in a container, `bun` exits with 128 plus the signal number on Ctrl+C or
+  `docker stop`; under `bun --hot`, timers keep firing after an uncaught exception once a fix is
+  saved (release notes).
+- `bun run --filter <pkg> deploy` skips `deploy` and `postdeploy` after `predeploy` fails, like
+  `bun run` (release notes).
+
+### Platform
+
+- Root certificates follow NSS 3.131.1, and FreeBSD builds target FreeBSD 14.4 (release notes).
+
+### Regressions Fixed in 1.4.4
+
+Upgrade instead of working around these (release notes):
+
+- **1.4.3:** runs that write the compile cache (`NODE_COMPILE_CACHE` or
+  `module.enableCompileCache()`) took twice as long to exit.
+- **1.4.0:** a failed lifecycle script's non-UTF-8 output (Latin-1 or Shift-JIS compiler errors)
+  printed every invalid byte as U+FFFD.

@@ -91,6 +91,64 @@ ws.addEventListener('message', (e) => console.log(e.data))
 ws.addEventListener('close', () => {})
 ```
 
+### Close Codes and Failures (Changed in 1.4.4)
+
+The client follows browsers and Node, which changes what `close` and `error` report:
+
+| Situation | 1.4.4 | 1.4.3 |
+|---|---|---|
+| `ws.close()` without a code | Empty Close frame; both ends report `1005` | `1000` |
+| When `close` fires | After the server's Close frame (one more round trip), or `1006` if none arrives in 30 s (`BUN_CONFIG_WS_CLOSE_TIMEOUT`) | Right after `close()`, `wasClean: true` regardless |
+| Connection fails (refused, DNS, TLS, bad handshake) | `error` with `event.error.code` (`ECONNREFUSED`, `ENOTFOUND`, `DEPTH_ZERO_SELF_SIGNED_CERT`, `ERR_TLS_CERT_ALTNAME_INVALID`) and the text in `event.message`, then `close` with `1006`, `reason: ""`, `wasClean: false` | `error` without `.error.code`, `close` with `1006` and the text in `reason`; other failures closed with `1002`-`1015` and an English reason |
+| TCP connection lost after `open` | Only `close`, with `1006` | -- |
+
+```typescript
+const ws = new WebSocket('ws://localhost:1')
+ws.onerror = (event: any) => console.error(event.error?.code, event.message)  // ECONNREFUSED ...
+ws.onclose = (event) => console.log(event.code, event.wasClean)               // 1006 false
+```
+
+The rows about the 30 s timeout and the 1.4.3 failure codes come from the release notes; the rest
+was checked on both versions. `ws.terminate()` closes immediately without the handshake.
+
+Also as of v1.4.4 (release notes): `new WebSocket(url, { protocols: 'chat' })` works (it threw
+`Value is not a sequence`), `ws://:token@host` sends the credentials, non-ASCII header values go out
+as Latin-1 like `fetch`, `send()` of a `Bun.file()` or S3 file throws instead of sending an empty
+frame, and a proxy's `407` is reported as such. With an `https://` proxy, `proxy.tls` configures the
+proxy connection separately from the server's `tls`:
+
+```typescript
+const ws = new WebSocket('wss://example.com', {
+  proxy: { url: 'https://proxy.internal:8443', tls: { ca: Bun.file('./proxy-ca.pem') } },
+})
+```
+
+### The `ws` Package (Rewritten in 1.4.4)
+
+`import { WebSocket, WebSocketServer } from "ws"` loads Bun's built-in implementation, which 1.4.4
+rewrote as a port of npm `ws` 8.22.0 over the native client and server. Code written for `ws` on
+Node now behaves the same:
+
+```typescript
+import { WebSocket, createWebSocketStream } from 'ws'
+
+const ws = new WebSocket('wss://example.com/logs', { handshakeTimeout: 5_000, maxPayload: 1024 * 1024 })
+ws.on('error', (err) => console.error(err.code))   // an Error with .code; 1.4.3 passed an ErrorEvent
+ws.on('close', (code, reason) => {})               // reason is a Buffer; 1.4.3 passed a string
+createWebSocketStream(ws, { encoding: 'utf8' }).pipe(process.stdout)   // threw "Not supported yet in Bun"
+```
+
+- **An `'error'` event without a listener is an uncaught exception** and ends the process, as on
+  Node -- 1.4.3 swallowed it. Add an `'error'` listener to every client and server socket.
+- `send()` while `CONNECTING` throws `WebSocket is not open: readyState 0 (CONNECTING)`.
+- Server sockets have `pause()`, `resume()`, and `isPaused`, and are `instanceof WebSocket`.
+- Release notes: `agent`, `createConnection`, and `lookup` are respected (SOCKS proxy agents work);
+  `handshakeTimeout`, `followRedirects`, `origin`, `auth`, `autoPong`, and similar options take
+  effect instead of being ignored; `maxPayload` is enforced, defaulting to 100 MiB (was 16 MiB);
+  `WebSocketServer({ perMessageDeflate })` negotiates compression and accepts any `Duplex`
+  (`http2.createSecureServer({ allowHTTP1: true })`, socket.io sticky sessions); and `ws` servers
+  no longer inherit `Bun.serve`'s 120 s idle timeout, automatic pings, or 16 MiB backpressure limit.
+
 ### Over a Unix Socket (v1.3.13+)
 
 `ws+unix://` and `wss+unix://` connect the WebSocket client over a Unix domain socket. The socket path and the request path are separated by `:`.
@@ -284,7 +342,9 @@ for await (const chunk of (await fetch(url)).textStream()) {
 - **Faster first HTTPS request** (v1.4.1+) -- root certificates are embedded as DER and only the relevant ones are parsed, so the first TLS connection starts up to 3x sooner; an expired root no longer hides a valid one from the same issuer.
 - **System CA** (v1.3.14+) -- run with `--use-system-ca`, or read the OS trust store via `tls.getCACertificates('system')` from `node:tls`.
 - **`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** (v1.3.12+) are re-read at runtime, not only at startup; see "Proxies" for `ALL_PROXY` and the 1.4.3 syntax.
-- **Root certificates** follow NSS 3.128 as of v1.4.3: Entrust Root Certification Authority, ePKI, Atos TrustedRoot 2011, and SecureSign Root CA12 were removed. A server chaining only to one of them fails verification -- pass `tls: { ca }` or run with `--use-system-ca`.
+- **Root certificates** follow NSS 3.128 as of v1.4.3: Entrust Root Certification Authority, ePKI, Atos TrustedRoot 2011, and SecureSign Root CA12 were removed. A server chaining only to one of them fails verification -- pass `tls: { ca }` or run with `--use-system-ca`. v1.4.4 moves to NSS 3.131.1 (release notes).
+- **TLS client fixes (v1.4.4, release notes):** servers with an Ed25519 certificate are reachable from `fetch()` and `tls.connect()`; a self-signed certificate not marked as a CA (`dotnet dev-certs`) is trusted through `NODE_EXTRA_CA_CERTS` or `ca`; assigning `tls.DEFAULT_CIPHERS` reaches `fetch`, `WebSocket`, `Bun.connect`, `RedisClient`, `Bun.SQL`, and `S3Client`; and a `tls` option given a view into a larger buffer (`buf.subarray(n)`) reads only the view.
+- **`keepalive: false`** (or a `keepAlive: false` `Bun.FetchSession`) closes the connection even when the request carries `Connection: keep-alive`, as forwarded `req.headers` do; 1.4.3 left it pooled (release notes).
 - **Header casing** (v1.3.7+) is preserved on the wire rather than lowercased.
 
 **Changed in 1.4:** duplicate response headers are joined with `", "` (only the last value was

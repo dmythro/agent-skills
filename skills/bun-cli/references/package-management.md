@@ -3,7 +3,8 @@
 > `bun <command> --help` is authoritative for flags. Concepts and behavior:
 > `node_modules/bun-types/docs/pm/**/*.mdx` (`cli/install.mdx`, `lockfile.mdx`,
 > `isolated-installs.mdx`, `global-store.mdx`, `workspaces.mdx`, `catalogs.mdx`,
-> `overrides.mdx`, `lifecycle.mdx`, `npmrc.mdx`). 1.4 changes: `migration-1.4.md`.
+> `overrides.mdx`, `package-extensions.mdx`, `lifecycle.mdx`, `npmrc.mdx`). 1.4 changes:
+> `migration-1.4.md`.
 
 ## bun install
 
@@ -18,12 +19,12 @@ bun install [flags]
 | `--frozen-lockfile` | Error if lockfile is out of date (CI) |
 | `--no-save` | Don't update package.json or lockfile |
 | `--production` | Skip devDependencies |
-| `--dry-run` | Show what would be installed |
+| `--dry-run` | List what would be installed; writes nothing and, as of v1.4.4, runs no lifecycle scripts (1.4.3 ran the project's `postinstall`) |
 | `--force` | Reinstall all packages |
-| `--verbose` | Verbose logging |
+| `--verbose` | Verbose logging; also lists deprecated transitive dependencies and out-of-range peers (v1.4.4+) |
 | `--silent` | No logging |
 | `--no-progress` | Disable progress bar |
-| `--ignore-scripts` | Skip lifecycle scripts |
+| `--ignore-scripts` | Skip every lifecycle script -- the project's and trusted dependencies' alike |
 | `--trust` | Run lifecycle scripts for new dependencies |
 | `--concurrent-scripts N` | Max parallel lifecycle scripts |
 | `--backend` | Install backend: `clonefile` (macOS default, macOS-only), `hardlink` (Linux/Windows default), `clonefile_each_dir` (macOS-only), `copyfile` (fallback when the others fail), `symlink` (mostly internal for `file:` deps; needs `--preserve-symlinks` at runtime) |
@@ -38,11 +39,14 @@ bun install [flags]
 | `--cache-dir path` | Custom cache directory |
 | `--omit dev\|optional\|peer` | Exclude a dependency type |
 | `--lockfile-only` | Write the lockfile without installing |
-| `--minimum-release-age N` | Only install packages published at least N seconds ago (supply-chain guard) |
-| `--cpu`, `--os` | Override architecture / OS for optional dependencies (`*` for all) |
+| `--minimum-release-age N` | Only install versions at least N old (supply-chain guard). A number is seconds; `90m`, `12 hours`, `3d`, `2 weeks` work as of v1.4.4 |
+| `--minimum-release-age-excludes list` | Exempt packages (`typescript`) or single releases (`typescript@5.9.3`); replaces the bunfig list (v1.4.4+) |
+| `--cpu`, `--os`, `--libc` | Override architecture / OS / libc (`glibc`, `musl`; `--libc` v1.4.4+) for optional dependencies (`*` for all) |
+| `--env-file path`, `--no-env-file` | Env files for lifecycle scripts and config; every package manager command takes them (v1.4.4+) |
+| `--use-system-ca` | Trust the OS certificate store for registry requests (v1.4.4+ on package manager commands; `NODE_USE_SYSTEM_CA=1` before) |
 | `-a, --analyze` | Install every dependency reachable from the given files, via Bun's bundler |
 | `--only-missing` | Only add to package.json if not already present |
-| `--network-concurrency N` | Max concurrent network requests (default 48) |
+| `--network-concurrency N` | Max concurrent network requests (default 64 as of v1.4.4; 48 before) |
 
 Since v1.3.13, `bun install` streams tarballs to disk during download instead of buffering them in memory, so large installs use dramatically less memory.
 
@@ -53,6 +57,57 @@ and `bun add` skip the tarballs of packages that never land in `node_modules`: g
 placed, so a cache warmed by `bun install --production` fails a later full `--offline` install
 with `--offline: "left-pad" is not in the cache`. Warm an `--offline` cache with an install
 that places at least the same packages, on the same platform.
+
+### Other Package Managers' Flags (v1.4.4+)
+
+`bun install`, `bun ci`, `bun add`, `bun remove`, and `bun update` translate a flag that has a
+Bun equivalent, skip one that does not together with its value, and **exit 1 on a flag no package
+manager has** (`error: bun install has no --frozen-lockfil flag.`). Bun 1.4.3 did none of this:
+`bun add --save-dev zod` saved to `dependencies`, `bun install --immutable` updated the
+lockfile, `--network-timeout 100000` tried to install a package named `100000`, and a mistyped
+flag ran a plain install.
+
+| Flag | Bun equivalent |
+|---|---|
+| `--immutable` | `--frozen-lockfile` |
+| `--package-lock-only` | `--lockfile-only` |
+| `--save-dev`, `--save-exact`, `--save-optional`, `--save-peer` | `--dev`, `--exact`, `--optional`, `--peer` |
+| `--save-catalog` | `--catalog` |
+| `--no-optional`, `--ignore-optional` | `--omit=optional` |
+| `--only=production` | `--omit=dev` |
+| `--location=global` | `--global` |
+| `--shamefully-hoist`, `--node-linker=hoisted`, `--install-strategy=hoisted` | `--linker=hoisted` |
+| `--node-linker=isolated`, `--install-strategy=linked` | `--linker=isolated` |
+
+### Retries (v1.4.4+)
+
+A failed registry request -- a connection error, a 5xx, 429, or 408 -- is retried five times,
+waiting 50, 100, 200, 400, and 800 ms with 20% jitter, and honoring `Retry-After` up to 60 s.
+That rides out an outage of about 1.5 s; Bun 1.4.3 made all five attempts within about 5 ms.
+
+```bash
+BUN_CONFIG_HTTP_RETRY_BACKOFF=250 bun install   # first wait 250 ms: 250, 500, 1000, 2000, 4000
+BUN_CONFIG_HTTP_RETRY_BACKOFF=0 bun install     # retry immediately, as before
+BUN_CONFIG_HTTP_RETRY_COUNT=8 bun install       # more attempts (default 5)
+```
+
+`bun info`, `bun pm view`, `bun pm whoami`, and `bun audit` retry the same way. `bun publish`
+never retries an upload (release notes and `pm/cli/install.mdx`).
+
+### Peer Dependencies (Changed in 1.4.4)
+
+Peers resolve much like pnpm. A peer that the project, the workspace, or any ancestor of the
+package depends on uses that version, even out of range. Otherwise every package with that peer
+shares one version that satisfies all of them, preferring an installed one, then the newest in the
+registry; when none satisfies all, each package takes an installed version in its range, or else
+shares the others' version rather than installing a second copy. Bun 1.4.3 gave the package
+whatever an unrelated dependency installed: with `@modelcontextprotocol/sdk` (which depends on
+`express@5`) and `@remix-run/express` (peer `express@^4.20.0`), 1.4.3 resolved `express@5` for both
+and 1.4.4 nests `express@4` for the Remix adapter.
+
+Versions already in `bun.lock` do not move -- remove and re-add the package that needs a peer to
+re-resolve it -- and `--verbose` lists every peer that ended up out of range. `bun update --latest`
+now moves a peer-only dependency in one run; 1.4.3 needed two (release notes).
 
 ### Lockfile Behavior
 
@@ -82,6 +137,20 @@ follows the lockfile, not the binary. `configVersion = 0` (any project) stays ho
 Since v1.3.10, `bun.lock` records a SHA-512 hash for GitHub and tarball dependencies, the way
 it always has for npm packages. Existing lockfiles pick the hashes up on the next install.
 
+**Migration (v1.4.4).** `bun install` converts `npm-shrinkwrap.json`, `package-lock.json`
+(`lockfileVersion` 2-4), `yarn.lock` -- Yarn v1 and, new in 1.4.4, Yarn 2+ "Berry" -- and
+`pnpm-lock.yaml` into `bun.lock`, trying them in that order. The Berry migration is all or
+nothing: if a pin cannot be kept (an `exec:` dependency, a registry set only in `.yarnrc.yml`),
+Bun prints why and resolves from `package.json` (release notes). `--frozen-lockfile` / `bun ci`
+on a project with only a foreign lockfile migrates it in memory and writes nothing; run
+`bun install` or `bun pm migrate` to commit a `bun.lock`.
+
+`bun install --frozen-lockfile --dry-run` validates `bun.lock` against `package.json` without
+installing (no scripts run as of v1.4.4), and a frozen failure names the dependency that changed
+(`is-odd was added`, `is-number changed from ^6.0.0 to ^7.0.0`). Edits that keep every locked
+version -- `^1.0.0` to `>=1.0.0`, moving a dependency between groups -- do not fail a frozen
+install.
+
 ## bun add
 
 Add one or more packages.
@@ -92,11 +161,12 @@ bun add [flags] pkg [@version] [pkg2...]
 
 | Flag | Description |
 |---|---|
-| `-d, --dev` | Add to devDependencies |
-| `--optional` | Add to optionalDependencies |
-| `--peer` | Add to peerDependencies |
+| `-d, --dev` | Add to devDependencies; moves a package another group lists (v1.4.4+; it stayed put before) |
+| `--optional` | Add to optionalDependencies (moves, like `-d`) |
+| `--peer` | Add to peerDependencies (moves, like `-d`) |
+| `--save-prod` | Add to dependencies, moving it from another group (v1.4.4+) |
 | `-g, --global` | Install globally |
-| `-E, --exact` | Pin exact version (no ^ or ~) |
+| `-E, --exact` | Pin the installed version: `pkg@7` writes `7.0.0` (v1.4.4+; 1.4.3 wrote `7`) |
 | `--no-save` | Don't update package.json |
 | `--trust` | Run lifecycle scripts for this package |
 | `--verbose` | Verbose logging |
@@ -107,6 +177,11 @@ bun add [flags] pkg [@version] [pkg2...]
 
 In a workspace whose default catalog already lists the package, a plain `bun add <pkg>` writes
 `catalog:` rather than a version range (v1.4+).
+
+A deprecated direct dependency prints `warn: deprecated rimraf@3.0.2: <message>` (v1.4.4+;
+`--verbose` adds transitive ones). Resolution prefers non-deprecated versions, and `bun add pkg`
+skips a deprecated `latest`; versions already in `bun.lock` change only on `bun update`
+(release notes).
 
 ### Version Specifiers
 
@@ -122,6 +197,14 @@ bun add https://example.com/pkg.tgz  # Tarball URL
 bun add ./local-pkg          # Local path
 bun add file:./local-pkg     # Local path (explicit)
 ```
+
+`"name": "link:./dir"` in `package.json` (v1.4.4+) symlinks a directory, relative to the
+`package.json` that declares it, without registering it through `bun link`. The directory needs
+no `package.json`, and its own dependencies are not installed -- use `file:` or a workspace for
+that. Only the root, a workspace, a `file:` directory they depend on, or a top-level `overrides` /
+`resolutions` entry may use a path; `bun install` fails when a registry, git, or tarball package
+declares one. `link:name` without a path still means a package registered with `bun link`. Bun
+1.4.3 failed a `link:` path with `failed to resolve`.
 
 ## bun remove
 
@@ -155,10 +238,12 @@ bun update [pkg] [flags]
 | `--no-optional` | Skip optionalDependencies |
 | `-E, --exact` | Write exact versions instead of ranges |
 | `-p, --production` | Only `dependencies` and `optionalDependencies` (v1.4+ meaning) |
+| `--depth 0` | Only what `package.json` lists; transitive dependencies keep their locked versions. `0` is the only accepted value (v1.4.4+) |
 | `--cwd path` | Set working directory |
 
 ```bash
 bun update                     # every dependency within its declared range
+bun update --depth 0           # direct dependencies only, the pre-1.4 scope (v1.4.4+)
 bun update zod                 # every copy of zod, transitive ones included (v1.4+)
 bun update '@types/*' --latest # glob patterns
 bun update --recursive --latest
@@ -185,6 +270,10 @@ bun outdated [pkg] [flags]
 
 Output columns: Package, Current, Update (semver-compatible), Latest, Workspace.
 
+As of v1.4.4, `bun outdated a b` lists packages matching either pattern (1.4.3 required both),
+`!pattern` excludes, and a dependency ahead of the `latest` tag is listed when `bun update` would
+change it (release notes).
+
 ## bun audit
 
 Check for known vulnerabilities.
@@ -198,6 +287,8 @@ bun audit [flags]
 | `--audit-level` | Minimum severity: `low`, `moderate`, `high`, `critical` (**not** `--level`) |
 | `--ignore` | Ignore an advisory by GHSA or numeric ID (repeatable) |
 | `--json` | JSON output |
+| `-p, --production` | Skip packages only devDependencies need (alias `--prod`; v1.4.4+) |
+| `--omit dev\|optional\|peer` | Skip packages only those dependency types need; repeatable (v1.4.4+) |
 | `--cwd path` | Set working directory |
 
 ### bun audit fix (v1.4+)
@@ -211,7 +302,9 @@ bun audit fix --dry-run        # preview
 bun audit fix --latest         # also apply fixes your declared ranges exclude, rewriting them
 ```
 
-Fixes blocked by a dependent's range are reported rather than forced.
+Fixes blocked by a dependent's range are reported rather than forced. As of v1.4.4 it also
+reports and rewrites an `overrides` rule that pins a package to a vulnerable version (release
+notes).
 
 ## bun dedupe (v1.4+)
 
@@ -235,6 +328,7 @@ bun prune
 bun prune --production         # also remove packages only devDependencies need (alias --prod)
 bun prune --omit optional
 bun prune --dry-run
+bun prune --check                  # CI gate: exit 1 if anything is removable, delete nothing (v1.4.4+)
 bun prune --os linux --cpu arm64   # prune for another platform
 bun prune --filter 'pkg-*'         # only the matching workspaces' node_modules
 ```
@@ -265,9 +359,15 @@ Create/use local package links for development.
 
 ```bash
 bun link               # Register current package as linkable
-bun link pkg-name      # Link a registered package into current project
+bun link pkg-name      # Symlink a registered package into node_modules; package.json is untouched
+bun link --save pkg-name   # Also add "pkg-name": "link:pkg-name" to package.json
 bun unlink             # Unregister current package
 ```
+
+`bun link <name>` has never edited `package.json`; the 1.4.3 help wrongly listed `--save` as the
+default. `--dry-run` works on `bun link` and `bun unlink` as of v1.4.4 -- before, both accepted it
+and still wrote (release notes). For a directory in the repository, prefer a `link:./path`
+dependency (see Version Specifiers).
 
 ## bun patch
 
@@ -287,27 +387,48 @@ Package manager utilities.
 ```bash
 bun pm ls [--all]       # List installed packages (alias: bun list)
 bun pm ls --trusted     # Only packages allowed to run lifecycle scripts (v1.4+)
+bun pm ls react zod     # Every installed copy of these packages (v1.4.4+; also --prod, --omit, --depth=0)
 bun pm why <pkg>        # Dependency tree explaining why a package is installed
 bun pm bin [-g]         # Print the bin directory
 bun pm hash             # Print lockfile hash (for CI caching)
 bun pm hash-string      # Print the string used to hash the lockfile
 bun pm hash-print       # Print the hash stored in the lockfile
 bun pm cache            # Show global cache directory
-bun pm cache rm         # Clear global cache (and the global virtual store)
+bun pm cache rm         # Clear global cache, the global virtual store, and cached bunx packages
+bun pm cache rm --dry-run          # What rm would delete (v1.4.4+)
+bun pm cache prune [--max-age 30]  # Drop cached packages older than N days; --dry-run lists them (v1.4.4+)
+bun pm cache pack <file>           # The cache entries bun.lock needs, as one file (v1.4.4+)
+bun pm cache unpack <file>         # Restore them, adding only what is missing (v1.4.4+)
+bun pm fetch            # Download every locked package into the cache only (v1.4.4+)
 bun pm pack [--dry-run] [--destination dir] [--gzip-level 0-9]  # Create tarball
 bun pm licenses         # Group dependencies by license (v1.4+)
 bun pm diff <pkg>       # Diff two versions of a package (v1.4+)
 bun pm scan             # Scan lockfile packages -- requires a security scanner in bunfig.toml
 bun pm version [patch|minor|major|...]  # Bump package.json version and tag
 bun pm pkg get|set|delete|fix           # Read/write package.json fields
+bun pm view pkg version license         # Registry metadata; several properties (v1.4.4+)
 bun pm whoami           # Current npm username
 bun pm default-trusted  # Show default trusted dependencies
 bun pm untrusted        # Show packages with blocked scripts
 bun pm trust [pkg...] [--all]   # Trust packages (allow lifecycle scripts)
+bun pm trust --all --dry-run    # Print the scripts that would run; change nothing (v1.4.4+)
 bun pm migrate          # Migrate from npm/yarn/pnpm lockfile without installing
 ```
 
 `bun pm licenses` takes `--json`, `--prod`, `--dev`, `--long`, and `--filter <pattern>`.
+
+`bun pm fetch` writes neither `node_modules` nor the lockfile and runs no scripts, so a Dockerfile
+can download in a layer keyed on `package.json` and `bun.lock` alone, then install with
+`--offline --frozen-lockfile` after copying the source. In a monorepo the fetch step needs only the
+root `package.json` and the lockfile. `bun pm cache pack` / `unpack` move the same cache between
+CI runners; `unpack` rejects a corrupted pack entirely (release notes).
+
+**Changed in 1.4.4:** `bun pm pkg set` takes arrays and bracketed keys
+(`keywords[]=cli`, `exports[./package.json]=./package.json`); `bun pm version <increment>` computes
+what `npm version` does (`1.0.0-rc.1` plus `major` is `1.0.0`) and sets `$npm_old_version` /
+`$npm_new_version` for its scripts; and `--dry-run` takes effect on `bun pm version`,
+`bun pm cache rm`, `bun pm trust`, `bun pm pkg`, and `bun pm migrate`, which wrote their changes
+regardless before (release notes).
 
 `bun pm diff` (v1.4+) is not listed in `bun pm --help` but works. It leads with a summary --
 files changed, new install scripts, and new imports of `child_process`, `fs`, `net`, or `vm` --
@@ -330,7 +451,13 @@ bun info pkg versions           # List all published versions
 bun info pkg version            # Show latest version
 bun info pkg description        # Show description
 bun info pkg dependencies       # Show dependencies
+bun info pkg version license    # Several properties: version = "7.0.0" / license = "MIT" (v1.4.4+)
+bun info pkg maintainers[0].name   # npm view paths (v1.4.4+)
 ```
+
+Bun 1.4.3 printed only the first of several properties. As of v1.4.4, `bun info` works outside a
+project, retries failed requests like `bun install`, and a missing dist-tag (`pkg@nope`) is an
+error listing the available tags instead of a silent `latest` (release notes).
 
 ## bun publish
 
@@ -349,8 +476,31 @@ bun publish [flags]
 | `--auth-type legacy/web` | Auth type |
 | `--token token` | Auth token |
 | `--registry url` | Custom registry URL |
+| `-r, --recursive` | Publish every workspace package not on the registry yet, dependencies first (v1.4.4+) |
+| `-F, --filter pattern` | Publish only the matching workspace packages (v1.4.4+) |
 
 Since v1.3.14, `bun publish` auto-detects the package `README` and sends its contents as npm registry metadata.
+
+```bash
+bun publish --recursive --dry-run   # what each workspace would publish, in dependency order
+bun publish --recursive --quiet     # skipped <name>: private / already on the registry
+bun publish --filter '@acme/*'
+```
+
+`--recursive` packs every package before it publishes the first. Private packages are skipped,
+and so -- per the release notes -- are versions already on the registry, so it is safe to re-run
+after a partial failure.
+
+**Changed in 1.4.4:**
+
+- A prerelease version (`2.0.0-beta.1`) without `--tag` or `publishConfig.tag` fails with
+  `prerelease needs a tag: 2.0.0-beta.1 would become "latest"`, as in npm 11. Pass `--tag next`,
+  or `--tag latest` to mean it.
+- `publishConfig.registry` and `publishConfig["@scope:registry"]` choose the registry, and
+  `workspace:` / `catalog:` versions come from the `package.json` files rather than a possibly stale
+  `bun.lock` (release notes).
+- `--provenance`, `publishConfig.provenance`, and `NPM_CONFIG_PROVENANCE` are errors until Bun can
+  generate provenance; 1.4.3 ignored them and published without it (release notes).
 
 ## Isolated Installs (Workspaces)
 
@@ -464,6 +614,27 @@ version range (v1.4+). Lockfiles using nested or version-scoped overrides are wr
   }
 }
 ```
+
+## Package Extensions (v1.4.4+)
+
+Some packages import a dependency they never declare, which fails under the isolated linker.
+`packageExtensions` in the root `package.json` adds the missing entry -- the same format pnpm and
+Yarn use, and Bun carries the setting over when it migrates a `pnpm-lock.yaml` or `yarn.lock`:
+
+```json
+{
+  "packageExtensions": {
+    "legacy-plugin@2": { "dependencies": { "lodash": "^4.17.21" } },
+    "react-redux@7": { "peerDependencies": { "react": "*" } }
+  }
+}
+```
+
+The key is a package name with an optional version range; the extension is recorded in `bun.lock`,
+and the extended package lists the added dependency there as if it had declared it. Bun 1.4.3
+ignores the field.
+
+> **Reference**: `node_modules/bun-types/docs/pm/package-extensions.mdx`
 
 ## Lifecycle Script Controls
 

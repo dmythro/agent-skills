@@ -6,8 +6,8 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 
 | Skill | Description | Install |
 |---|---|---|
-| `bun-cli` | Bun CLI: package management, scripts, type checking (`bun check`), testing, bundling, compilation, install layout (isolated linker + global store) | `bunx skills add dmythro/agent-skills --skill bun-cli` <br> `npx skills add dmythro/agent-skills --skill bun-cli` |
-| `bun-api` | Bun runtime API: HTTP server + routes, `fetch()` sessions and proxies, file I/O, shell, SQLite, SQL client (PostgreSQL/MySQL), S3 storage, Redis, images, WebView, secrets, parsers, hashing, compression, utilities | `bunx skills add dmythro/agent-skills --skill bun-api` <br> `npx skills add dmythro/agent-skills --skill bun-api` |
+| `bun-cli` | Bun CLI: package management, scripts, type checking (`bun check`), formatting (`bun fmt`), testing, bundling, compilation, install layout (isolated linker + global store), per-release upgrade guide | `bunx skills add dmythro/agent-skills --skill bun-cli` <br> `npx skills add dmythro/agent-skills --skill bun-cli` |
+| `bun-api` | Bun runtime API: HTTP server + routes, WebSockets, `fetch()` sessions and proxies, file I/O, shell, SQLite, SQL client (PostgreSQL/MySQL), S3 storage, Redis, images, WebView, secrets, parsers, hashing, compression, utilities, per-release upgrade guide | `bunx skills add dmythro/agent-skills --skill bun-api` <br> `npx skills add dmythro/agent-skills --skill bun-api` |
 | `git-commit` | Conventional Commits format for all git commits and PR/MR titles | `bunx skills add dmythro/agent-skills --skill git-commit` <br> `npx skills add dmythro/agent-skills --skill git-commit` |
 | `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, cost-aware bot review loop (GitHub: Copilot, CodeRabbit), Copilot review configuration, merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
 | `coderabbit` | CodeRabbit CLI local reviews (pre-commit/pre-push/pre-PR) + `.coderabbit.yaml` low-noise configuration + cloud Coding Agent tasks (`coderabbit code`) | `bunx skills add dmythro/agent-skills --skill coderabbit` <br> `npx skills add dmythro/agent-skills --skill coderabbit` |
@@ -21,7 +21,7 @@ The CLI version each skill was last verified against. A newer installed version 
 
 | Skill | Tool | Verified against | Checked |
 |---|---|---|---|
-| `bun-cli`, `bun-api` | Bun | v1.4.3 | 2026-10-10 |
+| `bun-cli`, `bun-api` | Bun | v1.4.4 | 2026-10-22 |
 | `coderabbit` | CodeRabbit CLI | v0.9.0 | 2026-10-10 |
 | `git-pr`, `git-ci`, `git-project` | GitHub CLI (`gh`) | v2.102.0 | 2026-09-30 |
 | `git-pr`, `git-ci` | GitLab CLI (`glab`) | not verified | -- |

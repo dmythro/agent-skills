@@ -48,6 +48,52 @@ fired `onclose` for pool connections that never connected.
   query that failed client-side in a connection's queue never settled while the next one got its
   rows.
 
+**Changed in 1.4.4.** Verified on the SQLite adapter; PostgreSQL and MySQL items come from the
+release notes and the shipped `sql.mdx`:
+
+- **`PASSWORD` is no longer read** from the environment. Use `PGPASSWORD`, `MYSQL_PASSWORD`,
+  `MARIADB_PASSWORD`, the URL, or the `password` option.
+- **`new SQL({ filename })` selects SQLite** without `adapter`; 1.4.3 connected to PostgreSQL
+  (`ERR_POSTGRES_CONNECTION_REFUSED`). A bare connection string such as `"app.db"` still needs
+  `{ adapter: "sqlite" }`, since Bun reads it as a PostgreSQL host.
+- **A SQLite string of several statements runs all of them** (`sql.unsafe()`, `sql.file()`), and
+  resolves to the first statement's rows. 1.4.3 ran only the first statement when it returned rows,
+  so a migration starting with a `PRAGMA` silently did nothing else. Only PostgreSQL wraps such a
+  string in an implicit transaction; on MySQL and SQLite the statements before a failing one stay
+  applied.
+- **Result metadata:** `affectedRows` is the number of rows written (`0` for a `SELECT`) on SQLite
+  and PostgreSQL, where it was always `null`; `count` is right for `INSERT ... SELECT`; a
+  `sql.begin()` / `tx.savepoint()` callback's result keeps `count` and `command`.
+- **Transactions on SQLite queue:** a second `sql.begin()` waits instead of failing with
+  `cannot start a transaction within a transaction`, and a failed `COMMIT` no longer leaves the
+  transaction open (release notes).
+- **Cancelling:** `query.cancel()` before the query is sent rejects it with
+  `ERR_SQLITE_QUERY_CANCELLED` / `ERR_POSTGRES_QUERY_CANCELLED` / `ERR_MYSQL_QUERY_CANCELLED`; on
+  1.4.3 such a query never settled.
+- **`sql instanceof Bun.SQL`** is `true`; it threw `TypeError`.
+- **PostgreSQL (release notes):** JavaScript arrays bind to array parameters; 35 more array types
+  (`uuid[]`, `int4range[]`, `tsvector[]`) decode as arrays instead of `"{...}"`; `sql.array(["a"])`
+  no longer casts to `JSON[]`, and its `null` elements are SQL `NULL`; a `Date` bound to `text`,
+  `date`, or `time` is ISO 8601; integers from 2^51 to 2^53 - 1 go out as `int8` and come back as
+  strings; an Invalid Date rejects; plain `COPY` without a stream rejects with
+  `ERR_POSTGRES_COPY_NOT_SUPPORTED`; cached statements are re-prepared after `ALTER TABLE` /
+  `DISCARD ALL`, and each connection keeps its 1,024 most recent; `sslmode=prefer` falls back to
+  plaintext against a server without TLS; `PGUSERNAME`, `PGAPPNAME`, `PGOPTIONS`, and
+  `PGCONNECT_TIMEOUT` are read.
+- **MySQL and MariaDB (release notes):** queries on one connection are pipelined again (broken
+  since 1.2.22), `caching_sha2_password` without TLS works for passwords of 20 bytes or more and no
+  longer needs `allowPublicKeyRetrieval: true` on every login, `lastInsertRowid` above 2^53 - 1 is a
+  string (a `BigInt` with `bigint: true`), MariaDB accepts object and array parameters, a refused
+  connection throws the server's error (`errno` 1040), and `sql("db.table")` quotes each part.
+- **Pool (release notes):** `idleTimeout` and `maxLifetime` let a busy, reserved, or in-transaction
+  connection finish first; a pool that lost connections grows back to `max`; `sql.begin()` and
+  `sql.reserve()` wait their turn (FIFO); sockets use 60 s TCP keepalive; and
+  `sql.close({ timeout: 0 })` closes at once.
+- **`bun --hot` reuses connections:** a `new SQL()` with the same settings picks up the previous
+  module's connections after a reload, keeping session state (`SET`, temp tables) and running
+  `onconnect` again; 1.4.3 opened up to `max` new ones per save and left the old ones open
+  (release notes).
+
 For PgBouncer transaction pooling, construct with `new Bun.SQL({ prepare: false })` -- since
 v1.3.11 Bun sends each such query's Parse+Bind+Execute as one atomic batch, so PgBouncer can
 no longer split it across connections and return the wrong result.
@@ -76,8 +122,16 @@ The adapter is detected from the connection URL:
 |---|---|
 | `postgres://`, `postgresql://` | PostgreSQL |
 | `mysql://`, `mysql2://` | MySQL |
-| `sqlite://`, `file://`, `:memory:` | SQLite |
-| Anything else | PostgreSQL (default) |
+| `mariadb://` | MariaDB (the MySQL driver; reads `MARIADB_*` variables where MySQL reads `MYSQL_*`) |
+| `sqlite://`, `sqlite:`, `file://`, `file:`, `:memory:` | SQLite |
+| Anything else, `localhost:5432/mydb` included | PostgreSQL (default) |
+
+The `filename` option selects SQLite on its own as of v1.4.4. For the other settings, an option
+wins over the URL you pass, which wins over a URL from the environment (`DATABASE_URL`), which wins
+over per-field variables (`PGHOST`, `MYSQL_USER`); `PGDATABASE` / `MYSQL_DATABASE` /
+`MARIADB_DATABASE` are the exception and beat the URL's database. An options object without a
+`url` changes single fields of the environment URL -- `new SQL({ hostname: "replica.internal" })`
+keeps `DATABASE_URL`'s user, password, and `sslmode`.
 
 ## Basic Queries
 
@@ -134,8 +188,86 @@ interface SQLOptions {
   prepare?: boolean         // Named prepared statements (default: true)
   onconnect?: (client: any) => void
   onclose?: (client: any) => void
+  adapter?: "postgres" | "mysql" | "mariadb" | "sqlite"
+  filename?: string         // SQLite file; selects SQLite without `adapter` (v1.4.4+)
+  transform?: Transform | NameTransform  // SQL.camel / SQL.pascal / SQL.kebab, or { column, undefined } (v1.4.4+)
+  channelBinding?: "disable" | "prefer" | "require"   // PostgreSQL SCRAM-SHA-256-PLUS (v1.4.4+)
+  foundRows?: boolean       // MySQL: affectedRows counts matched rows, like mysql2 (v1.4.4+)
 }
 ```
+
+PostgreSQL and MySQL URLs also take `?connect_timeout=`, `?idle_timeout=`, `?max_lifetime=`, and
+`?max=` (v1.4.4+), and PostgreSQL URLs libpq's `host`, `port`, `user`, `password`, `dbname`,
+`sslrootcert`, `sslcert`, `sslkey`, and `sslpassword` parameters, which 1.4.3 forwarded to the
+server and got refused. `tls.checkServerIdentity(hostname, cert)` replaces the hostname check on
+PostgreSQL, MySQL, and MariaDB and upgrades a lower SSL mode to `verify-full` (release notes):
+
+```typescript
+const PINNED = "AB:CD:..."   // SHA-256 fingerprint of the expected server certificate
+const db = new SQL("postgres://app@db.example.com/app?connect_timeout=5", {
+  channelBinding: "require",
+  tls: {
+    ca: Bun.file("./ca.pem"),
+    checkServerIdentity: (hostname, cert) =>
+      cert.fingerprint256 === PINNED ? undefined : new Error("pin mismatch"),
+  },
+})
+```
+
+## Column Name Transforms (v1.4.4+)
+
+```typescript
+const sql = new SQL({ transform: SQL.camel })
+
+await sql`INSERT INTO users ${sql({ firstName: "Alice", createdAt: new Date() })}`
+// INSERT INTO users ("first_name", "created_at") VALUES ($1, $2)
+const [user] = await sql`SELECT first_name, created_at FROM users`
+user.firstName
+```
+
+| Preset | `user_id` in code | Results only | Helpers only |
+|---|---|---|---|
+| `SQL.camel` | `userId` | `SQL.toCamel` | `SQL.fromCamel` |
+| `SQL.pascal` | `UserId` | `SQL.toPascal` | `SQL.fromPascal` |
+| `SQL.kebab` | `user-id` | `SQL.toKebab` | `SQL.fromKebab` |
+
+- Presets work on every adapter (verified on SQLite) and match postgres.js names, but there is no
+  `transform.value` / `transform.row`: keys inside `json` / `jsonb` values are not renamed.
+- Custom: `transform: { column: { from: name => ..., to: name => ... } }`. `from` renames row keys
+  and `result.columns` names; `to` renames `sql(object)` keys and every `sql("name")`, table
+  names included. Bun calls `from` once per statement column, so it must be deterministic.
+- `transform: { undefined: null }` sends `undefined` as that value, and the insert and update
+  helpers then keep every column. Without it, an `undefined` value is `NULL` -- and a column that
+  is `undefined` in every row is left out, so its default applies.
+
+## Parameters by Type
+
+| JavaScript value | PostgreSQL | MySQL / MariaDB | SQLite |
+|---|---|---|---|
+| `Date` | Instant for `timestamp` / `timestamptz`; ISO 8601 for `date`, `time`, `text` | `DATETIME` in UTC | Not supported -- pass `date.toISOString()` or `date.getTime()` |
+| Plain object | JSON | JSON | Not supported -- pass `sql.json(value)` |
+| `Array` | Array literal for built-in array types (v1.4.4+); JSON for `json` / `jsonb` | JSON | Not supported -- pass `sql.json(value)` |
+| `Buffer`, typed arrays | `bytea` | Binary | `BLOB` |
+| `string` | A JSON string for `json` / `jsonb`; as is otherwise | As is | `TEXT` |
+| `null`, `undefined` | `NULL` | `NULL` | `NULL` |
+
+On PostgreSQL with prepared statements, pass the object itself to a `json` / `jsonb` column, not
+`JSON.stringify(object)` -- a string is stored as a JSON string. `sql.json(value)` (v1.4.4+)
+stores any value as JSON on every adapter, the way to store a number, boolean, or JSON `null`
+(a bare `null` is SQL `NULL`):
+
+```typescript
+await sql`INSERT INTO settings (data) VALUES (${sql.json(42)})`      // 42
+await sql`INSERT INTO settings (data) VALUES (${sql.json("dark")})`  // "dark"
+await sql`INSERT INTO settings (data) VALUES (${sql.json(null)})`    // JSON null
+await sql`INSERT INTO people ${sql({ moods: sql.array(["ok", "happy"], "mood") })}`  // enum[]: name the type
+```
+
+Bun reads parameters when it sends the query, not when the template is evaluated: do not mutate a
+`Buffer`, `Date`, or object you passed until the query settles.
+
+An empty list matches nothing: `WHERE id IN ${sql([])}` becomes `IN (NULL)` on PostgreSQL and
+MySQL (1.4.3: a syntax error there), and `IN ()` on SQLite -- where `NOT IN ()` matches every row.
 
 ## Insert, Update, Delete
 
@@ -282,3 +414,85 @@ const db = new SQL({
   prepare: false,  // Use unnamed prepared statements
 })
 ```
+
+## Result Metadata (v1.4.4+)
+
+The array a query resolves to carries `count`, `command`, `lastInsertRowid`, and `affectedRows`
+(enumerable) plus `columns` and `statement` (not enumerable; `JSON.stringify` sees only rows).
+
+| Property | PostgreSQL | MySQL / MariaDB | SQLite |
+|---|---|---|---|
+| `count` | Rows returned, or written when none are returned | same | same |
+| `affectedRows` | Rows written; `0` for reads | same | same (was `null` on PostgreSQL and SQLite before 1.4.4) |
+| `lastInsertRowid` | `null` -- use `RETURNING` | First `AUTO_INCREMENT` value | `rowid` of the last insert |
+| `command` | Command tag (`"INSERT"`) | `null` | First keyword |
+| `columns` | `{ name, type: <OID>, table, number }[]` | `{ name, type, table, length, flags }[]` | `null` |
+| `statement` | `{ string, types, columns }` | `{ string, types, columns }` | `null` |
+
+`columns[i].type` tells apart columns that decode to the same JavaScript value, such as `jsonb`
+(OID 3802) and `text[]` (1009). `columns` lists duplicate names a row object cannot hold, and is
+`[]` for a statement that returns no rows. Treat `statement` as read-only: runs of one prepared
+statement share it.
+
+## Cancelling Queries (v1.4.4+)
+
+A query starts on `.then()` / `.catch()` / `.finally()` / `.execute()` -- `await` calls `.then()`
+-- and one that is never awaited or executed never runs. `query.active` is `true` while a
+connection runs it; `query.cancelled` is `true` after `cancel()`.
+
+```typescript
+const query = sql`SELECT pg_sleep(30)`.execute()
+setTimeout(() => query.cancel(), 100)
+await query   // rejects: canceling statement due to user request
+```
+
+| The query | PostgreSQL | MySQL / MariaDB | SQLite |
+|---|---|---|---|
+| Not sent yet | Never runs; `ERR_POSTGRES_QUERY_CANCELLED` | Never runs; `ERR_MYSQL_QUERY_CANCELLED` | Never runs; `ERR_SQLITE_QUERY_CANCELLED` |
+| Running on the server | Bun opens a second connection to cancel it; rejects with the server's error (`errno` `"57014"`) | Runs to the end and settles with its result | Runs inside the call that starts it; cannot be cancelled |
+
+An `ERR_POSTGRES_QUERY_CANCELLED` without a `hint` never reached the server and is safe to retry.
+`cancel()` existed on 1.4.3 but did nothing; a query cancelled before it was sent never settled.
+
+A query started with `.execute()` and never awaited loses some failures silently -- add a
+`.catch()` to fire-and-forget queries:
+
+```typescript
+sql`UPDATE stats SET hits = hits + 1`.catch(err => console.error(err))
+```
+
+## COPY Streams (PostgreSQL, v1.4.4+)
+
+`query.writable()` feeds `COPY ... FROM STDIN` and `query.readable()` reads `COPY ... TO STDOUT`,
+both as web streams with backpressure, carrying raw bytes in the statement's format (`text`,
+`csv`, or `binary`). Memory stays flat whatever the table size (release notes: 1,000 MiB at
+255 MiB/s with a 59 MiB peak RSS).
+
+```typescript
+// Load a CSV file into a table
+await Bun.file("users.csv").stream().pipeTo(sql`COPY users (id, name) FROM STDIN (FORMAT csv)`.writable())
+
+// Stream a table as an HTTP response
+Bun.serve({
+  routes: {
+    "/users.csv": () => new Response(sql`COPY users TO STDOUT (FORMAT csv, HEADER)`.readable()),
+  },
+})
+```
+
+`COPY` as a plain query, without a stream, rejects with `ERR_POSTGRES_COPY_NOT_SUPPORTED`.
+
+## Several Statements in One String
+
+`sql.unsafe()` and `sql.file()` send their text as written, with the database's own placeholders:
+`$1` on PostgreSQL, `?` on MySQL, and `?`, `?1`, `$1`, `:name`, `$name`, `@name` on SQLite, where
+an object of named parameters binds with or without the prefix (v1.4.4+).
+
+| Adapter | Result | Atomic? |
+|---|---|---|
+| PostgreSQL | An array with one result per statement | Yes -- one implicit transaction |
+| MySQL | An array with one result per statement | No -- statements before a failure stay applied |
+| SQLite | One result: the first statement's rows, or the total `count` written | No -- wrap in `sql.begin()` |
+
+On SQLite only the first statement may have parameters; a later one with a placeholder fails when
+Bun reaches it. Before 1.4.4, SQLite stopped after a first statement that returned rows.

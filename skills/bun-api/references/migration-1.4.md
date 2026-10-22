@@ -1,8 +1,8 @@
 # Bun 1.3 to 1.4: Runtime Behavior Changes
 
 **What changed under existing code.** Bun's shipped docs describe the current state only --
-this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1, 1.4.2,
-and 1.4.3 changes at the end. CLI and package manager changes live in the `bun-cli` skill's
+this file is for editing or upgrading a codebase written against 1.3.x, plus the 1.4.1 through
+1.4.4 changes at the end. CLI and package manager changes live in the `bun-cli` skill's
 `references/migration-1.4.md`.
 
 Check `bun --version` before applying any of this. On 1.3.x the pre-1.4 behavior still holds.
@@ -447,3 +447,186 @@ Upgrade instead of working around these on 1.4.0 through 1.4.2 (release notes):
 - **1.4.0:** on Linux, `http2.connect()` to a closed port reported `ECONNRESET` instead of
   `ECONNREFUSED`, and was swallowed without an `'error'` listener; `crypto.randomInt()` was about
   20x slower per call.
+
+## 1.4.4
+
+New APIs -- `bun:sqlite` functions and hooks, `Bun.SQL` transforms, `sql.json()`, `COPY` streams,
+server-side `ws.pause()`, extglob in `Bun.Glob` -- are in the SKILL. What changes under existing
+code is below. Verified on the 1.4.4 runtime against 1.4.3 except items marked (release notes);
+PostgreSQL and MySQL behavior is all from the release notes.
+
+### Most Likely to Bite
+
+1. **WebSocket close codes and events follow the protocol.** `close` fires once the closing
+   handshake finishes, not right after `close()`. `close()` without a code reports `1005` on both
+   ends (1.4.3: `1000`, including the `close(ws, code)` handler in `Bun.serve`). A failed
+   connection fires `error` -- `event.error.code` is `ECONNREFUSED`, `ENOTFOUND`,
+   `DEPTH_ZERO_SELF_SIGNED_CERT`, `WS_ERR_INVALID_UTF8`... -- then `close` with `1006` and an empty
+   `reason`; the description moved to `event.message`. 1.4.3 put it in `reason` and, for other
+   failures, closed with `1002`, `1007`, `1009`, `1011`, or `1015`, often without an `error` event
+   (release notes for those). `server.stop(true)` closes sockets with `1001 Server closed`
+   (1.4.3: `1006 Connection ended`). Code that switched on `event.code` or matched `event.reason`
+   text needs updating.
+2. **The `ws` package behaves like npm `ws` on Node.** `'error'` receives an `Error` with `.code`
+   (1.4.3: an `ErrorEvent`), `'close'` receives the reason as a `Buffer` (1.4.3: a string), and an
+   `'error'` with no listener is an uncaught exception that ends the process (1.4.3 kept running).
+   `send()` while `CONNECTING` throws. `ws` servers no longer inherit `Bun.serve`'s 120 s idle
+   timeout, automatic pings, or 16 MiB backpressure limit, and the default `maxPayload` is 100 MiB
+   (release notes). Add an `'error'` listener to every client and server socket.
+3. **Glob patterns gained extglob and ranges.** `*(1).txt` meant "ends in `(1).txt`" on 1.4.3 and
+   now means "zero or more `1`, then `.txt`"; `!(g)/a.ts` and `{1..3}` change meaning the same way
+   -- in `Bun.Glob`, `--filter`, and `workspaces`, `files`, and `sideEffects` patterns. Escape a
+   literal parenthesis as `[(]`. Paths with such characters still match ordinary patterns, and Bun
+   Shell's quoted text and `${}` values stay literal.
+4. **TLS servers request client certificates only with `requestCert: true`.** `Bun.serve`,
+   `Bun.listen`, and `node:tls` servers with `ca` alone sent a certificate request on 1.4.3 and do
+   not on 1.4.4. An mTLS setup that relied on `ca` must add `requestCert: true`; with it, clients
+   without a valid certificate are refused unless `rejectUnauthorized: false`.
+5. **`bun:sqlite` stops swallowing errors.** `db.run()` / `db.exec()` with several statements throw
+   at the first failing one and skip the rest (1.4.3 swallowed a runtime error such as a `UNIQUE`
+   violation in any statement but the last, and ran the rest); binding a `Date`, `Map`, or
+   `Promise` throws `TypeError` (it bound `NULL`);
+   `{ readonly: true, create: true }` throws; and `db.transaction(fn)` rolls back when `fn` returns
+   an already-rejected promise (1.4.3 committed). Named parameters now bind with or without the
+   `$` / `:` / `@` prefix in both modes, so a `{ name }` object that silently bound `NULL` in
+   non-strict mode now binds its value.
+6. **`Bun.SQL` connection defaults.** The `PASSWORD` environment variable is no longer read;
+   `new SQL({ filename })` without `adapter` opens SQLite (1.4.3 connected to PostgreSQL); a SQLite
+   string of several statements runs them all, including a migration that starts with a `PRAGMA`
+   (1.4.3 ran only the first statement when it returned rows). See `sql-client.md`.
+7. **`Bun.hash()` rejects bad input.** No argument, `undefined`, `null`, a `Bun.file()`, an S3
+   file, or a `Bun.build()` output on disk throws `TypeError`; 1.4.3 returned the hash of `""`,
+   `"undefined"`, `"null"`, or of nothing. The result is a `bigint`, as before.
+
+### WebSocket and `Bun.serve`
+
+- Server sockets gain `pause()`, `resume()`, and `isPaused`, and `websocket.error(error, ws)`
+  receives the socket; 1.4.3 passed only the error, so `error()` could not close the socket whose
+  handler threw and the connection stayed open.
+- `idleTimeout: 0` means never (it closed after about 256 s); `idleTimeout: 65536` and other
+  out-of-range sizes no longer wrap around; `maxPayloadLength` no longer applies to Ping, Pong, and
+  Close frames (release notes).
+- `perMessageDeflate.compress` values from `"4KB"` to `"256KB"` and `"dedicated"` use their own
+  window sizes instead of `"3KB"`, which costs more memory per connection (`"dedicated"`: 149 KB
+  to 282 KB), and `{ compress: false, decompress: true }` stops compressing outgoing messages
+  (release notes).
+- `server.upgrade(req, { headers })` sends `Upgrade` / `Connection` / `Sec-WebSocket-Accept` once
+  and accepts `headers: {}`; an empty `Sec-WebSocket-Protocol` declines a subprotocol; an error
+  thrown after `server.upgrade()` reaches `error()` (release notes).
+- `ws.close()` on a socket over `backpressureLimit` keeps the messages `send()` accepted, and
+  `terminate()`, `stop(true)`, or process exit no longer drop data accepted in the same tick
+  (release notes).
+- Client: `new WebSocket(url, { protocols: "chat" })` works, non-ASCII header values go out as
+  Latin-1, `send()` of a `Bun.file()` throws instead of sending an empty frame, and
+  `proxy: { url, tls }` gives an HTTPS proxy its own TLS options (release notes).
+
+### TLS
+
+- Ed25519 server certificates work for `fetch()`, `tls.connect()`, and the other clients; a
+  self-signed certificate that is not marked as a CA is trusted through `NODE_EXTRA_CA_CERTS` or
+  `ca`; and assigning `tls.DEFAULT_CIPHERS` affects `fetch`, `WebSocket`, `Bun.connect`,
+  `RedisClient`, `Bun.SQL`, and `S3Client` (release notes).
+- A TLS server with several `key` / `cert` pairs (RSA and ECDSA) serves each client one it
+  supports instead of only the last pair (release notes).
+- Root certificates follow NSS 3.131.1 (release notes).
+
+### Databases
+
+- `bun:sqlite`: `changes` counts the statement's own rows, not trigger or cascade writes; after
+  `ALTER TABLE`, an existing `Statement` returns the new column names; `break` out of
+  `stmt.iterate()` closes the cursor; `stmt.get()` stops after the first row; and `iterate()` over a
+  writing statement commits at exit (release notes for the last four). `PRAGMA hard_heap_limit`
+  and `soft_heap_limit` are accepted but no longer enforced (release notes).
+- `Bun.SQL`: `affectedRows` is set on SQLite (and PostgreSQL, per the release notes), `count` is
+  right for `INSERT ... SELECT`, a second `sql.begin()` on SQLite waits instead of failing, a
+  `sql.begin()` callback's result keeps `count` and `command`, and `sql instanceof Bun.SQL` works.
+- PostgreSQL (release notes): JavaScript arrays bind to array columns, 35 more array types decode
+  as arrays instead of `"{...}"` strings, `sql.array(["a"])` no longer casts to `JSON[]`, a `Date`
+  bound to `text` / `date` / `time` is ISO 8601, whole numbers from 2^51 to 2^53 - 1 are sent as
+  `int8` (and come back as strings), an Invalid Date rejects, each connection keeps at most 1,024
+  prepared statements, and `sslmode=prefer` falls back to plaintext against a server without TLS.
+- MySQL and MariaDB (release notes): queries on one connection are pipelined again (a regression
+  since 1.2.22), `caching_sha2_password` logins without TLS work for passwords of 20 bytes or more,
+  `lastInsertRowid` above 2^53 - 1 is a string (or `BigInt` with `bigint: true`), and
+  `sql("db.table")` quotes each part.
+- Pool (release notes): `idleTimeout` and `maxLifetime` no longer close a busy connection, waiters
+  are served in FIFO order, sockets use 60 s TCP keepalive, and `sql.close({ timeout: 0 })` closes
+  immediately.
+
+### Runtime and APIs
+
+- `Bun.gzipSync()` / `Bun.deflateSync()` honor `memLevel` and `strategy`; out-of-range values
+  throw `RangeError` (1.4.3 ignored both).
+- `Bun.$.escape()` always returns a string (`$.escape(null)` is `"null"`; it returned `null`
+  unchanged), and `.env()` / `.cwd()` throw `ERR_INVALID_ARG_VALUE` for a string with a NUL byte.
+  In Bun Shell, `mv -n` no longer overwrites and `cp -n` no longer exits 1 when the destination
+  exists (release notes).
+- `Bun.semver.satisfies()` returns `false` for invalid versions (`""`, `"1.2.3.4"`), ignores build
+  metadata (`1.0.0+build-1` satisfies `^1.0.0`), and `Bun.semver.order("2+1", "2.0.0")` no longer
+  throws.
+- `Bun.JSON5.parse()` rejects two inputs it accepted (`"1\0 2"` parsed as `1`), and
+  `Bun.indexOfLine()` throws `TypeError` for a string instead of returning `-1`.
+- `Bun.CSRF.generate(undefined, options)` keeps the default secret instead of throwing
+  `Secret is required`; `NaN` for `expiresIn` / `maxAge` throws `RangeError`.
+- `Bun.YAML.parse()` and `Bun.TOML.parse()` throw `TypeError` for an S3 file, and `Bun.Archive`'s
+  `extract(dir, { glob })` and `files()` reject a truncated archive instead of resolving with the
+  entries read so far (release notes).
+- `Bun.FileSystemRouter`'s `assetPrefix` returns the option (it was `undefined`), and numeric
+  query keys appear once (release notes).
+- `--disallow-code-generation-from-strings=strict` lets the engine run only Bun's built-ins and
+  the program's own files: plugins returning `contents` for any loader and macros are refused, a
+  `data:` URL holding JSON loads, and a `--compile` executable refuses JavaScript files on disk
+  (the `bun-cli` skill's `running-and-execution.md`).
+
+### Node.js APIs
+
+- `process.on()` with the same function twice registers it twice, as in Node; 1.4.3 added it once.
+  After `import * as process from "node:process"`, `process.on()` reaches the real `process`
+  (release notes).
+- `node:http` servers send `404` for `res.statusCode = "404"` and throw
+  `ERR_HTTP_INVALID_STATUS_CODE` for `NaN` / `undefined`; 1.4.3 threw or sent `200`
+  (release notes).
+- `fs.realpath()` on Linux and macOS no longer treats `\` as a separator, follows symlinks before
+  collapsing `..`, and accepts a trailing slash on a file (release notes).
+- `vm.createContext(vm.constants.DONT_CONTEXTIFY)` returns the context's global, which Vitest with
+  jsdom 30 needs; `util.types.isProxy(globalThis)` is `false`; `new` on a non-constructor native
+  function such as `util.types.isDate` throws (release notes).
+- Native addons on Linux and macOS can call 47 more libuv functions (`uv_async_*`, `uv_timer_*`,
+  `uv_queue_work`, ...) instead of exiting with "unsupported uv function" (release notes).
+- `CallSite#getColumnNumber()` is 1-based and `error.stack` keeps a frame's `:1` column, which
+  `@cspotcode/source-map-support` relies on (release notes).
+
+### JavaScriptCore
+
+- `+1n * 2n` throws `TypeError` (it returned `2n`); `+a * b()` calls `a.valueOf()` before `b()`;
+  `using` is allowed in a function nested in a `switch` case; `for...in` over a function visits its
+  indexed properties (release notes for all but the first).
+- `n.toLocaleString("en-US")` reuses a cached `Intl.NumberFormat`: 54x faster across 100,000 calls
+  (release notes).
+
+### Types (`bun-types` 1.4.4)
+
+- `Bun.hash()` is typed `bigint`; hash class instances declare `byteLength`; `resourceUsage()`
+  `cpuTime` fields are `bigint`; `FileSystemRouter#origin` can be `null`; `Bun.mmap()` no longer
+  accepts a `Buffer` or `URL` path; `toHaveBeenCalledOnce()` is declared.
+- `WebSocket` `error` / `onerror` receive an `ErrorEvent`, the `ping` and `pong` events and
+  `binaryType: "blob"` are declared, and `headers` accepts a `Headers` object.
+- The awaited result of a `Bun.SQL` query declares `count`, `command`, `affectedRows`, `columns`,
+  and `statement`; `bun:sqlite` declares `function()`, `aggregate()`, the update hooks, `reader`,
+  `readonly`, and `safeIntegers()`.
+- `@types/bun` was still 1.4.3 on release day -- depend on `bun-types@1.4.4`.
+
+### Regressions Fixed in 1.4.4
+
+Upgrade instead of working around these (release notes):
+
+- **1.4.3:** `Bun.JSONL.parseChunk()` reported a `read` offset before a value it had already
+  returned, and `Bun.JSONL.parse()` / `parseChunk()` returned a value twice, when blank lines
+  preceded it and a stray `,`, `]`, or `}` followed. Streaming JSONL parsers built on `read` could
+  re-emit records.
+- **1.4.3:** runs that write the compile cache (`NODE_COMPILE_CACHE`, `module.enableCompileCache()`)
+  took twice as long to exit.
+- **1.4.0:** in JIT-optimized functions, `.sort()` of 16 or fewer integers returned a wrong order
+  with a comparator such as `(a, b) => (a + 0.5) - (b + 0.5)`.
+- **1.2.22:** MySQL queries on one connection ran one at a time instead of pipelined -- four
+  prepared queries at 30 ms latency took 124 ms instead of 31 ms.

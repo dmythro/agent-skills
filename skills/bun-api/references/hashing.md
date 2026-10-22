@@ -41,45 +41,67 @@ and `raw-seed`, and survive `structuredClone`. ML-KEM-512 and SLH-DSA are not av
 Fast hashing for non-security purposes: hash tables, checksums, deduplication, content fingerprinting.
 
 ```typescript
-// Default: wyhash (fastest general-purpose hash)
-Bun.hash(input: string | Uint8Array | ArrayBuffer): number
-Bun.hash(input, seed: number): number
+// Default: wyhash (fastest general-purpose hash). Returns a bigint, not a number.
+Bun.hash(input: string | ArrayBufferView | ArrayBuffer): bigint
+Bun.hash(input, seed: number | bigint): bigint
 ```
+
+`Bun.hash()` returns a `bigint` (checked on 1.4.3 and 1.4.4); `@types/bun` typed it
+`number | bigint` until 1.4.4, which hid the mistake. Arithmetic with a `number` throws
+`TypeError: Invalid mix of BigInt and other type` -- convert explicitly.
+
+**Changed in 1.4.4:** `Bun.hash()` and every named algorithm throw `TypeError`
+(`ERR_INVALID_ARG_TYPE`) for no argument, `undefined`, `null`, a `Bun.file()`, an S3 file, or a
+`Bun.build()` output on disk. 1.4.3 returned the hash of `""`, `"undefined"`, `"null"`, or of an
+empty input for files -- so code that hashed a `BunFile` got the same value for every file. Read
+the bytes first. `Bun.CryptoHasher`, `Bun.SHA256.hash()`, and `crypto.hash()` given an S3 file
+throw too (release notes).
 
 ### Named Algorithms
 
 ```typescript
-Bun.hash.wyhash(input: string | Uint8Array, seed?: number): number
-Bun.hash.crc32(input: string | Uint8Array): number
-Bun.hash.adler32(input: string | Uint8Array): number
-Bun.hash.cityHash32(input: string | Uint8Array, seed?: number): number
-Bun.hash.cityHash64(input: string | Uint8Array, seed?: number): bigint
-Bun.hash.murmur32v3(input: string | Uint8Array, seed?: number): number
-Bun.hash.murmur64v2(input: string | Uint8Array, seed?: number): bigint
+type Input = string | ArrayBufferView | ArrayBuffer | SharedArrayBuffer
+Bun.hash.wyhash(input: Input, seed?: bigint): bigint
+Bun.hash.crc32(input: Input, seed?: number): number
+Bun.hash.adler32(input: Input): number
+Bun.hash.cityHash32(input: Input): number
+Bun.hash.cityHash64(input: Input, seed?: bigint): bigint
+Bun.hash.xxHash32(input: Input, seed?: number): number
+Bun.hash.xxHash64(input: Input, seed?: bigint): bigint
+Bun.hash.xxHash3(input: Input, seed?: bigint): bigint
+Bun.hash.murmur32v2(input: Input, seed?: number): number
+Bun.hash.murmur32v3(input: Input, seed?: number): number
+Bun.hash.murmur64v2(input: Input, seed?: bigint): bigint
+Bun.hash.rapidhash(input: Input, seed?: bigint): bigint
 ```
 
 ### Algorithm Selection Guide
 
 | Algorithm | Output | Speed | Use Case |
 |-----------|--------|-------|----------|
-| `wyhash` (default) | 64-bit number | Fastest | General hash tables, dedup |
-| `crc32` | 32-bit number | Fast | Checksums, compatibility |
-| `adler32` | 32-bit number | Fast | Checksums (used in zlib) |
-| `cityHash32` | 32-bit number | Fast | Hash tables |
-| `cityHash64` | 64-bit bigint | Fast | Hash tables, fingerprinting |
-| `murmur32v3` | 32-bit number | Fast | Distributed systems |
-| `murmur64v2` | 64-bit bigint | Fast | Distributed systems |
+| `wyhash` (default) | 64-bit `bigint` | Fastest | General hash tables, dedup |
+| `rapidhash` | 64-bit `bigint` | Fast | General hash tables, dedup |
+| `xxHash3`, `xxHash64` | 64-bit `bigint` | Fast | Interop with xxHash elsewhere |
+| `xxHash32` | 32-bit `number` | Fast | Interop with xxHash elsewhere |
+| `crc32` | 32-bit `number` | Fast | Checksums, compatibility |
+| `adler32` | 32-bit `number` | Fast | Checksums (used in zlib) |
+| `cityHash32` | 32-bit `number` | Fast | Hash tables |
+| `cityHash64` | 64-bit `bigint` | Fast | Hash tables, fingerprinting |
+| `murmur32v2`, `murmur32v3` | 32-bit `number` | Fast | Distributed systems |
+| `murmur64v2` | 64-bit `bigint` | Fast | Distributed systems |
+
+As of v1.4.4 these run 1.2x to 2.3x faster on short strings (release notes).
 
 ### Examples
 
 ```typescript
-// Content deduplication
-const hash = Bun.hash(await Bun.file('data.bin').arrayBuffer())
+// Content deduplication -- hash the bytes, never the BunFile itself
+const hash = Bun.hash(await Bun.file('data.bin').bytes())
 
-// Consistent hashing with seed
-const shard = Bun.hash(key, 42) % numShards
+// Consistent hashing with seed: stay in bigint, convert at the end
+const shard = Number(Bun.hash(key, 42) % BigInt(numShards))
 
-// CRC32 checksum
+// CRC32 checksum (a number)
 const checksum = Bun.hash.crc32(content)
 ```
 
@@ -110,6 +132,10 @@ interface CryptoHasher {
   readonly byteLength: number   // Hash output size in bytes
 }
 ```
+
+As of v1.4.4, the hashers run 1.2x to 1.7x faster on small inputs, `byteLength` is declared on
+instances of `Bun.MD5`, `Bun.SHA256`, and the other hash classes, and the static `byteLength` /
+`algorithms` work on subclasses (release notes).
 
 ### One-Shot Hashing
 
