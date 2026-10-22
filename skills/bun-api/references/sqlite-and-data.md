@@ -84,7 +84,8 @@ const db = Database.open(buffer)                  // From ArrayBuffer/Uint8Array
 ### Executing SQL
 
 ```typescript
-// Execute raw SQL (no return value, can be multiple statements)
+// Execute raw SQL -- exec() is an alias of run(): may hold several statements, returns
+// { lastInsertRowid, changes }
 db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)')
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -260,9 +261,9 @@ const mode = db.prepare('PRAGMA journal_mode').get()
 
 ```typescript
 interface Database {
-  exec(sql: string): void
-  prepare(sql: string): Statement
   run(sql: string, params?: any[]): { lastInsertRowid: number | bigint; changes: number }
+  exec(sql: string, params?: any[]): { lastInsertRowid: number | bigint; changes: number }  // alias of run()
+  prepare(sql: string): Statement
   query(sql: string): Statement          // Cached prepare (the 20 most recent SQL strings)
   transaction(fn: Function): Function
   close(throwOnError?: boolean): void    // true: finalize every outstanding statement now

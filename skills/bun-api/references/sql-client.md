@@ -57,8 +57,10 @@ release notes and the shipped `sql.mdx`:
   (`ERR_POSTGRES_CONNECTION_REFUSED`). A bare connection string such as `"app.db"` still needs
   `{ adapter: "sqlite" }`, since Bun reads it as a PostgreSQL host.
 - **A SQLite string of several statements runs all of them** (`sql.unsafe()`, `sql.file()`), and
-  resolves to the first statement's rows. 1.4.3 ran only the first statement when it returned rows,
-  so a migration starting with a `PRAGMA` silently did nothing else. Only PostgreSQL wraps such a
+  resolves to the first statement's rows. 1.4.3 stopped after a first statement it treated as
+  returning rows, and a `PRAGMA` setter counted: `PRAGMA foreign_keys = ON; CREATE TABLE t (a);`
+  left `t` uncreated (checked with `foreign_keys` and `user_version`), so a migration starting with
+  a `PRAGMA` silently did nothing else. Only PostgreSQL wraps such a
   string in an implicit transaction; on MySQL and SQLite the statements before a failing one stay
   applied.
 - **Result metadata:** `affectedRows` is the number of rows written (`0` for a `SELECT`) on SQLite
@@ -247,7 +249,8 @@ user.firstName
 | `Date` | Instant for `timestamp` / `timestamptz`; ISO 8601 for `date`, `time`, `text` | `DATETIME` in UTC | Not supported -- pass `date.toISOString()` or `date.getTime()` |
 | Plain object | JSON | JSON | Not supported -- pass `sql.json(value)` |
 | `Array` | Array literal for built-in array types (v1.4.4+); JSON for `json` / `jsonb` | JSON | Not supported -- pass `sql.json(value)` |
-| `Buffer`, typed arrays | `bytea` | Binary | `BLOB` |
+| `Int32Array` | Like an `Array` of its numbers; its bytes for `bytea` | Its bytes | `BLOB` with its bytes |
+| `Buffer`, `ArrayBuffer`, `DataView`, every other typed array | `bytea` -- wrap a `Float32Array`, `Float64Array`, or `BigInt64Array` in `sql.array()` for an array column | Binary | `BLOB` |
 | `string` | A JSON string for `json` / `jsonb`; as is otherwise | As is | `TEXT` |
 | `null`, `undefined` | `NULL` | `NULL` | `NULL` |
 
@@ -495,4 +498,5 @@ an object of named parameters binds with or without the prefix (v1.4.4+).
 | SQLite | One result: the first statement's rows, or the total `count` written | No -- wrap in `sql.begin()` |
 
 On SQLite only the first statement may have parameters; a later one with a placeholder fails when
-Bun reaches it. Before 1.4.4, SQLite stopped after a first statement that returned rows.
+Bun reaches it. Before 1.4.4, SQLite stopped after a first statement it treated as returning rows,
+which included `PRAGMA` setters.

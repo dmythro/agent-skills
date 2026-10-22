@@ -238,12 +238,13 @@ bun update [pkg] [flags]
 | `--no-optional` | Skip optionalDependencies |
 | `-E, --exact` | Write exact versions instead of ranges |
 | `-p, --production` | Only `dependencies` and `optionalDependencies` (v1.4+ meaning) |
-| `--depth 0` | Only what `package.json` lists; transitive dependencies keep their locked versions. `0` is the only accepted value (v1.4.4+) |
+| `--depth 0` | Only the `package.json` entries of the workspace you run it in; transitive dependencies keep their locked versions, except one an updated direct dependency's new range no longer allows. `0` is the only accepted value (v1.4.4+) |
 | `--cwd path` | Set working directory |
 
 ```bash
 bun update                     # every dependency within its declared range
-bun update --depth 0           # direct dependencies only, the pre-1.4 scope (v1.4.4+)
+bun update --depth 0           # direct dependencies only, the pre-1.4 scope (v1.4.4+); a transitive one
+                               # still moves if the updated direct dependency's range excludes its lock
 bun update zod                 # every copy of zod, transitive ones included (v1.4+)
 bun update '@types/*' --latest # glob patterns
 bun update --recursive --latest
@@ -365,9 +366,11 @@ bun unlink             # Unregister current package
 ```
 
 `bun link <name>` has never edited `package.json`; the 1.4.3 help wrongly listed `--save` as the
-default. `--dry-run` works on `bun link` and `bun unlink` as of v1.4.4 -- before, both accepted it
-and still wrote (release notes). For a directory in the repository, prefer a `link:./path`
-dependency (see Version Specifiers).
+default. `--dry-run` takes effect on `bun link` and `bun unlink` as of v1.4.4 -- before, both
+accepted it and still wrote (release notes). On 1.4.4 even a bare `bun link --dry-run` prints
+`dry run: would link "<name>"` and registers nothing, although the shipped `snippets/cli/link.mdx`
+says the flag has no effect on that form; check the output before relying on either. For a
+directory in the repository, prefer a `link:./path` dependency (see Version Specifiers).
 
 ## bun patch
 
@@ -426,8 +429,12 @@ platform's packages, and `-g` fetches for global installs.
 In a monorepo the root `package.json` and the lockfile cover every workspace, even ones not on
 disk yet -- with exceptions the fetch layer must also copy (`pm/cli/pm.mdx`):
 
-- `bunfig.toml` and `.npmrc` when they set a registry -- cache entries are keyed by the registry's
-  host, so without them the later `bun install` downloads everything again;
+- the registry settings in `bunfig.toml` and `.npmrc` -- cache entries are keyed by the
+  registry's host, so without them the later `bun install` downloads everything again. Keep tokens
+  out of the image: write them as `${NPM_TOKEN}` in `.npmrc` (`$NPM_TOKEN` in `bunfig.toml`) and
+  pass the value as a build secret
+  (`RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN bun pm fetch`), since a copied `.npmrc` with
+  a literal `_authToken` stays in the layer;
 - patch files and local tarballs that the lockfile names;
 - any workspace the root `package.json` depends on with `workspace:`.
 

@@ -458,8 +458,9 @@ PostgreSQL and MySQL behavior is all from the release notes.
 ### Most Likely to Bite
 
 1. **WebSocket close codes and events follow the protocol.** `close` fires once the closing
-   handshake finishes, not right after `close()`. `close()` without a code reports `1005` on both
-   ends (1.4.3: `1000`, including the `close(ws, code)` handler in `Bun.serve`). A failed
+   handshake finishes, not right after `close()`. A client's `close()` without a code reports
+   `1005` on both ends (1.4.3: `1000`, including the `close(ws, code)` handler in `Bun.serve`); a
+   server-side `ws.close()` without a code still sends `1000`. A failed
    connection fires `error` -- `event.error.code` is `ECONNREFUSED`, `ENOTFOUND`,
    `DEPTH_ZERO_SELF_SIGNED_CERT`, `WS_ERR_INVALID_UTF8`... -- then `close` with `1006` and an empty
    `reason`; the description moved to `event.message`. 1.4.3 put it in `reason` and, for other
@@ -493,7 +494,8 @@ PostgreSQL and MySQL behavior is all from the release notes.
 6. **`Bun.SQL` connection defaults.** The `PASSWORD` environment variable is no longer read;
    `new SQL({ filename })` without `adapter` opens SQLite (1.4.3 connected to PostgreSQL); a SQLite
    string of several statements runs them all, including a migration that starts with a `PRAGMA`
-   (1.4.3 ran only the first statement when it returned rows). See `sql-client.md`.
+   (1.4.3 stopped after a first statement it treated as returning rows, a `PRAGMA` setter such as
+   `PRAGMA foreign_keys = ON` included). See `sql-client.md`.
 7. **`Bun.hash()` rejects bad input.** No argument, `undefined`, `null`, a `Bun.file()`, an S3
    file, or a `Bun.build()` output on disk throws `TypeError`; 1.4.3 returned the hash of `""`,
    `"undefined"`, `"null"`, or of nothing. The result is a `bigint`, as before.

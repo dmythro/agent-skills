@@ -156,8 +156,9 @@ sent the range.
 **WebSockets (Changed in 1.4.4).** `ws.pause()` / `ws.resume()` / `ws.isPaused` on a server
 socket stop reading from a client that sends faster than you consume, and suspend the idle
 timeout. `websocket.error(error, ws)` receives the socket whose handler threw (1.4.3 passed no
-socket), and every handler is optional. Close codes follow the protocol: `ws.close()` without a
-code reports `1005` on both ends (1.4.3: `1000`), `server.stop(true)` sends `1001 Server closed`
+socket), and every handler is optional. Close codes follow the protocol: a client's `close()`
+without a code reports `1005` on both ends (1.4.3: `1000`) while a server-side `ws.close()` still
+sends `1000`, `server.stop(true)` sends `1001 Server closed`
 (1.4.3: `1006`), and protocol errors close with `1002` / `1007` / `1009` (release notes). Check
 `Origin` against an allowlist before `server.upgrade()` -- the same-origin policy does not cover
 WebSocket handshakes.
@@ -561,7 +562,8 @@ const csv = new Response(sql`COPY users TO STDOUT (FORMAT csv, HEADER)`.readable
 **Changed in 1.4.4:** `Bun.SQL` no longer reads the `PASSWORD` environment variable (use
 `PGPASSWORD`, `MYSQL_PASSWORD`, the URL, or `password`); `new SQL({ filename })` selects SQLite
 without `adapter` (1.4.3 tried PostgreSQL); a SQLite string of several statements runs all of them
-(1.4.3 ran only the first when it returned rows); `affectedRows` is set on SQLite and PostgreSQL
+(1.4.3 stopped after a first statement it treated as returning rows -- a leading `PRAGMA` setter
+counted); `affectedRows` is set on SQLite and PostgreSQL
 (it was always `null`); a query cancelled before it is sent rejects with
 `ERR_SQLITE_QUERY_CANCELLED` / `ERR_POSTGRES_QUERY_CANCELLED` / `ERR_MYSQL_QUERY_CANCELLED` (1.4.3
 never settled it); and a second `sql.begin()` on SQLite waits instead of failing with

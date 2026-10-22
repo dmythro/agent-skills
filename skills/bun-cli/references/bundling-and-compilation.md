@@ -217,7 +217,7 @@ bun build --compile [flags] <entrypoint>
 from the runtime working directory, so a binary can no longer pick up unrelated config from
 wherever it happens to run. `.env` and `bunfig.toml` still auto-load.
 
-**Changed in v1.4.4 -- `=strict` executables run only what they embed.** Built with
+**Changed in v1.4.4 -- `=strict` executables run only the code they embed.** Built with
 `--compile-exec-argv="--disallow-code-generation-from-strings=strict"`, an executable refuses to
 `import()`, `require()`, or start a `Worker` from a JavaScript or TypeScript file on disk -- even a
 file it just wrote, which 1.4.3 ran -- and exits on `--preload` in `BUN_OPTIONS`. JSON, TOML, YAML,

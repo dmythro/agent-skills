@@ -160,8 +160,8 @@ A project uses Bun if any of these are present:
 | `node --watch file.js` | `bun --watch file.js` |
 | `npm test` | `bun test` |
 | `tsc --noEmit` | `bun check` (v1.4.3+) |
-| `prettier --write .` | `bun fmt` (v1.4.4+) |
-| `prettier --check .` | `bun fmt --check` (v1.4.4+) |
+| `prettier --write .` | `bun fmt --no-script` (v1.4.4+; plain `bun fmt` runs a `fmt` script when `package.json` has one) |
+| `prettier --check .` | `bun fmt --no-script --check` (v1.4.4+) |
 | `npm pack` | `bun pm pack` |
 | `npm publish` | `bun publish` |
 | `npm info pkg` | `bun info pkg` |
@@ -255,7 +255,7 @@ bun update pkg                 # Update every copy of pkg, transitive ones inclu
 bun update '@types/*' --latest # Patterns; --latest ignores the declared range
 bun update --recursive         # Update every workspace and write each package.json (v1.4+)
 bun update --filter 'pkg-*' --filter '!pkg-c'   # Repeatable; ! excludes (v1.4+)
-bun update --depth 0           # Direct dependencies only; transitive ones keep their locked versions (v1.4.4+)
+bun update --depth 0           # Direct dependencies only; transitive ones stay locked unless a new range excludes them (v1.4.4+)
 bun outdated                   # Show outdated packages
 bun info pkg                   # Show package metadata
 bun info pkg versions          # List all available versions
@@ -318,9 +318,18 @@ RUN bun install --offline --frozen-lockfile
 ```
 
 In a monorepo those two root files cover every workspace, with exceptions the layer must also
-copy: `bunfig.toml` / `.npmrc` when they set a registry (cache entries are keyed by registry host,
+copy: the registry settings in `bunfig.toml` / `.npmrc` (cache entries are keyed by registry host,
 so without them the install downloads everything again), patch files and local tarballs the
 lockfile names, and any workspace the root `package.json` depends on with `workspace:`.
+
+**Keep registry tokens out of the image.** A copied `.npmrc` holding a literal `_authToken` stays
+in the layer and the build cache. Write the token as `${NPM_TOKEN}` in `.npmrc` (`$NPM_TOKEN` in
+`bunfig.toml`) and pass its value as a build secret (BuildKit, Dockerfile syntax 1.10+):
+
+```dockerfile
+COPY package.json bun.lock .npmrc ./    # .npmrc: //npm.pkg.github.com/:_authToken=${NPM_TOKEN}
+RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN bun pm fetch
+```
 
 `bun pm cache pack <file>` writes the cache entries the lockfile needs into one file, and
 `bun pm cache unpack <file>` restores them on another runner, adding only what is missing:

@@ -506,7 +506,8 @@ read from the socket are still delivered.
 
 | Event | 1.4.4 | 1.4.3 |
 |---|---|---|
-| `ws.close()` without a code (either side) | `1005` on both ends | `1000` |
+| Client `WebSocket#close()` without a code | `1005` on both ends, the server's `close(ws, code)` handler included | `1000` |
+| Server `ws.close()` without a code | `1000` on both ends (unchanged) | `1000` |
 | `server.stop(true)` | `1001 Server closed` | `1006 Connection ended` |
 | Protocol error, invalid UTF-8, message over `maxPayloadLength` | Close frame with `1002` / `1007` / `1009` and a reason | `1006` (release notes) |
 

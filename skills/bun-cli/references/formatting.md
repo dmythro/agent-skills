@@ -33,10 +33,14 @@ bun fmt --no-script --check          # the formatter, even when package.json has
 
 | Instead of | Run |
 |---|---|
-| `prettier --write .` | `bun fmt` |
-| `prettier --check .` | `bun fmt --check` |
-| `oxfmt` / `oxfmt --check` | `bun fmt` / `bun fmt --check` |
-| `lint-staged` running Prettier | `bun fmt --staged` in the pre-commit hook |
+| `prettier --write .` | `bun fmt --no-script` |
+| `prettier --check .` | `bun fmt --no-script --check` |
+| `oxfmt` / `oxfmt --check` | `bun fmt --no-script` / `bun fmt --no-script --check` |
+| `lint-staged` running Prettier | `bun fmt --no-script --staged` in the pre-commit hook |
+
+`--no-script` keeps each replacement the formatter when `package.json` has a `fmt` script (see
+"A `fmt` Script Shadows the Formatter"); in a project without one, plain `bun fmt` is the same
+command.
 
 `bun format` is not an alias: it runs the project's `format` script, and prints
 `Script not found "format"` plus `note: The formatter is bun fmt` when there is none.
