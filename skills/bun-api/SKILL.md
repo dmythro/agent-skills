@@ -561,9 +561,9 @@ const csv = new Response(sql`COPY users TO STDOUT (FORMAT csv, HEADER)`.readable
 
 **Changed in 1.4.4:** `Bun.SQL` no longer reads the `PASSWORD` environment variable (use
 `PGPASSWORD`, `MYSQL_PASSWORD`, the URL, or `password`); `new SQL({ filename })` selects SQLite
-without `adapter` (1.4.3 tried PostgreSQL); a SQLite string of several statements runs all of them
-(1.4.3 stopped after a first statement it treated as returning rows -- a leading `PRAGMA` setter
-counted); `affectedRows` is set on SQLite and PostgreSQL
+without `adapter` (1.4.3 tried PostgreSQL); a SQLite string of several statements runs all of them,
+with parameters allowed in the first statement only (1.4.3 stopped after a first statement it
+treated as returning rows -- a leading `PRAGMA` setter counted); `affectedRows` is set on SQLite and PostgreSQL
 (it was always `null`); a query cancelled before it is sent rejects with
 `ERR_SQLITE_QUERY_CANCELLED` / `ERR_POSTGRES_QUERY_CANCELLED` / `ERR_MYSQL_QUERY_CANCELLED` (1.4.3
 never settled it); and a second `sql.begin()` on SQLite waits instead of failing with
