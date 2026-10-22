@@ -37,7 +37,7 @@ The fallback is the user: once the review has landed (the PR's `CodeRabbit` chec
 
 **Say plainly that the round is not processed yet -- "review in progress" alone reads as handled.** The closing message names the bot and the PR, says what will process the round (the monitor waking the session, or the user re-invoking `/git-pr`), and, with a monitor, carries its blind spots. Any turn that ends on a wait the session cannot hold closes the same way: a polling loop that stops on a timeout, or a rate-limit window where polling is forbidden -- the monitor raises nothing when the window reopens and the bounced round is never queued, so give the user the time from `BOT_WAIT_UNTIL`.
 
-**On a wake or a re-invocation, read before acting:** one `bot_status` call, then branch on its exit code as The Loop does -- a `3` is still in flight, so wait again the same way.
+**On a wake or a re-invocation, read before acting:** one `bot_status` call, then branch on its exit code as The Loop does. A `3` is a round in flight only while `bot_requested` confirms it or a thread answer is due (`BOT_AWAIT_CHAT=1`) -- then wait again the same way. Otherwise the round needs a trigger, and after an expired rate-limit window (`BOT_HEAD_LIMITED=full`) the bounced round was never queued: issue the request as `bot_tick` would -- a full review in that case, under The Loop's approval gate -- and wait for that round the same way.
 
 ## Per-Bot Setup
 
