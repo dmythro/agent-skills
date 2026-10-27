@@ -532,7 +532,7 @@ bot_bucket() {
   gh search prs --author=@me --state=open --sort updated --order desc --limit "${1:-50}" --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"' | while read -r r n; do
     gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/status --jq "[.statuses[] | select(.context|ascii_downcase|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at) $r#$n \(.description // \"\")\" end" 2>/dev/null
     gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/check-runs --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at) $r#$n Review in progress\" else \"\(.completed_at // .started_at) $r#$n \((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\"))\" end" 2>/dev/null
-  done | sort
+  done | sort -r
 }
 ```
 
@@ -662,8 +662,8 @@ repeat:
          oversized PR, binary/minified files, quota; fix the cause". Else re-run bot_tick (polls the
          retry). Retries don't consume a round -- no review happened.
     6 -> rate-limited -- HEAD is UNREVIEWED; never report the round as reviewed or clean, and say
-         so plainly to the user (a green "CodeRabbit -- Review rate limited" check in the PR's
-         checks list is the same fact, not a passing review).
+         so plainly to the user (a non-failing CodeRabbit check whose verdict is "Review rate
+         limited" -- neutral check run or green status -- is the same fact, not a passing review).
          Copilot (hard weekly limit, diagnosed from the review run's CI log):
          STOP immediately and report the real cause + reset date from the log to the user --
          the reset is days away, and every re-request until then fails identically while
@@ -671,9 +671,12 @@ repeat:
          another review bot is active on this repo, STOP this bot's loop and rely on that
          one; otherwise BOT_BOUNCES += 1, then run bot_bucket ONCE: if any of your open PRs
          shows a "Review completed" newer than this bounce, the bucket is open now -- skip the
-         wait entirely and re-tick. Only without that evidence, wait until BOT_WAIT_UNTIL
+         wait entirely. Only without that evidence, wait until BOT_WAIT_UNTIL
          (which bot_status exported with this 6) plus 1-2 min slack -- bot_sleep_until in a
-         BACKGROUND Bash, never a foreground sleep -- then re-run bot_tick: the bounced request was never
+         BACKGROUND Bash, never a foreground sleep. Either way the re-tick posts a fresh trigger,
+         a billable request: without an explicit loop instruction or a permissive policy, ASK as
+         the GATE says before it (unless the threads closed the round in the meantime: 7 needs
+         no trigger). Then re-run bot_tick: the bounced request was never
          queued, so the re-run's fresh trigger (or the next push) is what starts the review,
          and its ack is the first thing to read. bot_tick sends that trigger as a FULL review
          (BOT_HEAD_LIMITED), because the bounce stamped the commits as reviewed. To date the
