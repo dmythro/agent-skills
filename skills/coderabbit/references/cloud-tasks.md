@@ -1,6 +1,6 @@
 # Cloud Coding Agent Tasks
 
-Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta since v0.9.0) in agent mode: the record stream, what to do with each outcome, and which reruns are safe. Distilled from the [cloud task docs](https://docs.coderabbit.ai/cli/cloud-tasks) and v0.9.1 `--help`; only the read-only `code ls` was exercised here. The docs do not cover the v0.9.1 additions yet -- `goal`, `archive`, `new --goal`/`--private`/`--access`, `resume --interactive` -- so their notes come from `--help` alone.
+Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta since v0.9.0) in agent mode: the record stream, what to do with each outcome, and which reruns are safe. Distilled from the [cloud task docs](https://docs.coderabbit.ai/cli/cloud-tasks) and v0.9.1 `--help`; only the read-only `code ls` was exercised here. The cloud task guide does not cover the v0.9.1 additions yet -- `goal`, `archive`, `new --goal`/`--private`/`--access`, `resume --interactive` -- so their notes come from `--help` and the [CLI command reference](https://docs.coderabbit.ai/cli/reference), which is generated from it.
 
 ## Before Scripting
 

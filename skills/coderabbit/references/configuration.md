@@ -144,7 +144,7 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai full review` | Full from-scratch review of all files in the PR |
 | `@coderabbitai pause` / `resume` | Stop / restart automatic reviews on this PR |
 | `@coderabbitai ignore` | In the PR **description**: permanently disable auto-review for the PR |
-| `@coderabbitai resolve` | Resolve all CodeRabbit review threads |
+| `@coderabbitai resolve` | Resolve **all** CodeRabbit review threads, including ones it left open because it still disagrees. Only works as a new top-level PR comment, not as a thread reply, and with `reviews.allow_author_approval: false` the PR author cannot use it on their own PR |
 | `@coderabbitai fix comments` | Fix comments: apply fixes for unresolved findings once, as a commit (`fix comments stacked pr`: as a stacked PR). `autofix`, `fix` and `fix-comments` are legacy aliases of this one-off repair, not of Autofix |
 | `@coderabbitai autopilot` / `autopilot resume` / `autopilot stop` | Turn Autofix (formerly Autopilot) on for the PR, resume it after a pause, or turn it off -- it keeps fixing review feedback and failing CI until the PR is ready |
 | `@coderabbitai rate limit` | Remaining PR review allowance + next availability -- **consumes no review** (aliases `rate-limit`, `limits`, `quota`) |
@@ -161,7 +161,7 @@ Every review run -- automatic incremental on push, `@coderabbitai review`, or `f
 knowledge_base:
   opt_out: false                # true disables the knowledge base entirely
   code_guidelines:
-    enabled: true               # auto-ingests CLAUDE.md, .cursorrules, etc.
+    enabled: true               # auto-ingests CLAUDE.md, .cursorrules, .claude/rules/ (a rule's `paths` frontmatter scopes it), etc.
     filePatterns: []            # add custom guideline files, e.g. "docs/STANDARDS.md"
   learnings:
     scope: "auto"               # local | global | auto (repo-local for public, org-wide for private)
