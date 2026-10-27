@@ -126,7 +126,7 @@ mutation {
 - Use thread `.id` (starts with `PRRT_`) for resolveReviewThread, NOT the comment ID
 - Add one aliased operation (`t1`, `t2`, ...) per thread to resolve
 - Do NOT include "Needs discussion" threads in the resolve mutation -- leave those for the reviewer
-- Do NOT resolve CodeRabbit threads -- fixed, addressed or rejected. CodeRabbit answers each reply: it re-checks a fix at HEAD, or weighs your reason and withdraws the finding (recording a learning that later reviews apply), and resolves the thread itself when it agrees. That in-thread confirmation is what lets the round skip a re-review; resolving a thread yourself throws it away (`bot-review-loop.md`, Fixes Confirmed in the Thread). Only a thread with no answer after 10 minutes is yours to resolve -- and that resolution confirms nothing. Since an accepted reason becomes a learning, write it as a fact about the codebase, not a preference
+- Do NOT resolve CodeRabbit threads -- fixed, addressed or rejected. CodeRabbit answers each reply: it re-checks a fix at HEAD, or weighs your reason and withdraws the finding (recording a learning that later reviews apply), and resolves the thread itself when it agrees. That in-thread confirmation is what lets the round skip a re-review; resolving a thread yourself throws it away (`bot-review-loop.md`, Fixes Confirmed in the Thread). Only a thread with no answer after 10 minutes, with no review running on HEAD, is yours to resolve -- and that resolution confirms nothing. Since an accepted reason becomes a learning, write it as a fact about the codebase, not a preference
 - All replies come before the resolve mutation so reviewers see context before resolution
 - Keep replies to one or two sentences: verdict + evidence. No filler
 

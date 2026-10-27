@@ -260,7 +260,7 @@ The workflow has two distinct phases -- never mix them:
 **Phase 2: Reply and Resolve (one batched command, one approval)**
 6. Combine all replies and all resolves into a single `&&`-chained command
 7. REST replies first, then a single GraphQL mutation with aliases to batch-resolve all handled threads
-8. Leave "Needs discussion" threads unresolved -- and every CodeRabbit thread you replied to, rejected ones included: its answer re-checks a fix at HEAD or weighs your reason, then resolves the thread itself, the confirmation that stands in for a re-review (`references/bot-review-loop.md`, Fixes Confirmed in the Thread). Resolve one yourself only when no answer came within 10 minutes, and don't count it as confirmed
+8. Leave "Needs discussion" threads unresolved -- and every CodeRabbit thread you replied to, rejected ones included: its answer re-checks a fix at HEAD or weighs your reason, then resolves the thread itself, the confirmation that stands in for a re-review (`references/bot-review-loop.md`, Fixes Confirmed in the Thread). Resolve one yourself only when no answer came within 10 minutes and no review is running on HEAD, and don't count it as confirmed
 
 This ordering matters: pushing fixes first ensures reviewers see the changes when they read replies. Never reply to a comment claiming "Fixed" before the fix is actually pushed.
 
