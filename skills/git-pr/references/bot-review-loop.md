@@ -14,7 +14,7 @@ Source ONE bot's config block (below) together with the three functions (`bot_st
 bot_tick <PR>    # re-request if needed + poll once
 ```
 
-Branch on the exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4` failed (the tick already cooled down ~5 min and re-requested -- re-run to poll; escalate only when it repeats), `5` not applicable, `6` rate-limited (CodeRabbit: wait out the window or defer to another bot; Copilot hard limit from the CI log: STOP and report the reset date -- never re-request), `7` fixes confirmed in the thread (CodeRabbit verified every fix of the last round against HEAD in chat; HEAD itself not re-reviewed -- no re-request, see Fixes Confirmed in the Thread). A tick returns within ~6 min -- run it in the background, or with a Bash timeout `>= 420000` ms, and re-run on `3`. That is polling: where the host forbids it, wait as Waiting for an In-Flight Round says. The functions are read-only except the single re-request write.
+Branch on the exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4` failed (the tick already cooled down ~5 min and re-requested -- re-run to poll; escalate only when it repeats), `5` not applicable, `6` rate-limited (CodeRabbit: wait out the window or defer to another bot; Copilot hard limit from the CI log: STOP and report the reset date -- never re-request), `7` fixes confirmed in the thread (CodeRabbit verified every fix of the last round in chat and resolved the threads; HEAD itself not re-reviewed -- never re-request, see Fixes Confirmed in the Thread). A tick returns within ~6 min -- run it in the background, or with a Bash timeout `>= 420000` ms, and re-run on `3`. That is polling: where the host forbids it, wait as Waiting for an In-Flight Round says. The functions are read-only except the single re-request write.
 
 ## Waiting for an In-Flight Round
 
@@ -189,9 +189,10 @@ The authoritative "done?" signal is **zero unresolved threads from this bot**, g
 #       newest notice's own timestamp + its parsed window has not elapsed; Copilot: hard limit
 #       found in the review run's CI log -- never retry). Every 6 exports BOT_WAIT_UNTIL, and any
 #       rate-limited HEAD exports BOT_HEAD_LIMITED=full (bot_tick's recovery trigger).
-#       | 7 fixes confirmed in the thread (BOT_CHAT_CONFIRM: every thread of the last findings
-#       round resolved BY THE BOT after a chat answer newer than HEAD's commit; HEAD itself not
-#       reviewed, and no review is running). A 3 with BOT_AWAIT_CHAT=1 means the only open threads
+#       | 7 fixes confirmed in the thread (BOT_CHAT_CONFIRM: every thread of the newest review that
+#       opened bot threads resolved BY THE BOT, its chat answer the newest comment; HEAD not reviewed,
+#       and no review is running. Commits newer than those answers are named, not re-reviewed --
+#       the local CLI lane covers them). A 3 with BOT_AWAIT_CHAT=1 means the only open threads
 #       end in your own reply from the last 10 min -- the bot's answer is due; poll, never re-request.
 # Uses gh's {owner}/{repo} placeholders + inline $(...) so each command matches the allowlist
 # patterns on its own -- no owner=/repo=/head= assignments (a VAR= prefix breaks matching).
@@ -319,15 +320,24 @@ bot_status() {
   [ "${clean_head:-0}" -gt 0 ] && { echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (clean-review notice names HEAD; no review object expected)."; return 0; }
 
   # 7) Fixes confirmed in the thread (BOT_CHAT_CONFIRM set): HEAD was not reviewed, but every
-  #    thread of the newest findings review was resolved BY THE BOT, whose answer postdates HEAD's
-  #    commit -- it re-checked each fix against the code the PR now holds. Beats a skipped or
-  #    rate-limited status (no re-request: that review is exactly what this saves); loses to a
-  #    review of HEAD that completed or is running, which is read below as usual.
+  #    thread of the newest review that OPENED bot threads was resolved BY THE BOT, after
+  #    answering in the thread -- it re-checked each fix, or accepted each reason. Beats a skipped
+  #    or rate-limited status (no re-request: that review is exactly what this saves); loses to a
+  #    review of HEAD that completed or is running, which is read below as usual. The round is
+  #    taken from the threads, not from the newest review: a later review whose findings are all
+  #    body-only (outside-diff, nitpicks) opens no thread, and keying on it found nothing and sent
+  #    a closed round on to a re-request. Its body findings are the completeness check's job
+  #    (The Loop, exit 7). Commits pushed AFTER the answers do not undo the confirmation either --
+  #    without auto-review they would never get a PR round anyway -- so the verdict stays 7 and
+  #    names them for the local CLI lane.
   if [ -n "$BOT_CHAT_CONFIRM" ] && ! printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_OK_RE|$BOT_CHECK_RUNNING_RE"; then
-    round_id="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -r --arg login "$BOT_REVIEW_LOGIN" '[.[][] | select(.user.login==$login and ((.body|length) > 0))] | last | .id // empty | tostring')"
+    round_id="$(printf '%s' "$threads" | jq -r --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)) | .comments.nodes[0].pullRequestReview.fullDatabaseId // empty | tonumber] | max // empty | tostring')"
     if [ -n "$round_id" ]; then
-      confirmed="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" --arg rid "$round_id" --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" '[.nodes[] | select((.comments.nodes[0].pullRequestReview.fullDatabaseId // "" | tostring) == $rid)] | length > 0 and all(.[]; .isResolved and ((.resolvedBy.login // "") | ascii_downcase | startswith($p)) and ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p)) and .last.nodes[0].createdAt > $since)')"
-      [ "$confirmed" = "true" ] && { echo "$BOT_THREAD_PREFIX confirmed every fix of its last round in the threads and resolved them; HEAD itself was not re-reviewed${chk_desc:+ ($chk_desc)} -- no re-request"; return 7; }
+      confirmed="$(printf '%s' "$threads" | jq -r --arg p "$BOT_THREAD_PREFIX" --arg rid "$round_id" --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" '[.nodes[] | select((.comments.nodes[0].pullRequestReview.fullDatabaseId // "" | tostring) == $rid)] | if length > 0 and all(.[]; .isResolved and ((.resolvedBy.login // "") | ascii_downcase | startswith($p)) and ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p))) then (if all(.[]; .last.nodes[0].createdAt > $since) then "head" else "older" end) else "no" end')"
+      case "$confirmed" in
+        head)  echo "$BOT_THREAD_PREFIX confirmed every fix of its last round in the threads and resolved them; HEAD itself was not re-reviewed${chk_desc:+ ($chk_desc)} -- no re-request"; return 7 ;;
+        older) echo "$BOT_THREAD_PREFIX confirmed and resolved every thread of its last round, but commits landed after its answers${chk_desc:+ ($chk_desc)} -- cover them with the local CLI lane; no re-request"; return 7 ;;
+      esac
     fi
   fi
 
@@ -472,7 +482,7 @@ Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix pu
 **The confirmation only counts if CodeRabbit resolves the thread -- every thread, rejected ones included.** Resolving a CodeRabbit thread yourself, as `pr-comment-workflow.md` does for other reviewers, erases the signal: `resolvedBy` becomes you, the tick cannot tell a verified fix from an unverified one, and exit `7` never fires, because it needs every thread of the round resolved by the bot. It also forfeits the learning a withdrawn finding records. So for CodeRabbit threads, **reply and leave the thread open** -- "Fixed in {sha}", "Partly taken in {sha}: ...", or the reason for not changing it. `bot_status` reads the outcome:
 
 - Every open bot thread ends in your own reply (the authenticated `gh` user) from the last 10 minutes -> exit `3` with `BOT_AWAIT_CHAT=1`: the answer is due, and `bot_tick` polls without re-requesting.
-- Every thread of the newest findings review is resolved by the bot, after an answer newer than HEAD's commit, and HEAD has no completed or running review -> exit `7`.
+- Every thread of the newest review that opened bot threads is resolved by the bot, its answer the newest comment, and HEAD has no completed or running review -> exit `7`. A later review whose findings are all body-only opens no thread and does not reopen the round; its findings go through the completeness check. When commits landed after those answers, the message says so: cover them with the local CLI lane. It is still `7`, and still no re-request.
 - The bot answered but left a thread open -> exit `2`: it disagrees, so treat that thread as a fresh finding.
 - No answer after 10 minutes -> exit `2` listing those threads: resolve them yourself and don't count them as confirmed.
 
@@ -574,6 +584,7 @@ If any line is false the branch is not ready: keep working, or park it as a draf
 3. **Expect the silent pause regardless.** `auto_pause_after_reviewed_commits` (default 5) counts *reviewed commits*, so batching pushes saves review slots but does not postpone the cap -- a long PR eventually stops being auto-reviewed, which reads as a broken bot. That state needs `@coderabbitai resume`, not more review requests.
 4. **Iterate in draft when the change isn't ready.** Drafts are excluded from auto-review, so pushes to a draft cost nothing; marking ready is the request.
 5. **A wasted push costs more than a wasted trigger.** A bounced trigger consumes no review and moves no deadline (it is simply never queued); a push that lands mid-round consumes a real review of incomplete work -- and the next round then has to re-review the same files.
+6. **Never push while a review is running.** A push during `Review in progress` supersedes that review: its result never reaches the PR, but it has already been spent ([docs](https://docs.coderabbit.ai/management/rate-limits#superseded-reviews): three pushes in ten minutes spend three reviews and return one). Wait for the round to land, then push. GitHub's **Update branch** and **Resolve conflicts** buttons and its web editor each write a commit, so each one is a push.
 
 ## The Loop
 
@@ -583,17 +594,21 @@ The agent drives rounds; `bot_tick` is one mechanical round. **Validate every co
 INPUT: PR N; a Per-Bot Setup block sourced; MAX_ROUNDS = integer from the request ("loop 3" -> 3),
        else from the Code Review Policy, else 5
 GATE:  billable review requests require an explicit loop instruction or a permissive policy --
-       otherwise ASK before ANY tick that would issue one: after each processed round, and on
-       round 1 when nothing is pending or reviewed yet (repos without auto-review; see intro)
+       otherwise ASK before a tick that would issue one. Only one outcome makes bot_tick post a
+       request: bot_status 3 with BOT_AWAIT_CHAT unset and nothing pending (bot_requested false).
+       Every other outcome requests nothing, so there is nothing to ask about. Above all, a
+       CodeRabbit round closed in its threads (7) gets no ask and no offer, except the large-PR
+       full-review offer under 7
 prev_head = ""; round = 0; fails = 0; processed = 0
 repeat:
   round += 1;  if round > MAX_ROUNDS: STOP "hit round cap -- escalate"
   if no explicit loop instruction and no permissive policy:
-    if (processed >= 1 or (no pending bot request and no bot review or clean-review notice at HEAD))
-       and bot_status gives neither 7 nor 3 with BOT_AWAIT_CHAT=1:
-      # this tick would issue a billable request; auto-review rounds arrive without one, and a
-      # due or landed thread confirmation issues none (read-only preflight: bot_status itself)
-      ASK "next review request bills fully -- proceed?" (recommend from the last round's finding quality)
+    bot_status N   # read-only preflight
+    if it gives 3 with BOT_AWAIT_CHAT unset and bot_requested N is false:
+      # this tick would issue a billable request: round 1 on a repo without auto-review, a
+      # bot that does not re-review on push (Copilot), or a fresh trigger after a bounce
+      ASK "next review request bills fully -- proceed?" (recommend from the last round's finding
+          quality; for CodeRabbit after its first full review, recommend against unless the PR is large)
       on no answer / decline: STOP "awaiting approval for the billable review request"
   head = gh pr view N --json headRefOid --jq .headRefOid
   if round > 1 and head == prev_head: STOP "no code change -- re-review would resurface the same points"
@@ -606,15 +621,18 @@ repeat:
          has a recorded verdict AND the count reconciles. Only then:
          STOP "clean -- this bot has no unresolved comments"
     7 -> fixes confirmed in the thread; HEAD itself was not re-reviewed (Fixes Confirmed in the
-         Thread). No re-request. If the fix commits added code beyond what the findings asked for,
+         Thread). No re-request, and no question about one. If the fix commits added code beyond
+         what the findings asked for, or commits landed after the answers (bot_status names them),
          cover it in the local lane (coderabbit review --committed --base {base} --agent); then the
          same completeness check as 0, and STOP "clean -- fixes confirmed in the thread; HEAD not
          re-reviewed" (say both halves to the user). On a large PR, end with an offer: one
          "@coderabbitai full review", posted only if the user says yes
     5 -> STOP "not applicable -- non-GitHub remote, the bot isn't enabled here, or its status says
          it is SKIPPING this PR (draft, disabled base branch, incremental reviews off); report the
-         reason, don't trigger. With incremental reviews off, a manual @coderabbitai review is the
-         only re-review and it spends a PR review -- ask first"
+         reason, don't trigger. Incremental reviews off is the configured flow, not a missing
+         round: the thread answers verify the fixes (7), so request no review and ask about none.
+         A disabled base branch is a stacked PR: its round is an explicit @coderabbitai review
+         when its turn comes (stacked-prs.md)"
     3 -> still pending: re-run bot_tick within the same round -- do NOT re-enter the round header,
          so the unchanged-HEAD guard never aborts a wait (it applies only after a processed review
          outcome); after a couple of timeouts STOP "timed out / maybe unavailable"
@@ -677,9 +695,9 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 
 ## Scheduling Several PRs Through One Bucket (CodeRabbit)
 
-The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Trials and adaptive throttling push the effective rate below the table. Several PRs in flight is therefore a scheduling problem, not N independent loops:
+The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Adaptive throttling pushes the effective rate below the table. A trial gets the selected plan's rate, and over-limit PR reviews run free during the initial subscription trial (`coderabbit` skill, Rate Limits). Several PRs in flight is therefore a scheduling problem, not N independent loops:
 
-**The plan sets how many PRs you can honestly keep in flight**, so re-plan when it changes -- a trial expiring into a lower tier halves the queue overnight. On Advanced (10/hour, or a grandfathered Pro+ now shown as Team) two PRs can sensibly be non-draft at once; on Team (8/hour) one or two; on Essentials (5/hour, formerly Pro) it is one active PR plus drafts, with local CLI reviews carrying the rest of the iteration; on Free (private repos: 1/hour, summary only; public repos draw the OSS allowance instead, 1--10/hour with full reviews) the PR lane is a final confirmation and nothing more. When the tier drops, drafts do the work the allowance used to.
+**The plan sets how many PRs you can honestly keep in flight**, so re-plan when it changes -- a trial expiring into a lower tier halves the queue overnight. On Advanced (10/hour, or a grandfathered Pro+ now shown as Team) two PRs can sensibly be non-draft at once; on Team (8/hour) one or two; on Essentials (5/hour, formerly Pro) it is one active PR plus drafts, with local CLI reviews carrying the rest of the iteration; on Free (private repos: 1/hour, summary only; public repos draw the OSS allowance instead, 1--10/hour with full reviews, and under 10 stars nothing is reviewed until a `@coderabbitai review` comment asks) the PR lane is a final confirmation and nothing more. When the tier drops, drafts do the work the allowance used to.
 
 1. **Drafts are the queue control.** Draft PRs are excluded from auto-review by default (`auto_review.drafts: false`) and cost nothing until manually triggered -- their commit status says so outright (`Review skipped: draft pull request`); with auto-review enabled, **marking one ready IS the auto-review request** (auto-review off or gated: post `@coderabbitai review` after promoting) -- promote one PR at a time, when it is that PR's turn for the window. **Opening a non-draft PR spends a slot exactly like a push does** -- a fresh PR gets no separate allowance (observed: two PRs refused 14 and 12 seconds after creation, first review ever, while the bucket was short), so a batch of PRs opened back-to-back mostly reviews the first one or two and bounces the rest.
 2. **One window, one PR, one trigger.** Give the next window to the PR closest to merge. Parallel triggers race for the remaining allowance -- on a depleted bucket, a single slot -- and the losers bounce with the rate-limit ack; a bounced request is never queued (Per-Bot Setup), so it must be re-posted in a later window.

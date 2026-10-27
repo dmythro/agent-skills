@@ -2,12 +2,13 @@
 name: git-pr
 description: >-
   PR and MR workflows for GitHub (gh) and GitLab (glab). Creation, review
-  comment handling, thread resolution, review state queries, merging,
-  cost-aware bot review rounds (GitHub: Copilot, CodeRabbit), and Copilot
-  code review configuration (rulesets, custom instructions, billing). Use
-  when creating PRs/MRs, addressing review feedback, resolving threads,
-  looping bot reviews, checking approvals, querying PR data, configuring
-  Copilot reviews, or configuring gh/glab read-only allowlists. Not for
+  comment handling, thread resolution, review state queries, merging
+  (including stacked PRs), cost-aware bot review rounds (GitHub: Copilot,
+  CodeRabbit), and Copilot code review configuration (rulesets, custom
+  instructions, billing). Use when creating PRs/MRs, addressing review
+  feedback, resolving threads, looping bot reviews, checking approvals,
+  querying PR data, stacking PRs or merging a stack, configuring Copilot
+  reviews, or configuring gh/glab read-only allowlists. Not for
   git commits (git-commit), CI/CD status (git-ci), local pre-push
   CodeRabbit CLI reviews (coderabbit), or general git ops
 ---
@@ -16,7 +17,7 @@ description: >-
 
 **Primary skill for pull request and merge request workflows across GitHub and GitLab.** Covers the full lifecycle: creation, review queries, comment handling, line-specific comments, and merging. All recipes use minimal field sets for token efficiency.
 
-**Verified against gh v2.102.0** (2026-09-30): every `gh` subcommand and flag used here, against its `--help`. **glab: not verified** -- no pinned version yet; check `glab <cmd> --help` before relying on a `glab` flag. If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.102.0 before relying on flag details. The CodeRabbit CLI pin lives in the `coderabbit` skill.
+**Verified against gh v2.103.2** (2026-10-27): every `gh` subcommand and flag used here, against its `--help` on v2.102.0 (2026-09-30), then the `pkg/cmd` sources of v2.102.0 and v2.103.2 diffed (2026-10-27), since `--help` is generated from them: no flag of a subcommand used here changed. **glab: not verified** -- no pinned version yet; check `glab <cmd> --help` before relying on a `glab` flag. If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.103.2 before relying on flag details. The CodeRabbit CLI pin lives in the `coderabbit` skill.
 
 ## Context Check (Do This First)
 
@@ -32,8 +33,9 @@ gh pr view --json number,state,reviewDecision,reviewRequests,title 2>/dev/null
 | PR exists, `CHANGES_REQUESTED`             | Fetch unresolved threads (see Review Comment Handling)      |
 | PR exists, `REVIEW_REQUIRED` or has pending `reviewRequests` | Check review state or wait for reviewers  |
 | PR exists, a bot review in flight: pending in REST `requested_reviewers` (Copilot shows as `Copilot`), or HEAD's `CodeRabbit` status reads `Review in progress` | Auto-review in flight -- wait for it the way the host allows (Critical Rule 9); do NOT re-request |
+| PR exists, every CodeRabbit thread you replied to was resolved by `coderabbitai` | Round closed in the threads -- report it done and request no review (Critical Rule 10) |
 | PR exists, unresolved review comments      | Address the comments first (Review Comment Handling); never request a new review over outstanding ones |
-| PR exists, `APPROVED`                      | Check CI status or proceed with merge                      |
+| PR exists, `APPROVED`                      | Check CI status, then merge -- after the stack check (Critical Rule 11) |
 | PR exists, no review decision yet          | On an auto-review repo, read the bot round's outcome first (`bot_status`, Bot Review Loop) -- a clean or rate-limited round shows nothing in this query; then check CI status, review state, or push more changes |
 | No PR for current branch                   | Create a PR (see PR/MR Creation)                           |
 
@@ -51,6 +53,7 @@ This avoids offering to create a PR when one already exists, and immediately sur
 - **Checking review state** -- approvals, pending reviewers, review decisions
 - **Querying PR/MR data** -- files changed, commits, labels, linked issues
 - **Posting comments on PRs/MRs** -- line-specific comments, thread replies
+- **Stacked PRs** -- opening a PR on another PR's branch, merging a stack without closing the child or running the deploy twice
 - **Looping bot review rounds** (GitHub only; Copilot, CodeRabbit) -- re-request the bot, wait for the async review, address comments, repeat until no valid comments remain ("loop the Copilot review", "loop 3 rounds")
 - **Configuring Copilot code review** -- auto-review rulesets, review effort, custom instructions, billing/quota checks
 - **Configuring tool allowlists** -- auto-approval patterns for read-only commands
@@ -66,6 +69,8 @@ This avoids offering to create a PR when one already exists, and immediately sur
 7. **A green bot check is not a completed review.** CodeRabbit records each round as a commit status that is `success` either way -- the outcome is only in its `description` (`Review completed` vs `Review rate limited`), and a rate-limited round often posts nothing else at all: no review, no threads, no comment. Read it with `gh pr checks --json name,state,bucket,description` (the field is not returned by default, and `gh pr view --json statusCheckRollup` drops it entirely) before reporting a PR as reviewed.
 8. **The local CodeRabbit command is exactly `coderabbit review --committed --base {base}`, plus `--agent` for JSON-lines output.** Plain text is the default -- **never pass `--plain`**: CLI v0.7 through v0.9.0 reject it (`error: unknown option`), and v0.9.1 accepts it again as a hidden no-op. `--type <scope>` is not gone but hidden: it still starts a review, and fails next to `--committed`. Never improvise an output or scope flag from memory: the `coderabbit` skill owns the CLI surface. On v0.7 a wrong flag printed the usage text with exit `0`, so a wrapper that tails the output read it as a clean review (v0.8 exits `1`).
 9. **Never end a turn on an in-flight bot round without a way back to it.** A non-draft PR on an auto-review repo starts a round at creation; wait for it the way the host allows. Where polling is allowed, run the `bot_tick` loop. Where the host forbids self-polling but offers a PR monitor (Claude Code desktop app: Auto-fix), ask the user to switch it on and name what it misses: a clean CodeRabbit round posts no review comment, and a rate-limited one only changes the `CodeRabbit` status description to `Review rate limited`, so the monitor may never wake the session -- then the user re-invokes `/git-pr`, which reads the round's outcome. Where neither exists, say plainly that the round is pending and unprocessed, and that re-invoking `/git-pr` after it lands processes it. Full detail: `references/bot-review-loop.md` (Waiting for an In-Flight Round).
+10. **When CodeRabbit resolves the threads you replied to, the round is closed. Never request a review to confirm it.** Its chat answer re-checked each fix at HEAD, or accepted each reason, before it resolved the thread. That is the confirmation, and it spent no review. Do not post `@coderabbitai review` or `full review` after it, and do not ask the user whether to. A later push stamped `Review skipped: incremental reviews are disabled` is that design working, not a missing round, and a `Review rate limited` status on HEAD does not reopen the round either. Only two things follow: commits the fixes added (or that landed after the answers) go through the local CLI lane, and on a large PR you may **offer** one `@coderabbitai full review`, posted only on a yes. This holds under "loop until clean" too: `bot_status` exit `7` is the loop's clean exit (`references/bot-review-loop.md`, Fixes Confirmed in the Thread).
+11. **Never merge a PR in a stack without asking how.** Before every merge, check `gh pr list --base {its head branch}`, and check whether its own base is the default branch. Deleting a parent's branch (`--delete-branch`, or the repo's auto-delete) can **close** the child PR instead of retargeting it. Each merge into the default branch also re-runs whatever a push there starts (deploys, releases), so merging the stack one PR at a time runs those pipelines once per PR. Tell the user both, list what a push to the default branch starts, and ask: merge as one (top-down, one push) or one by one (bottom-up, child retargeted first). Recipes and the pipeline check: `references/stacked-prs.md`.
 
 ---
 
@@ -208,6 +213,8 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 | Create with title | `gh pr create --title "feat: ..." --body "..."`        | `glab mr create --title "feat: ..." --description "..."` |
 | Create + request Copilot review | `gh pr create --title "..." --body "..." --reviewer @copilot` (gh >= 2.88) | n/a |
 
+**Stacked PR** (GitHub): `gh pr create --base {parent_branch} ...`. CodeRabbit skips auto-review on a non-default base (`Review skipped: reviews are disabled for this base branch`, green check), so an explicit `@coderabbitai review` starts its round. Merging a stack is Critical Rule 11 (`references/stacked-prs.md`).
+
 **Keep bodies lean.** The title follows Conventional Commits (`git-commit` skill); the body is a few sentences or tight bullets on what changes and why -- no restating the diff, no boilerplate sections beyond what the repo's PR template requires.
 
 After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers` before requesting any bot review -- repos with automatic Copilot review already have one in flight (and it will NOT show in `gh pr view --json reviewRequests`). On a repo you know has **no** auto-review, skip the create-then-edit round-trip and request Copilot at creation with `--reviewer @copilot`; when unsure, create normally and let the detection decide.
@@ -215,6 +222,16 @@ After creating a **non-draft** GitHub PR, check `gh api repos/{owner}/{repo}/pul
 **A round in flight after creation is the next step, not the end of the turn.** CodeRabbit shows it as HEAD's `CodeRabbit` status reading `Review in progress` (`bot_requested` checks both surfaces). Wait for it the way the host allows (Critical Rule 9) -- with a PR monitor and no self-polling, the message that reports the new PR is the one that asks the user to switch the monitor on.
 
 ## Merge (Write -- Manual Approval)
+
+**Check for a stack first** (GitHub). PRs stacked on this one target its head branch:
+
+```bash
+gh pr list --base "$(gh pr view {pr} --json headRefName --jq .headRefName)" --json number,title,headRefName,isDraft
+```
+
+Any result, or a base that is not the default branch, means stop and ask (Critical Rule 11).
+
+> **Reference**: See `references/stacked-prs.md` for detecting a stack and what a push to the default branch starts, the top-down and bottom-up recipes, and recovering a closed child PR.
 
 | Action       | GitHub                                | GitLab                                        |
 |--------------|---------------------------------------|-----------------------------------------------|
@@ -314,7 +331,7 @@ Review preferences are declared in a `Code Review Policy` section of an agent in
 
 **Declare the CodeRabbit plan -- no API reports it.** `coderabbit usage` gives a repository's included allowance and the billing period, not the tier, and the PR API never mentions it, so an agent that isn't told will either over-schedule PRs into a bucket that cannot serve them or idle a bucket that could. The plan sets the CEILING on the hourly allowance (Free 1 / Essentials 5 / Team 8 / Advanced 10 PR reviews per developer; Essentials and Team were Pro and Pro+ until September 2026, and a grandfathered Pro+ keeps 10 -- table in the `coderabbit` skill), but **fair-usage throttling sets the effective rate beneath it** from the developer's review count over a rolling 24-hour or 7-day window -- a heavy review week lands an Essentials developer at 1--2/hour. Two surfaces do report the live figure: the run-configuration block inside each posted review (which also names the plan), and a `@coderabbitai rate limit` comment, which returns the remaining allowance and next availability without spending a review -- the cheap check before opening a loop. The allowance in turn sets how many PRs can be non-draft at once and how much iteration belongs in the local CLI lane. Note a trial's end date the same way: the queue that works on Advanced stalls on Essentials the morning the trial lapses. **Undeclared**, infer a floor instead of guessing -- `bot_bucket` (`references/bot-review-loop.md`) lists recent rounds across every open PR, and the completions in the trailing hour are a lower bound on the real allowance.
 
-**When no policy exists (either scope), default conservative:** if an auto-review fired, process that round -- waiting for it the way the host allows (Critical Rule 9); then ask before any billable re-request -- and inform the recommendation with the quality of the round's findings (mostly valid substantive issues -> another round likely pays off; mostly noise -> stop). Never initiate billable reviews unprompted on repos without auto-review; loop only when explicitly asked.
+**When no policy exists (either scope), default conservative:** if an auto-review fired, process that round -- waiting for it the way the host allows (Critical Rule 9); then ask before any billable re-request -- and inform the recommendation with the quality of the round's findings (mostly valid substantive issues -> another round likely pays off; mostly noise -> stop). The exception is CodeRabbit after its first full review: the round closes in its threads, so there is no re-request to ask about (Critical Rule 10). Never initiate billable reviews unprompted on repos without auto-review; loop only when explicitly asked.
 
 ## Bot Review Loop (GitHub)
 
@@ -329,7 +346,7 @@ Iterate until no **valid** comments remain. Source a bot's config + the `bot_sta
 2. **Validate, don't blind-fix** -- evaluate each unresolved comment *and* every body-only bucket of the review (nitpick, outside-diff-range, duplicate, failed-to-post; Research Checklist); bots can be out of context or outdated. Fix valid ones (commit each, then one push per round; the message names the change, never the bot or round), reply with a rationale + resolve invalid ones -- except CodeRabbit's: reply to every one of its threads and leave them open for it to resolve (Phase 2, step 8). To clear every reviewer, run the loop once per active bot and handle human threads via the comment workflow above.
 3. **Terminate** -- stop when the bot has no comments; on **zero valid comments** (re-requesting would only resurface them); after ~3 consecutive failed reviews (`exit 4` is transient -- e.g. "Copilot encountered an error" -- and `bot_tick` retries it with a ~5-min cooldown + re-request; only *repeated* failure is structural: oversized PR, binary files, quota; escalate); on a rate limit (`exit 6`: CodeRabbit -- schedule from the `BOT_WAIT_UNTIL` the tick exported, since the notice it came from can be edited away; that is the printed window when one was readable, else ~10 min from the bounce, doubling only after a retry bounces again. Check `bot_bucket` first -- a sibling PR reviewed after your bounce means the shared bucket is open now -- then post a **fresh** trigger, since nothing is queued, and make it `@coderabbitai full review`: the bounced round still marked the commits as reviewed, so a plain `review` no-ops. A bounce consumes no review and moves no deadline, but it is never queued either, so probe with `@coderabbitai rate limit` (consumes no review, reports next availability -- but it is a PR comment, so it needs write approval like any other) rather than with repeat triggers; or skip the bot when Copilot also covers the repo; Copilot -- a hard weekly limit diagnosed from the review run's CI log behind the generic "encountered an error" comment: never re-request before the logged reset date, report cause + date to the user); on unavailability (`exit 5`); after the round cap (default 5, or "loop 3"); or if HEAD is unchanged since the last round.
 
-**Rounds are billable, and on auto-review repos a push is a round** -- each Copilot round bills a full review; each CodeRabbit round spends hourly quota that is **per developer, not per PR**: all your open PRs contend for the same review windows, so with several PRs in flight keep the waiting ones as drafts (excluded from auto-review; marking ready is the request) and promote one at a time -- see the reference's Scheduling Several PRs Through One Bucket and One Push Per Round. Without an explicit loop instruction or a permissive Code Review Policy: process the auto-review round if one fired, then **ask before re-requesting** (recommend based on finding quality). Autonomous looping is for when the user asked for it.
+**Rounds are billable, and on auto-review repos a push is a round** -- each Copilot round bills a full review; each CodeRabbit round spends hourly quota that is **per developer, not per PR**: all your open PRs contend for the same review windows, so with several PRs in flight keep the waiting ones as drafts (excluded from auto-review; marking ready is the request) and promote one at a time -- see the reference's Scheduling Several PRs Through One Bucket and One Push Per Round. Without an explicit loop instruction or a permissive Code Review Policy: process the auto-review round if one fired, then **ask before re-requesting** (recommend based on finding quality). For CodeRabbit, that ask exists only when its threads did not close the round (Critical Rule 10). Autonomous looping is for when the user asked for it.
 
 **CodeRabbit: after the first full review, the threads are the loop.** Push the round's fixes once, reply to every thread -- "Fixed in {sha}", partly taken, or not changed and why -- and let its answers close them: chats, not reviews, so they spend no PR review (`references/bot-review-loop.md`, Fixes Confirmed in the Thread). Request no further review by default: extra code the fixes added goes through the local CLI lane. Only on a large PR, offer the user one `@coderabbitai full review` -- a full pass over new commits sometimes finds what the threads cannot -- and post it only on a yes.
 

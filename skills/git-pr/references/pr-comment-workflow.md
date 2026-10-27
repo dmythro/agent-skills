@@ -181,5 +181,5 @@ After both phases are complete:
 - "Needs discussion" threads replied to but left unresolved
 - No reply says "Fixed" without a corresponding pushed commit
 - Unresolved threads re-fetched after the final push -- where incremental auto-review is on, the push triggers another review, which lands minutes later and is the round you are most likely to abandon half-read
-- That follow-up round confirmed as having actually run -- a green `CodeRabbit` check whose `description` reads `Review rate limited` or `Review skipped: incremental reviews are disabled` means it never did (`bot-review-loop.md`, The Status Check Nobody Reads)
-- CodeRabbit's answers to your replies read: each thread it resolved is a confirmed fix or an accepted reason; one it left open is a finding that still stands
+- Where incremental auto-review is on, that follow-up round confirmed as having actually run -- a green `CodeRabbit` check whose `description` reads `Review rate limited` means it never did (`bot-review-loop.md`, The Status Check Nobody Reads). `Review skipped: incremental reviews are disabled` is not a missing round: there, the thread answers are the verification (next item)
+- CodeRabbit's answers to your replies read: each thread it resolved is a confirmed fix or an accepted reason; one it left open is a finding that still stands. Once CodeRabbit has resolved every thread you replied to, the round is closed: request no review, and don't ask whether to (SKILL.md, Critical Rule 10)
