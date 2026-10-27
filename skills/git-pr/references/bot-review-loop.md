@@ -594,19 +594,20 @@ The agent drives rounds; `bot_tick` is one mechanical round. **Validate every co
 INPUT: PR N; a Per-Bot Setup block sourced; MAX_ROUNDS = integer from the request ("loop 3" -> 3),
        else from the Code Review Policy, else 5
 GATE:  billable review requests require an explicit loop instruction or a permissive policy --
-       otherwise ASK before a tick that would issue one. Only one outcome makes bot_tick post a
-       request: bot_status 3 with BOT_AWAIT_CHAT unset and nothing pending (bot_requested false).
-       Every other outcome requests nothing, so there is nothing to ask about. Above all, a
-       CodeRabbit round closed in its threads (7) gets no ask and no offer, except the large-PR
-       full-review offer under 7
+       otherwise ASK before a tick that would issue one. Two outcomes make bot_tick post a
+       request: bot_status 3 with BOT_AWAIT_CHAT unset and nothing pending (bot_requested false),
+       and 4, whose retry re-requests after the cooldown. Every other outcome requests nothing, so
+       there is nothing to ask about. Above all, a CodeRabbit round closed in its threads (7) gets
+       no ask and no offer, except the large-PR full-review offer under 7
 prev_head = ""; round = 0; fails = 0; processed = 0
 repeat:
   round += 1;  if round > MAX_ROUNDS: STOP "hit round cap -- escalate"
   if no explicit loop instruction and no permissive policy:
     bot_status N   # read-only preflight
-    if it gives 3 with BOT_AWAIT_CHAT unset and bot_requested N is false:
+    if it gives 4, or 3 with BOT_AWAIT_CHAT unset and bot_requested N is false:
       # this tick would issue a billable request: round 1 on a repo without auto-review, a
-      # bot that does not re-review on push (Copilot), or a fresh trigger after a bounce
+      # bot that does not re-review on push (Copilot), a fresh trigger after a bounce, or the
+      # retry after a failed review
       ASK "next review request bills fully -- proceed?" (recommend from the last round's finding
           quality; for CodeRabbit after its first full review, recommend against unless the PR is large)
       on no answer / decline: STOP "awaiting approval for the billable review request"
@@ -695,7 +696,7 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 
 ## Scheduling Several PRs Through One Bucket (CodeRabbit)
 
-The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Adaptive throttling pushes the effective rate below the table. A trial gets the selected plan's rate, and over-limit PR reviews run free during the initial subscription trial (`coderabbit` skill, Rate Limits). Several PRs in flight is therefore a scheduling problem, not N independent loops:
+The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Adaptive throttling pushes the effective rate below the table. A trial gets the selected plan's rate, and over-limit PR reviews run free during the initial subscription trial unless an admin already chose `Off` or `On demand` (`coderabbit` skill, Rate Limits). Several PRs in flight is therefore a scheduling problem, not N independent loops:
 
 **The plan sets how many PRs you can honestly keep in flight**, so re-plan when it changes -- a trial expiring into a lower tier halves the queue overnight. On Advanced (10/hour, or a grandfathered Pro+ now shown as Team) two PRs can sensibly be non-draft at once; on Team (8/hour) one or two; on Essentials (5/hour, formerly Pro) it is one active PR plus drafts, with local CLI reviews carrying the rest of the iteration; on Free (private repos: 1/hour, summary only; public repos draw the OSS allowance instead, 1--10/hour with full reviews, and under 10 stars nothing is reviewed until a `@coderabbitai review` comment asks) the PR lane is a final confirmation and nothing more. When the tier drops, drafts do the work the allowance used to.
 

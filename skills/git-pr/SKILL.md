@@ -213,7 +213,7 @@ glab mr list --reviewer=@me -F json | jq '[.[] | {iid:.iid,title:.title,url:.web
 | Create with title | `gh pr create --title "feat: ..." --body "..."`        | `glab mr create --title "feat: ..." --description "..."` |
 | Create + request Copilot review | `gh pr create --title "..." --body "..." --reviewer @copilot` (gh >= 2.88) | n/a |
 
-**Stacked PR** (GitHub): `gh pr create --base {parent_branch} ...`. CodeRabbit skips auto-review on a non-default base (`Review skipped: reviews are disabled for this base branch`, green check), so an explicit `@coderabbitai review` starts its round. Merging a stack is Critical Rule 11 (`references/stacked-prs.md`).
+**Stacked PR** (GitHub): `gh pr create --base {parent_branch} ...`. By default CodeRabbit skips auto-review on a non-default base (`Review skipped: reviews are disabled for this base branch`, green check) unless `auto_review.base_branches` matches it, so an explicit `@coderabbitai review` starts its round. Merging a stack is Critical Rule 11 (`references/stacked-prs.md`).
 
 **Keep bodies lean.** The title follows Conventional Commits (`git-commit` skill); the body is a few sentences or tight bullets on what changes and why -- no restating the diff, no boilerplate sections beyond what the repo's PR template requires.
 
