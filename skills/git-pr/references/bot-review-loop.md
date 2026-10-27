@@ -179,10 +179,10 @@ To read it by hand:
 
 ```bash
 # Check run (default surface), HEAD-pinned
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq '[.check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at) | if . == null then empty else {status, conclusion, title: .output.title, verdict: ((.output.summary // "") | split("\n")[0]), completed_at} end'
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '[.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at) | if . == null then empty else {status, conclusion, title: .output.title, verdict: ((.output.summary // "") | split("\n")[0]), completed_at} end'
 
 # Legacy commit status, HEAD-pinned
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --paginate --jq '[.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | if . == null then empty else {state, description, updated_at} end'
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --paginate --slurp | jq '[.[].statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | if . == null then empty else {state, description, updated_at} end'
 ```
 
 - **Read both surfaces.** On this repo, a check-runs-only detector saw nothing through 2026-10-22 (commit status only, `check-runs` returned `total_count: 0`), and a status-only detector has seen nothing since. A repo can sit on either side of the switch, or set `reviews.commit_status` to keep the old one.
