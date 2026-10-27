@@ -536,8 +536,9 @@ Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix pu
 
 ```bash
 # Usage: bot_bucket   (read-only) -- what the shared per-developer bucket did recently, across
-# every PR you have open. The newest "Review completed" line is the bucket's real state: if it
-# postdates your own bounce, retry NOW regardless of any window a notice quoted.
+# every PR you have open, newest first. The FIRST line is the bucket's real state: a "Review
+# completed" newer than your own bounce means retry NOW, regardless of any window a notice quoted;
+# a newer "Review rate limited" above it means the bucket emptied again since.
 bot_bucket() {
   gh search prs --author=@me --state=open --sort updated --order desc --limit "${1:-50}" --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"' | while read -r r n; do
     gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select(.context|ascii_downcase|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at) $r#$n \(.description // \"\")\" end" 2>/dev/null
@@ -679,9 +680,9 @@ repeat:
          the reset is days away, and every re-request until then fails identically while
          still burning a billable round + Actions minutes. CodeRabbit (hourly window): if
          another review bot is active on this repo, STOP this bot's loop and rely on that
-         one; otherwise BOT_BOUNCES += 1, then run bot_bucket ONCE: if any of your open PRs
-         shows a "Review completed" newer than this bounce, the bucket is open now -- skip the
-         wait entirely. Only without that evidence, wait until BOT_WAIT_UNTIL
+         one; otherwise BOT_BOUNCES += 1, then run bot_bucket ONCE: if its newest line is a
+         "Review completed" (on any of your open PRs) newer than this bounce, the bucket is open
+         now -- skip the wait entirely. An older completion under a newer bounce proves nothing. Only without that evidence, wait until BOT_WAIT_UNTIL
          (which bot_status exported with this 6) plus 1-2 min slack -- bot_sleep_until in a
          BACKGROUND Bash, never a foreground sleep. Either way the re-tick posts a fresh trigger,
          a billable request: without an explicit loop instruction or a permissive policy, ASK as
