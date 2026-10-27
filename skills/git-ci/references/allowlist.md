@@ -51,7 +51,7 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
 - `gh variable list`, `gh secret list`, `gh cache list` -- read-only listing (names only, not values)
 - `gh ruleset list/view/check` -- read-only inspection
 - `glab ci status/get/list/view/trace` -- all read-only CI queries
-- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials
+- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials. Since gh v2.103, `gh auth status` also renews and stores an expired or near-expiry token when the login uses refreshable credentials (`gh auth login --expiring`), unless `--no-refresh` is given; classic tokens are untouched
 - Shell operator awareness prevents injection
 
 ---
