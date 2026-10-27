@@ -19,7 +19,7 @@ description: >-
 
 **Primary skill for organizing a repository's issues into an epic-based roadmap on a GitHub Project (v2) and running the day-to-day on it.** Covers setup (project, fields, views, native workflows) and operations (create epics with sub-issues, drive Status, move work, prioritize). GitHub-only, via `gh project` + `gh api` (REST sub-issues + GraphQL).
 
-**Verified against gh v2.102.0** (2026-09-30): every `gh` subcommand and flag used here, against its `--help`. Minimums are tagged where they matter (`gh >= 2.94`, `>= 2.97`). If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.102.0 for `gh project` and `gh issue` changes before relying on flag details.
+**Verified against gh v2.103.2** (2026-10-27): every `gh` subcommand and flag used here, against its `--help` on v2.102.0 (2026-09-30), then the `pkg/cmd` sources of v2.102.0 and v2.103.2 diffed (2026-10-27), since `--help` is generated from them: no flag of a subcommand used here changed (`gh issue create`/`edit` changed only how `--body-file` resolves attachment paths). Minimums are tagged where they matter (`gh >= 2.94`, `>= 2.97`). If `gh --version` is newer, read the [release notes](https://github.com/cli/cli/releases) since v2.103.2 for `gh project` and `gh issue` changes before relying on flag details.
 
 The conventions here are non-obvious and easy to get half-right: the UI nests issues by **native parent/child links** and tracks progress on a **separate board Status field** -- neither of which a markdown checklist or a closed issue touches. Get those two wrong and the work *looks* done while the structure silently drifts. This skill makes the flow correct-by-default.
 

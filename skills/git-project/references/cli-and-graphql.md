@@ -1,6 +1,6 @@
 # gh project + GraphQL Reference
 
-Verified against `gh` v2.102.0 (the pin in `SKILL.md`). Projects are addressed by **number** under an `--owner` (`@me` or an org login). `gh project` covers projects, fields, and items; **views and workflows have no create/update API** (UI-only -- see `project-setup.md`). Issue-side metadata (types, milestones, sub-issue links) is set with `gh issue` flags, not `gh project` -- see `types-and-milestones.md` and `sub-issues.md`.
+Verified against `gh` v2.103.2 (the pin in `SKILL.md`). Projects are addressed by **number** under an `--owner` (`@me` or an org login). `gh project` covers projects, fields, and items; **views and workflows have no create/update API** (UI-only -- see `project-setup.md`). Issue-side metadata (types, milestones, sub-issue links) is set with `gh issue` flags, not `gh project` -- see `types-and-milestones.md` and `sub-issues.md`.
 
 **Owner / org note:** the `--owner @me` examples below take an **org login** instead for org-owned projects. The GraphQL **project reads** here use `viewer { projectV2 }` (the `@me` case); for an org-owned project replace it with `organization(login: "ORG") { projectV2 }` (and `.data.viewer` -> `.data.organization` in the `--jq`). Repo-scoped reads (`repository(owner, name)`, REST `repos/{owner}/{repo}/...`) are unaffected.
 

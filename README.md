@@ -9,7 +9,7 @@ A collection of agent skills for [OpenCode](https://opencode.ai), [Claude Code](
 | `bun-cli` | Bun CLI: package management, scripts, type checking (`bun check`), formatting (`bun fmt`), testing, bundling, compilation, install layout (isolated linker + global store), per-release upgrade guide | `bunx skills add dmythro/agent-skills --skill bun-cli` <br> `npx skills add dmythro/agent-skills --skill bun-cli` |
 | `bun-api` | Bun runtime API: HTTP server + routes, WebSockets, `fetch()` sessions and proxies, file I/O, shell, SQLite, SQL client (PostgreSQL/MySQL), S3 storage, Redis, images, WebView, secrets, parsers, hashing, compression, utilities, per-release upgrade guide | `bunx skills add dmythro/agent-skills --skill bun-api` <br> `npx skills add dmythro/agent-skills --skill bun-api` |
 | `git-commit` | Conventional Commits format for all git commits and PR/MR titles | `bunx skills add dmythro/agent-skills --skill git-commit` <br> `npx skills add dmythro/agent-skills --skill git-commit` |
-| `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, cost-aware bot review loop (GitHub: Copilot, CodeRabbit), Copilot review configuration, merging | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
+| `git-pr` | PR and MR workflows for GitHub (gh) and GitLab (glab): creation, review, comments, cost-aware bot review loop (GitHub: Copilot, CodeRabbit), Copilot review configuration, merging, stacked PRs | `bunx skills add dmythro/agent-skills --skill git-pr` <br> `npx skills add dmythro/agent-skills --skill git-pr` |
 | `coderabbit` | CodeRabbit CLI local reviews (pre-commit/pre-push/pre-PR) + `.coderabbit.yaml` low-noise configuration + cloud Coding Agent tasks (`coderabbit code`) | `bunx skills add dmythro/agent-skills --skill coderabbit` <br> `npx skills add dmythro/agent-skills --skill coderabbit` |
 | `git-ci` | CI/CD status queries for GitHub Actions (gh) and GitLab CI (glab) | `bunx skills add dmythro/agent-skills --skill git-ci` <br> `npx skills add dmythro/agent-skills --skill git-ci` |
 | `git-project` | GitHub Projects (v2) setup + management: epics with native sub-issues, board Status flow, Project priorities, native issue Types, milestone scoping, Epic/Upcoming roadmap views, team access grants | `bunx skills add dmythro/agent-skills --skill git-project` <br> `npx skills add dmythro/agent-skills --skill git-project` |
@@ -22,11 +22,11 @@ The CLI version each skill was last verified against. A newer installed version 
 | Skill | Tool | Verified against | Checked |
 |---|---|---|---|
 | `bun-cli`, `bun-api` | Bun | v1.4.4 | 2026-10-22 |
-| `coderabbit` | CodeRabbit CLI | v0.9.1 | 2026-10-22 |
-| `git-pr`, `git-ci`, `git-project` | GitHub CLI (`gh`) | v2.102.0 | 2026-09-30 |
+| `coderabbit` | CodeRabbit CLI | v0.9.1 | 2026-10-27 |
+| `git-pr`, `git-ci`, `git-project` | GitHub CLI (`gh`) | v2.103.2 | 2026-10-27 |
 | `git-pr`, `git-ci` | GitLab CLI (`glab`) | not verified | -- |
 | `deps-upgrade` | bun / npm / pnpm / yarn | 1.3.14 / 11.19.0 / 11.21.0 / 4.18.0 | 2026-08-15 |
-| `deps-upgrade` | GitHub CLI (`gh`) | v2.102.0 | 2026-09-30 |
+| `deps-upgrade` | GitHub CLI (`gh`) | v2.103.2 | 2026-10-27 |
 
 `git-commit` drives no CLI surface beyond plain `git`, so it carries no pin.
 

@@ -65,7 +65,7 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - `gh pr view`, `gh pr list`, `gh pr checks`, `gh pr diff`, `gh pr status` -- **read-only subcommands**, no `--json` field combination can cause writes
 - `gh issue view`, `gh issue list`, `gh issue status` -- read-only
 - `gh search *`, `gh label list`, `gh repo view` -- query-only
-- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials
+- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials. Since gh v2.103, `gh auth status` also renews and stores an expired or near-expiry token when the login uses refreshable credentials (`gh auth login --expiring`), unless `--no-refresh` is given. That is the same renewal every gh command's API client performs under such a login, so the pattern stays bare -- `--no-refresh` does not exist before v2.103. Classic tokens are untouched
 - `glab mr view`, `glab mr list`, `glab mr diff` -- read-only
 - Shell operator awareness prevents injection (e.g., `gh pr view && rm -rf /` cannot match)
 
@@ -99,6 +99,12 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/issues/*/timeline *)",
 "Bash(gh api repos/*/commits/*/status)",
 "Bash(gh api repos/*/commits/*/status --jq *)",
+"Bash(gh api repos/*/commits/*/check-runs)",
+"Bash(gh api repos/*/commits/*/check-runs --jq *)",
+"Bash(gh api repos/*/commits/*/check-runs --paginate --jq *)",
+"Bash(gh api repos/*/commits/*/status --paginate --jq *)",
+"Bash(gh api repos/*/commits/*/check-runs --paginate --slurp | jq *)",
+"Bash(gh api repos/*/commits/*/status --paginate --slurp | jq *)",
 "Bash(gh api repos/*/rules/branches/*)",
 "Bash(gh api repos/*/rules/branches/* --jq *)",
 "Bash(gh api repos/*/rulesets)"
@@ -112,9 +118,11 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 - **`--paginate --slurp | jq *`** (reviews, PR comments, issue comments): the bot review loop slurps all pages into one array and pipes to a separate `jq`, because `--paginate` applies `-q/--jq` per page (and `--slurp` cannot combine with `-q/--jq`). The pipe is spelled out because `*` cannot cross it. The PR-comments variant also serves the finding-count reconciliation in `bot-review-loop.md`, which counts top-level bot threads across all pages
 - **Why not trailing `*` on `/comments`**: `gh api repos/.../comments -f body="text"` would match -- that's a POST. Enumerating safe flags (`--paginate`, `--jq`, `--slurp | jq`) is safer
 - **`/commits/{sha}/status`**: the combined commit status for a sha -- how `bot_status` reads CodeRabbit's `Review completed` / `Review rate limited` verdict (`bot-review-loop.md`, The Status Check Nobody Reads). GET-only: writing a status is a POST to the different `/repos/{owner}/{repo}/statuses/{sha}` route, so the trailing wildcards cannot reach a write. The sha comes from an inline `$(gh pr view ... --jq .headRefOid)` substitution, which the `*` covers
+- **`/commits/{sha}/check-runs`**: the check runs on a sha -- where CodeRabbit writes that verdict by default since its review progress reports (`bot_check` reads both). Both endpoints return 30 records a page, so the reads paginate: `bot_check` sorts the per-page results, and the by-hand reads slurp the pages into one `jq` (the `--paginate --slurp | jq *` variants). GET-only: creating or updating a check run goes to the different `/repos/{owner}/{repo}/check-runs` routes, so the trailing wildcards cannot reach a write
 - **`/rules/branches/` and `/rulesets`**: read-only detection of the Copilot auto-review rule (`copilot_code_review`, see `copilot-review-config.md`). `/rules/branches/` is a GET-only route, so its trailing wildcards are safe; `/rulesets` accepts POST (creates rulesets), so only the **bare** pattern is listed -- no `--jq *` variant, because a trailing `*` after `--jq` could absorb `-X POST -f ...`. Filter ruleset JSON with a separate `| jq` or approve the flagged call manually; ruleset writes stay manual
 - **Billing usage endpoints are not allowlisted**: the quota-check commands in `copilot-review-config.md` use `$(...)` username substitution inside a quoted URL (query params contain `&`), which does not match simple patterns -- they are occasional diagnostics, approve manually
-- **`gh run list` / `gh run view`**: read-only subcommands powering the Copilot failure diagnosis (`bot_fail_diag` in `bot-review-loop.md`); broader CI patterns live in the `git-ci` skill
+- **`gh run list` / `gh run view`**: read-only subcommands powering the Copilot failure diagnosis (`bot_fail_diag` in `bot-review-loop.md`) and the pre-merge check of what a push to the default branch starts (`stacked-prs.md`); broader CI patterns live in the `git-ci` skill
+- **`/deployments` is not allowlisted**: the same route accepts POST (it creates a deployment), so, as with `/rulesets`, no wildcard pattern is safe. The stack-merge check in `stacked-prs.md` that lists deployment environments is approved manually. The stack detection itself (`gh pr list --base ...`, `gh repo view --json ...`) is covered by the broad patterns
 
 ---
 

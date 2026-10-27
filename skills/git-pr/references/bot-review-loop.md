@@ -1,6 +1,6 @@
 # Bot Review Loop
 
-**Iterate a code-review bot's rounds on a PR until no *valid* comments remain.** The loop is identical for any GitHub review bot (Copilot, CodeRabbit, ...); only a few things differ per bot, all set in a config block -- the **identity** (which login to filter), the **re-request trigger**, and which non-review outcomes it can post: a **failure** notice (`BOT_FAIL_RE`; Copilot does, CodeRabbit doesn't), a **rate-limit** notice (`BOT_LIMIT_RE`; CodeRabbit does, Copilot doesn't -- Copilot's rate limits hide behind its generic failure notice, and only the review run's CI log tells them apart: `bot_fail_diag` below), or a **clean-review** notice (`BOT_CLEAN_RE`; CodeRabbit does -- a clean CodeRabbit review submits **no review object at all**, only comments; Copilot always submits one). CodeRabbit additionally stamps every sha it processes with a **commit status** whose description carries that round's real outcome (`BOT_CHECK_LIMIT_RE` / `BOT_CHECK_OK_RE`) -- the only trace a silently rate-limited round leaves. These bots are GitHub-only, asynchronous (~minutes per review), and non-blocking (reviews are `COMMENTED`), so treat their output as advisory. Per-comment evaluate/fix/reply/resolve mechanics live in `pr-comment-workflow.md`.
+**Iterate a code-review bot's rounds on a PR until no *valid* comments remain.** The loop is identical for any GitHub review bot (Copilot, CodeRabbit, ...); only a few things differ per bot, all set in a config block -- the **identity** (which login to filter), the **re-request trigger**, and which non-review outcomes it can post: a **failure** notice (`BOT_FAIL_RE`; Copilot does, CodeRabbit doesn't), a **rate-limit** notice (`BOT_LIMIT_RE`; CodeRabbit does, Copilot doesn't -- Copilot's rate limits hide behind its generic failure notice, and only the review run's CI log tells them apart: `bot_fail_diag` below), or a **clean-review** notice (`BOT_CLEAN_RE`; CodeRabbit does -- a clean CodeRabbit review submits **no review object at all**, only comments; Copilot always submits one). CodeRabbit additionally stamps every sha it processes with a **check run** (the legacy **commit status** on repos that keep it) whose verdict carries that round's real outcome (`BOT_CHECK_LIMIT_RE` / `BOT_CHECK_OK_RE`, read by `bot_check`) -- the only trace a silently rate-limited round leaves. These bots are GitHub-only, asynchronous (~minutes per review), and non-blocking (reviews are `COMMENTED`), so treat their output as advisory. Per-comment evaluate/fix/reply/resolve mechanics live in `pr-comment-workflow.md`.
 
 **Every round costs something -- the loop is a budget, not a free retry.** Each Copilot review (including every re-request) bills fully: 13 premium requests on legacy annual plans (Pro: 300/month = up to ~23 reviews, shared with all other premium features), or token-metered AI credits plus GitHub Actions minutes on current plans (see `copilot-review-config.md` for the models and quota checks). Each CodeRabbit review spends an hourly per-plan bucket. Default posture without an explicit loop instruction or permissive Code Review Policy (SKILL.md): process the auto-review round if one fired, then **ask before any billable re-request**, recommending based on the round's finding quality -- mostly valid substantive findings suggests another round pays off; mostly rejected noise suggests stopping. **For CodeRabbit the round after the first full review happens in the threads**: reply to every thread and let its chat answers verify the fixes and accept the reasons (Fixes Confirmed in the Thread); a further review is something to offer on a large PR, not a default step. Cheap iteration belongs *before* the PR: local CodeRabbit CLI reviews (`coderabbit` skill) draw from a separate hourly bucket than PR reviews (though usage-based *overage* credits, where enabled, are a shared pool).
 
@@ -8,17 +8,17 @@
 
 ## Run It
 
-Source ONE bot's config block (below) together with the three functions (`bot_status`, `bot_requested`, `bot_tick`), then drive rounds:
+Source ONE bot's config block (below) together with the four functions (`bot_check`, `bot_status`, `bot_requested`, `bot_tick`), then drive rounds:
 
 ```bash
 bot_tick <PR>    # re-request if needed + poll once
 ```
 
-Branch on the exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4` failed (the tick already cooled down ~5 min and re-requested -- re-run to poll; escalate only when it repeats), `5` not applicable, `6` rate-limited (CodeRabbit: wait out the window or defer to another bot; Copilot hard limit from the CI log: STOP and report the reset date -- never re-request), `7` fixes confirmed in the thread (CodeRabbit verified every fix of the last round against HEAD in chat; HEAD itself not re-reviewed -- no re-request, see Fixes Confirmed in the Thread). A tick returns within ~6 min -- run it in the background, or with a Bash timeout `>= 420000` ms, and re-run on `3`. That is polling: where the host forbids it, wait as Waiting for an In-Flight Round says. The functions are read-only except the single re-request write.
+Branch on the exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4` failed (the tick already cooled down ~5 min and re-requested -- re-run to poll; escalate only when it repeats), `5` not applicable, `6` rate-limited (CodeRabbit: wait out the window or defer to another bot; Copilot hard limit from the CI log: STOP and report the reset date -- never re-request), `7` fixes confirmed in the thread (CodeRabbit verified every fix of the last round in chat and resolved the threads; HEAD itself not re-reviewed -- never re-request, see Fixes Confirmed in the Thread). A tick returns within ~6 min -- run it in the background, or with a Bash timeout `>= 420000` ms, and re-run on `3`. That is polling: where the host forbids it, wait as Waiting for an In-Flight Round says. The functions are read-only except the single re-request write.
 
 ## Waiting for an In-Flight Round
 
-**A round still running when the turn would end is unfinished work -- never close on "review in progress" alone.** A non-draft PR on an auto-review repo starts round 1 at creation, so right after `gh pr create` that round is usually in flight (`bot_status` exits `3`: a pending Copilot request, or HEAD's `CodeRabbit` status reading `Review in progress`). Wait for it the way the host allows -- the host's own instructions decide which row applies:
+**A round still running when the turn would end is unfinished work -- never close on "review in progress" alone.** A non-draft PR on an auto-review repo starts round 1 at creation, so right after `gh pr create` that round is usually in flight (`bot_status` exits `3`: a pending Copilot request, or HEAD's `CodeRabbit` check still running). Wait for it the way the host allows -- the host's own instructions decide which row applies:
 
 | Host allows                   | Wait with                                       | Before the turn ends                                                                                 |
 |-------------------------------|-------------------------------------------------|------------------------------------------------------------------------------------------------------|
@@ -31,9 +31,9 @@ Branch on the exit code per **The Loop**: `0` done, `2` not clean, `3` retry, `4
 **The monitor wakes the session on new review comments, CI failures and merge conflicts, so a round that ends without any of them may never wake it.** Two such CodeRabbit outcomes are routine:
 
 - **A clean round posts no review comment** -- no review object at all, only the walkthrough comment saying no actionable comments were generated (`BOT_CLEAN_RE`).
-- **A rate-limited round only changes HEAD's `CodeRabbit` commit status** -- description `Review rate limited`, state `success`: no review comment, and no CI failure either (The Status Check Nobody Reads).
+- **A rate-limited round only changes HEAD's `CodeRabbit` check** -- a `neutral` check run (or a `success` commit status) whose verdict is `Review rate limited`: no review comment, and no CI failure either (The Status Check Nobody Reads).
 
-The fallback is the user: once the review has landed (the PR's `CodeRabbit` check no longer reads `Review in progress`), re-invoking `/git-pr` reads the round's outcome. Ask for the monitor and state both blind spots and this fallback in one message. In the Claude Code desktop app the agent switches Auto-fix on with the app's `set_monitor` tool, and only once the user says yes; if they decline, close as in the third row.
+The fallback is the user: once the review has landed (the PR's `CodeRabbit` check is no longer running), re-invoking `/git-pr` reads the round's outcome. Ask for the monitor and state both blind spots and this fallback in one message. In the Claude Code desktop app the agent switches Auto-fix on with the app's `set_monitor` tool, and only once the user says yes; if they decline, close as in the third row.
 
 **Say plainly that the round is not processed yet -- "review in progress" alone reads as handled.** The closing message names the bot and the PR, says what will process the round (the monitor waking the session, or the user re-invoking `/git-pr`), and, with a monitor, carries its blind spots. Any turn that ends on a wait the session cannot hold closes the same way: a polling loop that stops on a timeout, or a rate-limit window where polling is forbidden -- the monitor raises nothing when the window reopens and the bounced round is never queued, so give the user the time from `BOT_WAIT_UNTIL`.
 
@@ -113,16 +113,19 @@ BOT_LIMIT_RE='rate limited by coderabbit\.ai|review limit reached|rate limit exc
 # NOT a failure or rate limit. ("Actionable comments posted: 0" is the review-body variant of
 # the same signal, kept as a hedge; asterisk-tolerant since the count is bolded.)
 BOT_CLEAN_RE='no actionable comments were generated|actionable comments posted:[ *]*0|review finished'
-# Commit status on the reviewed sha (context "CodeRabbit"): the ONLY signal a silently rate-limited
-# round leaves -- no review, no thread, and often no comment either. Its state is ALWAYS success, so
-# the outcome lives in the description ("Review completed" vs "Review rate limited"); see The Status
-# Check Nobody Reads. Matched loosely: the wording is short and CodeRabbit adds variants over time.
+# The verdict on the reviewed sha, as bot_check reads it from the "CodeRabbit" check run (default)
+# or the legacy commit status: the ONLY signal a silently rate-limited round leaves -- no review, no
+# thread, and often no comment either. Neither surface's state is the verdict ("Review completed" vs
+# "Review rate limited"); see The Status Check Nobody Reads. Matched loosely: the wording is short and
+# CodeRabbit adds variants over time.
 BOT_CHECK_LIMIT_RE='rate limit'                                       # this sha was NOT reviewed
 BOT_CHECK_OK_RE='review completed'                                    # this sha WAS reviewed
 BOT_CHECK_RUNNING_RE='review in progress'                             # a review is running RIGHT NOW on this
-                                                                      # sha (status state: pending) -- bot_requested
-                                                                      # reads it, so no tick triggers over it
-# "Review skipped: <reason>" is a CONFIG decision, not a quota problem: observed reasons are
+                                                                      # sha (check run not completed, or status
+                                                                      # pending) -- bot_requested reads it, so no
+                                                                      # tick triggers over it
+# "Review skipped" is a CONFIG decision, not a quota problem. Only the legacy status names the reason
+# ("Review skipped: <reason>"); observed reasons are
 # "draft pull request" (auto_review.drafts), "reviews are disabled for this base branch"
 # (auto_review.base_branches) and "incremental reviews are disabled" (auto_incremental_review:
 # false -- on a push after the PR's first review). No review is coming until the config or the
@@ -144,32 +147,48 @@ Each bot uses a `[bot]`-suffixed login on REST and an unsuffixed one on GraphQL 
 
 ## The Status Check Nobody Reads (CodeRabbit)
 
-**A rate-limited auto-review is completely silent: no review, no threads, no comment -- and a green check.** A push-triggered round has no trigger comment to bounce back against (a manual `@coderabbitai review` at least gets its "Review rate limited" ack), so the one place it is always recorded is a **commit status** CodeRabbit writes on the sha it processed -- and that status is `success` whether the review ran or was refused. In the PR's checks list it renders as `CodeRabbit -- Review rate limited` next to a green tick, between the CI jobs, which is why it gets read as "all checks passed" and the round is presumed reviewed.
+**A rate-limited auto-review is silent where you would look for it: no review, no threads, no comment.** A push-triggered round has no trigger comment to bounce back against (a manual `@coderabbitai review` at least gets its "Review rate limited" ack), so the one place every round is recorded is a check CodeRabbit writes on the sha it processed, and nothing about that check reads as a failure. It comes in two shapes, and a detector has to read both:
 
-| REST `state` | `description`      | Means                                                                          |
-|-----------|-----------------------|--------------------------------------------------------------------------------|
-| `pending` | `Review in progress`  | A review is running on this sha right now -- wait, and never trigger over it     |
-| `success` | `Review completed`    | The bot reviewed this sha. With zero unresolved threads, that is a genuine clean round |
-| `success` | `Review rate limited` | The bucket was empty: **this sha was never reviewed**. Nothing is queued -- when the window reopens, nothing runs until a fresh trigger. Make it `@coderabbitai full review`: a plain `review` over unchanged commits can answer "already reviewed" and no-op. (A later *push* may recover on its own -- observed resuming its incremental range from the last **completed** review -- so check the review's "Commits" block before assuming the gap persists) |
-| `success` | `Review skipped: <reason>` | A config decision, not quota: observed reasons are `draft pull request` (`auto_review.drafts`), `reviews are disabled for this base branch` (`auto_review.base_branches`) and `incremental reviews are disabled` (`auto_incremental_review: false`, on pushes after the first review). Nothing is coming until the config or the PR changes -- `bot_status` returns `5`, or `7` when the last round's fixes were confirmed in the thread |
+- **A check run from the `coderabbitai` app, named `CodeRabbit`.** This is the default since CodeRabbit's review progress reports (`reviews.review_progress`, changelog 2026-07-22). It reached this repo between 2026-10-22 and 2026-10-27. The verdict is the first line of `output.summary`, `Result: <outcome> - <verdict>`, and the `conclusion`.
+- **The legacy commit status, context `CodeRabbit`.** It is written only where `reviews.commit_status` is on and review progress is off. The verdict is its `description`, and its `state` is `success` for every finished outcome.
 
-Sampled across 25 PRs of one account (62 stamped rounds): 44 completed, **15 rate limited**, 2 skipped, 1 in progress. Roughly **one round in four was refused**, every one of them behind a green check -- this is the normal case, not an edge case. (Measured on a Pro+ trial, where adaptive throttling applies: read the *ratio* as the warning, not the rate as a plan figure.)
+| Verdict | Check run: `conclusion`, `output.title` | Commit status `state` | `gh pr checks` `state` / `bucket` | Means |
+|---------|-----------------------------------------|-----------------------|-----------------------------------|-------|
+| `Review in progress` | `status` not yet `completed` | `pending` | `PENDING` / `pending` | A review is running on this sha right now -- wait, and never trigger over it |
+| `Review completed` | `success`, `Finished` | `success` | `SUCCESS` / `pass` | The bot reviewed this sha. With zero unresolved threads, that is a genuine clean round |
+| `Review rate limited` | `neutral`, `Review rate limited` | `success` | `NEUTRAL` / `skipping` (status: `SUCCESS` / `pass`) | The bucket was empty: **this sha was never reviewed**. Nothing is queued -- when the window reopens, nothing runs until a fresh trigger. Make it `@coderabbitai full review`: a plain `review` over unchanged commits can answer "already reviewed" and no-op. (A later *push* may recover on its own -- observed resuming its incremental range from the last **completed** review -- so check the review's "Commits" block before assuming the gap persists) |
+| `Review skipped` | `skipped`, `Review skipped` | `success` | `SKIPPED` / `skipping` (status: `SUCCESS` / `pass`) | A config decision, not quota. The status names the reason (`Review skipped: <reason>`): observed `draft pull request` (`auto_review.drafts`), `reviews are disabled for this base branch` (`auto_review.base_branches`) and `incremental reviews are disabled` (`auto_incremental_review: false`, on pushes after the first review). **The check run names none** -- infer it from the PR: a draft, a non-default base, or a push after the first review. Nothing is coming until the config or the PR changes -- `bot_status` returns `5`, or `7` when the last round's fixes were confirmed in the thread |
 
-`state` separates only "running" from "finished" -- it is `success` for **every** finished outcome, which is why the description is the verdict. Mind the casing per surface: the REST commit-status API returns lowercase (`success`), while `gh pr checks --json state` uppercases it (`SUCCESS`) and adds its own lowercase `bucket` (`pass`). Match the description loosely: the wording is short and CodeRabbit adds variants over time.
+Sampled on the commit status across 25 PRs of one account (62 stamped rounds): 44 completed, **15 rate limited**, 2 skipped, 1 in progress. Roughly **one round in four was refused**, every one of them behind a green check -- this is the normal case, not an edge case. (Measured on a Pro+ trial, where adaptive throttling applies: read the *ratio* as the warning, not the rate as a plan figure.)
 
-Read it with `description` explicitly requested -- and beware which surface you ask:
+**On the commit status, `state` is `success` for every finished outcome**, so the description is the verdict. The check run's `conclusion` does tell them apart, and `gh pr checks` buckets a refused or skipped run as `skipping` rather than `pass` -- but it returns an **empty `description`** for a check run and lumps rate limited with skipped. Neither surface's state is the verdict; the verdict line is. Match it loosely: the wording is short and CodeRabbit adds variants over time.
+
+`bot_check` reads both surfaces at HEAD (every page: each endpoint returns 30 records by default, and a busy sha can push CodeRabbit's past the first page) and keeps the newer, as `<epoch>|<verdict>` -- the check run's verdict line with the `Result: <outcome> - ` prefix stripped, which leaves the same words the status description carries:
 
 ```bash
-# Checks list (any provider's checks, incl. bot statuses) -- description is NOT a default field
-gh pr checks {pr} --json name,state,bucket,description --jq '.[] | select(.name|ascii_downcase|startswith("coderabbit"))'
-
-# HEAD-pinned, authoritative: the commit status API
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --jq '[.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | if . == null then empty else {state, description, updated_at} end'
+# Usage: bot_check <PR>   (read-only; a Per-Bot Setup block must be sourced)
+# An unfinished check run reads "Review in progress"; a run without a summary falls back to its title.
+bot_check() {
+  { gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.completed_at // .started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at | fromdateiso8601)|Review in progress\" else \"\((.completed_at // .started_at) | fromdateiso8601)|\(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end"
+    gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select((.context | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at | fromdateiso8601)|\(.description // \"\")\" end"
+  } 2>/dev/null | sort -n | tail -1
+}
 ```
 
-- **It is a commit *status*, not a check *run*.** `gh api repos/{owner}/{repo}/commits/{sha}/check-runs` never lists it (on a PR whose only bot signal is this status, that endpoint returns `total_count: 0`) -- a check-runs-only detector sees nothing at all.
-- **`gh pr view --json statusCheckRollup` drops the description.** For a `StatusContext` it returns `context`, `state`, `targetUrl` and `startedAt` only, so the rollup shows `CodeRabbit: SUCCESS` and the actual outcome is unrecoverable from it. Never diagnose a bot round from the rollup -- and don't read `state`/`bucket` as the verdict on any surface: they are green for both rows above.
-- **It is pinned to a sha**, so it answers the question that matters ("was *this* HEAD reviewed?") without any of the comment-timestamp reasoning the notices need. A status on an older sha says nothing about HEAD.
+To read it by hand:
+
+```bash
+# Check run (default surface), HEAD-pinned
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '[.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.completed_at // .started_at) | if . == null then empty else {status, conclusion, title: .output.title, verdict: ((.output.summary // "") | split("\n")[0]), completed_at} end'
+
+# Legacy commit status, HEAD-pinned
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --paginate --slurp | jq '[.[].statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | if . == null then empty else {state, description, updated_at} end'
+```
+
+- **Read both surfaces.** On this repo, a check-runs-only detector saw nothing through 2026-10-22 (commit status only, `check-runs` returned `total_count: 0`), and a status-only detector has seen nothing since. A repo can sit on either side of the switch, or set `reviews.commit_status` to keep the old one.
+- **`gh pr checks` cannot give the verdict for a check run** -- its `description` is empty. It still separates `pass` from `skipping`, which is enough to know HEAD was *not* reviewed, but not why.
+- **`gh pr view --json statusCheckRollup` drops the verdict on both surfaces.** For a `StatusContext` it returns `context`, `state`, `targetUrl` and `startedAt` only; for a `CheckRun` it carries the `conclusion` but not the summary. Never diagnose a bot round from the rollup.
+- **It is pinned to a sha**, so it answers the question that matters ("was *this* HEAD reviewed?") without any of the comment-timestamp reasoning the notices need. A check on an older sha says nothing about HEAD.
 - **`gh pr checks` exits non-zero** when checks are pending (8) or none are reported -- branch on the JSON, not the exit code.
 
 ## bot_status (read-only detector)
@@ -181,18 +200,20 @@ The authoritative "done?" signal is **zero unresolved threads from this bot**, g
 ```bash
 # Usage: bot_status <PR_NUMBER>   (read-only; a Per-Bot Setup block must be sourced)
 # Exit: 0 clean (no unresolved threads; HEAD covered by a review object or, where BOT_CLEAN_RE /
-#       BOT_CHECK_OK_RE are set, by a clean-review notice or a "reviewed" commit status)
+#       BOT_CHECK_OK_RE are set, by a clean-review notice or a "reviewed" verdict from bot_check)
 #       | 2 not clean | 3 pending
 #       4 failed, no retry pending | 5 not applicable (the status says this PR is being SKIPPED:
 #       draft, disabled base branch -- no review is coming until the config or PR state changes)
-#       | 6 rate-limited (CodeRabbit: HEAD's commit status says the round was refused, or the
+#       | 6 rate-limited (CodeRabbit: HEAD's check (bot_check) says the round was refused, or the
 #       newest notice's own timestamp + its parsed window has not elapsed; Copilot: hard limit
 #       found in the review run's CI log -- never retry). Every 6 exports BOT_WAIT_UNTIL, and any
 #       rate-limited HEAD exports BOT_HEAD_LIMITED=full (bot_tick's recovery trigger).
-#       | 7 fixes confirmed in the thread (BOT_CHAT_CONFIRM: every thread of the last findings
-#       round resolved BY THE BOT after a chat answer newer than HEAD's commit; HEAD itself not
-#       reviewed, and no review is running). A 3 with BOT_AWAIT_CHAT=1 means the only open threads
-#       end in your own reply from the last 10 min -- the bot's answer is due; poll, never re-request.
+#       | 7 fixes confirmed in the thread (BOT_CHAT_CONFIRM: every thread of the newest review that
+#       opened bot threads resolved BY THE BOT, its chat answer the newest comment; HEAD not reviewed,
+#       and no review is running. Commits newer than those answers are named, not re-reviewed --
+#       the local CLI lane covers them). A 3 with BOT_AWAIT_CHAT=1 means the only open threads
+#       end in your own reply from the last 10 min, or any age while a review on HEAD runs or finished
+#       under 10 min ago -- the bot's answer is due; poll, never re-request.
 # Uses gh's {owner}/{repo} placeholders + inline $(...) so each command matches the allowlist
 # patterns on its own -- no owner=/repo=/head= assignments (a VAR= prefix breaks matching).
 bot_status() {
@@ -206,16 +227,25 @@ bot_status() {
   # 1) Unresolved bot threads, PR-wide: outstanding comments always win. Handle them before
   #    any re-request -- a new review on top of them just duplicates the points. `last` (the
   #    newest comment), `resolvedBy` and the root's review id feed the thread-confirmation checks.
-  threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved resolvedBy { login } path line comments(first: 1) { nodes { author { login } body pullRequestReview { fullDatabaseId } } } last: comments(last: 1) { nodes { author { login } createdAt } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
+  threads="$(gh api graphql -f query="{ repository(owner: \"$(gh repo view --json owner --jq .owner.login)\", name: \"$(gh repo view --json name --jq .name)\") { pullRequest(number: $pr) { reviewThreads(first: 100) { totalCount nodes { isResolved resolvedBy { login } path line comments(first: 1) { nodes { author { login } body createdAt pullRequestReview { fullDatabaseId } } } last: comments(last: 1) { nodes { author { login } createdAt } } } } } } }" --jq '.data.repository.pullRequest.reviewThreads')"
   unresolved="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select(.isResolved==false and ((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)))]')"
   n="$(printf '%s' "$unresolved" | jq 'length')"
   if [ "${n:-0}" -gt 0 ] && [ -n "$BOT_CHAT_CONFIRM" ]; then
     # Every open bot thread ends in YOUR reply (the authenticated gh user -- a teammate's comment
-    # is not an answer the bot owes you) from the last 10 min: the bot's chat answer is due (it
-    # lands within ~a minute). Waiting, not "not clean" -- and never a reason to re-request.
-    # Older than 10 min with no answer falls through to 2: resolve or chase those threads yourself.
-    due="$(printf '%s' "$unresolved" | jq --arg me "$(gh api user --jq .login)" --argjson now "$(date +%s)" 'all(.[]; ((.last.nodes[0].author.login // "") | ascii_downcase) == ($me | ascii_downcase) and ($now - (.last.nodes[0].createdAt | fromdateiso8601) < 600))')"
-    [ "$due" = "true" ] && { BOT_AWAIT_CHAT=1; echo "$n $BOT_THREAD_PREFIX thread(s) await the bot's answer to your reply -- polling, no re-request"; return 3; }
+    # is not an answer the bot owes you), and either the replies are under 10 min old, or a review
+    # on HEAD is running or finished under 10 min ago: the bot's answer is due. A chat answer lands
+    # within ~a minute, but while the fix push's own review runs (often 10+ min) the answers wait
+    # for it and follow within ~a minute of its end. Waiting, not "not clean" -- and never a reason
+    # to re-request. Past both windows with no answer, it falls through to 2: resolve or chase
+    # those threads yourself.
+    due="$(printf '%s' "$unresolved" | jq -r --arg me "$(gh api user --jq .login)" --argjson now "$(date +%s)" 'if all(.[]; ((.last.nodes[0].author.login // "") | ascii_downcase) == ($me | ascii_downcase)) then (if all(.[]; $now - (.last.nodes[0].createdAt | fromdateiso8601) < 600) then "fresh" else "stale" end) else "no" end')"
+    if [ "$due" = "stale" ]; then
+      chk="$(bot_check "$pr")"; chk_at="${chk%%|*}"
+      if printf '%s' "${chk#*|}" | grep -iqE "$BOT_CHECK_RUNNING_RE" || [ $(( $(date +%s) - ${chk_at:-0} )) -lt 600 ]; then due=review; fi
+    fi
+    if [ "$due" = "fresh" ] || [ "$due" = "review" ]; then
+      BOT_AWAIT_CHAT=1; echo "$n $BOT_THREAD_PREFIX thread(s) await the bot's answer to your reply$([ "$due" = review ] && echo ' (a review on HEAD is running or just finished; the answers follow it)') -- polling, no re-request"; return 3
+    fi
   fi
   if [ "${n:-0}" -gt 0 ]; then
     echo "Unresolved $BOT_THREAD_PREFIX threads ($n):"
@@ -305,29 +335,38 @@ bot_status() {
     clean_head="${clean%% *}"; clean_at="${clean##* }"
   fi
 
-  # 6) Commit status on HEAD (BOT_CHECK_* set): the sha-pinned record of what happened to THIS
-  #    HEAD -- and the only one a silent bounce leaves (The Status Check Nobody Reads). Its state
-  #    is success for BOTH finished outcomes, so only the description is read, never the state.
-  #    "Review in progress" matches neither regex and falls through to the pending path, where
-  #    bot_requested reports it as in flight -- so no tick triggers over a running review.
+  # 6) HEAD's check (BOT_CHECK_* set): the sha-pinned record of what happened to THIS HEAD -- and
+  #    the only one a silent bounce leaves (The Status Check Nobody Reads). bot_check reads the
+  #    check run or the legacy commit status, whichever is newer; only the verdict is read, never
+  #    a state. "Review in progress" matches neither regex and falls through to the pending path,
+  #    where bot_requested reports it as in flight -- so no tick triggers over a running review.
   chk_desc=""; chk_at=0
   if [ -n "$BOT_CHECK_LIMIT_RE$BOT_CHECK_OK_RE" ]; then
-    chk="$(gh api repos/{owner}/{repo}/commits/"$(gh pr view "$pr" --json headRefOid --jq .headRefOid)"/status --jq "[.statuses[] | select((.context|ascii_downcase)|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at|fromdateiso8601)|\(.description // \"\")\" end")"
+    chk="$(bot_check "$pr")"
     [ -n "$chk" ] && { chk_at="${chk%%|*}"; chk_desc="${chk#*|}"; }
   fi
 
   [ "${clean_head:-0}" -gt 0 ] && { echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (clean-review notice names HEAD; no review object expected)."; return 0; }
 
   # 7) Fixes confirmed in the thread (BOT_CHAT_CONFIRM set): HEAD was not reviewed, but every
-  #    thread of the newest findings review was resolved BY THE BOT, whose answer postdates HEAD's
-  #    commit -- it re-checked each fix against the code the PR now holds. Beats a skipped or
-  #    rate-limited status (no re-request: that review is exactly what this saves); loses to a
-  #    review of HEAD that completed or is running, which is read below as usual.
+  #    thread of the newest review that OPENED bot threads was resolved BY THE BOT, after
+  #    answering in the thread -- it re-checked each fix, or accepted each reason. Beats a skipped
+  #    or rate-limited status (no re-request: that review is exactly what this saves); loses to a
+  #    review of HEAD that completed or is running, which is read below as usual. The round is
+  #    taken from the threads, not from the newest review: a later review whose findings are all
+  #    body-only (outside-diff, nitpicks) opens no thread, and keying on it found nothing and sent
+  #    a closed round on to a re-request. Its body findings are the completeness check's job
+  #    (The Loop, exit 7). Commits pushed AFTER the answers do not undo the confirmation either --
+  #    without auto-review they would never get a PR round anyway -- so the verdict stays 7 and
+  #    names them for the local CLI lane.
   if [ -n "$BOT_CHAT_CONFIRM" ] && ! printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_OK_RE|$BOT_CHECK_RUNNING_RE"; then
-    round_id="$(gh api repos/{owner}/{repo}/pulls/$pr/reviews --paginate --slurp | jq -r --arg login "$BOT_REVIEW_LOGIN" '[.[][] | select(.user.login==$login and ((.body|length) > 0))] | last | .id // empty | tostring')"
+    round_id="$(printf '%s' "$threads" | jq -r --arg p "$BOT_THREAD_PREFIX" '[.nodes[] | select((.comments.nodes[0].author.login // "") | ascii_downcase | startswith($p)) | .comments.nodes[0] | select(.pullRequestReview.fullDatabaseId != null) | {at: .createdAt, id: .pullRequestReview.fullDatabaseId}] | max_by(.at) | .id // empty')"
     if [ -n "$round_id" ]; then
-      confirmed="$(printf '%s' "$threads" | jq --arg p "$BOT_THREAD_PREFIX" --arg rid "$round_id" --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" '[.nodes[] | select((.comments.nodes[0].pullRequestReview.fullDatabaseId // "" | tostring) == $rid)] | length > 0 and all(.[]; .isResolved and ((.resolvedBy.login // "") | ascii_downcase | startswith($p)) and ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p)) and .last.nodes[0].createdAt > $since)')"
-      [ "$confirmed" = "true" ] && { echo "$BOT_THREAD_PREFIX confirmed every fix of its last round in the threads and resolved them; HEAD itself was not re-reviewed${chk_desc:+ ($chk_desc)} -- no re-request"; return 7; }
+      confirmed="$(printf '%s' "$threads" | jq -r --arg p "$BOT_THREAD_PREFIX" --arg rid "$round_id" --arg since "$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')" '[.nodes[] | select((.comments.nodes[0].pullRequestReview.fullDatabaseId // "" | tostring) == $rid)] | if length > 0 and all(.[]; .isResolved and ((.resolvedBy.login // "") | ascii_downcase | startswith($p)) and ((.last.nodes[0].author.login // "") | ascii_downcase | startswith($p))) then (if all(.[]; .last.nodes[0].createdAt > $since) then "head" else "older" end) else "no" end')"
+      case "$confirmed" in
+        head)  echo "$BOT_THREAD_PREFIX confirmed every fix of its last round in the threads and resolved them; HEAD itself was not re-reviewed${chk_desc:+ ($chk_desc)} -- no re-request"; return 7 ;;
+        older) echo "$BOT_THREAD_PREFIX confirmed and resolved every thread of its last round, but commits landed after its answers${chk_desc:+ ($chk_desc)} -- cover them with the local CLI lane; no re-request"; return 7 ;;
+      esac
     fi
   fi
 
@@ -369,7 +408,7 @@ bot_status() {
   # already stamped as reviewed. Checked in this order, an hour-long window opened before the
   # review would otherwise report rate-limited for an hour on an already-clean HEAD.
   if [ -n "$chk_desc" ] && [ -n "$BOT_CHECK_OK_RE" ] && printf '%s' "$chk_desc" | grep -iqE "$BOT_CHECK_OK_RE"; then
-    echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (HEAD's commit status reports it reviewed: $chk_desc)."; return 0
+    echo "No unresolved $BOT_THREAD_PREFIX threads -- clean (HEAD's check reports it reviewed: $chk_desc)."; return 0
   fi
   # Same precedence for the dated ack: it is only trusted when it POSTDATES the newest notice
   # (clean_at > lim_at), so an ack that arrived after the window opened means the round ran
@@ -382,7 +421,7 @@ bot_status() {
     return 6
   fi
   if bot_requested "$pr"; then
-    echo "$BOT_THREAD_PREFIX review already in flight (requested, or the commit status says it is running) -- waiting, no re-request needed"
+    echo "$BOT_THREAD_PREFIX review already in flight (requested, or HEAD's check says it is running) -- waiting, no re-request needed"
   else
     echo "No $BOT_THREAD_PREFIX review yet for current HEAD (not requested)"
   fi
@@ -392,18 +431,18 @@ bot_status() {
 
 ## bot_requested (already-in-flight check)
 
-Auto-review (and any earlier request) leaves the bot as a pending requested reviewer until its review lands. Re-requesting on top of that is the collision to avoid. **The pending entry is only visible on the REST endpoint** -- `gh pr view --json reviewRequests` omits bot reviewers entirely (verified: it stays `[]` while REST shows the request), so never use it for this check. CodeRabbit is comment-triggered and never appears there at all; its equivalent evidence is the commit status reading `Review in progress` (state `pending`), so the check covers both surfaces:
+Auto-review (and any earlier request) leaves the bot as a pending requested reviewer until its review lands. Re-requesting on top of that is the collision to avoid. **The pending entry is only visible on the REST endpoint** -- `gh pr view --json reviewRequests` omits bot reviewers entirely (verified: it stays `[]` while REST shows the request), so never use it for this check. CodeRabbit is comment-triggered and never appears there at all; its equivalent evidence is HEAD's check still running (`bot_check` reads `Review in progress`: a check run not yet `completed`, or a `pending` commit status), so the check covers both surfaces:
 
 ```bash
 # Usage: bot_requested <PR_NUMBER>   (read-only; exit 0 = a review for this bot is already in flight)
 bot_requested() {
   [ "$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" = "true" ] && return 0
   [ -n "$BOT_CHECK_RUNNING_RE" ] || return 1
-  gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/status --jq "[.statuses[] | select((.context|ascii_downcase)|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | (.description // \"\")" 2>/dev/null | grep -iqE "$BOT_CHECK_RUNNING_RE"
+  bot_check "$1" | cut -d'|' -f2- | grep -iqE "$BOT_CHECK_RUNNING_RE"
 }
 ```
 
-(Copilot appears in `requested_reviewers` as login `Copilot` -- yet another identity form; the lowercase prefix match covers it, and with `BOT_CHECK_RUNNING_RE` empty the second half is skipped. For CodeRabbit the first half is always false and the status is the whole answer: without it, a tick fired while a review was already running would post a redundant trigger.)
+(Copilot appears in `requested_reviewers` as login `Copilot` -- yet another identity form; the lowercase prefix match covers it, and with `BOT_CHECK_RUNNING_RE` empty the second half is skipped. For CodeRabbit the first half is always false and HEAD's check is the whole answer: without it, a tick fired while a review was already running would post a redundant trigger.)
 
 ## bot_tick (re-request only if needed + one bounded poll)
 
@@ -471,10 +510,10 @@ Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix pu
 
 **The confirmation only counts if CodeRabbit resolves the thread -- every thread, rejected ones included.** Resolving a CodeRabbit thread yourself, as `pr-comment-workflow.md` does for other reviewers, erases the signal: `resolvedBy` becomes you, the tick cannot tell a verified fix from an unverified one, and exit `7` never fires, because it needs every thread of the round resolved by the bot. It also forfeits the learning a withdrawn finding records. So for CodeRabbit threads, **reply and leave the thread open** -- "Fixed in {sha}", "Partly taken in {sha}: ...", or the reason for not changing it. `bot_status` reads the outcome:
 
-- Every open bot thread ends in your own reply (the authenticated `gh` user) from the last 10 minutes -> exit `3` with `BOT_AWAIT_CHAT=1`: the answer is due, and `bot_tick` polls without re-requesting.
-- Every thread of the newest findings review is resolved by the bot, after an answer newer than HEAD's commit, and HEAD has no completed or running review -> exit `7`.
+- Every open bot thread ends in your own reply (the authenticated `gh` user) from the last 10 minutes, or of any age while a review on HEAD is running or finished under 10 minutes ago -> exit `3` with `BOT_AWAIT_CHAT=1`: the answer is due, and `bot_tick` polls without re-requesting. Observed 2026-10-27 on this repo, with incremental reviews on: neither "Fixed in" reply was answered while the fix push's review ran for 12 minutes, and the first answer, resolving its thread, came a minute after that review finished.
+- Every thread of the newest review that opened bot threads is resolved by the bot, its answer the newest comment, and HEAD has no completed or running review -> exit `7`. A later review whose findings are all body-only opens no thread and does not reopen the round; its findings go through the completeness check. When commits landed after those answers, the message says so: cover them with the local CLI lane. It is still `7`, and still no re-request.
 - The bot answered but left a thread open -> exit `2`: it disagrees, so treat that thread as a fresh finding.
-- No answer after 10 minutes -> exit `2` listing those threads: resolve them yourself and don't count them as confirmed.
+- No answer after 10 minutes, and no review on HEAD running or finished in the last 10 minutes -> exit `2` listing those threads: resolve them yourself and don't count them as confirmed.
 
 ## Waiting Out a Bounce (CodeRabbit)
 
@@ -497,20 +536,22 @@ Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix pu
 
 ```bash
 # Usage: bot_bucket   (read-only) -- what the shared per-developer bucket did recently, across
-# every PR you have open. The newest "Review completed" line is the bucket's real state: if it
-# postdates your own bounce, retry NOW regardless of any window a notice quoted.
+# every PR you have open, newest first. The FIRST line is the bucket's real state: a "Review
+# completed" newer than your own bounce means retry NOW, regardless of any window a notice quoted;
+# a newer "Review rate limited" above it means the bucket emptied again since.
 bot_bucket() {
   gh search prs --author=@me --state=open --sort updated --order desc --limit "${1:-50}" --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"' | while read -r r n; do
-    gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/status --jq "[.statuses[] | select(.context|ascii_downcase|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at) $r#$n \(.description // \"\")\" end" 2>/dev/null
-  done | sort
+    gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select(.context|ascii_downcase|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at) $r#$n \(.description // \"\")\" end" 2>/dev/null
+    gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.completed_at // .started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at) $r#$n Review in progress\" else \"\(.completed_at // .started_at) $r#$n \(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end" 2>/dev/null
+  done | sort -r
 }
 ```
 
-Sorted newest-first and defaulting to 50 PRs (`bot_bucket 100` for more), because only the **newest** completion matters -- a truncated, unsorted list can miss it and strand you waiting on a bucket that already reopened. The REST path stays unquoted so it still matches the `repos/*/commits/*/status` allowlist pattern; quoting the whole path breaks the match and turns an unattended loop into a prompt.
+Sorted newest-first and defaulting to 50 PRs (`bot_bucket 100` for more), because only the **newest** completion matters -- a truncated, unsorted list can miss it and strand you waiting on a bucket that already reopened. Each PR's check run and legacy status are both read, since a repo can be on either surface. The REST paths stay unquoted so they still match the `repos/*/commits/*/status` and `repos/*/commits/*/check-runs` allowlist patterns; quoting the whole path breaks the match and turns an unattended loop into a prompt.
 
 Every PR you have open contends for this one bucket, including PRs another agent or session opened on your account minutes ago -- so `bot_bucket` also explains *why* a round bounced, which a single PR's view never shows.
 
-**There is no CI log to consult for CodeRabbit.** It publishes a commit status, not an Actions run: `check-runs` is empty for it and the status's `target_url` is `null`, so nothing behind the check explains the wait. (`bot_fail_diag` is Copilot-only -- Copilot *does* run as a workflow, which is why its hard limits are diagnosable and CodeRabbit's are not.) The status description, an ack if one was posted, and the clock are the whole picture.
+**There is no CI log to consult for CodeRabbit.** It runs no Actions workflow: the legacy commit status has a `null` `target_url`, and the check run's summary holds only a step table (prepare, analysis, feedback, publish, each with a time) and a link to the CodeRabbit web app -- nothing that explains a wait. (`bot_fail_diag` is Copilot-only -- Copilot *does* run as a workflow, which is why its hard limits are diagnosable and CodeRabbit's are not.) The verdict, an ack if one was posted, and the clock are the whole picture.
 
 The wait itself must not sit inside one tool call -- a single Bash invocation is capped at ten minutes, and these waits run to hours:
 
@@ -574,6 +615,7 @@ If any line is false the branch is not ready: keep working, or park it as a draf
 3. **Expect the silent pause regardless.** `auto_pause_after_reviewed_commits` (default 5) counts *reviewed commits*, so batching pushes saves review slots but does not postpone the cap -- a long PR eventually stops being auto-reviewed, which reads as a broken bot. That state needs `@coderabbitai resume`, not more review requests.
 4. **Iterate in draft when the change isn't ready.** Drafts are excluded from auto-review, so pushes to a draft cost nothing; marking ready is the request.
 5. **A wasted push costs more than a wasted trigger.** A bounced trigger consumes no review and moves no deadline (it is simply never queued); a push that lands mid-round consumes a real review of incomplete work -- and the next round then has to re-review the same files.
+6. **Never push while a review is running.** A push during `Review in progress` supersedes that review: its result never reaches the PR, but it has already been spent ([docs](https://docs.coderabbit.ai/management/rate-limits#superseded-reviews): three pushes in ten minutes spend three reviews and return one). Wait for the round to land, then push. GitHub's **Update branch** and **Resolve conflicts** buttons and its web editor each write a commit, so each one is a push.
 
 ## The Loop
 
@@ -583,17 +625,22 @@ The agent drives rounds; `bot_tick` is one mechanical round. **Validate every co
 INPUT: PR N; a Per-Bot Setup block sourced; MAX_ROUNDS = integer from the request ("loop 3" -> 3),
        else from the Code Review Policy, else 5
 GATE:  billable review requests require an explicit loop instruction or a permissive policy --
-       otherwise ASK before ANY tick that would issue one: after each processed round, and on
-       round 1 when nothing is pending or reviewed yet (repos without auto-review; see intro)
+       otherwise ASK before a tick that would issue one. Two outcomes make bot_tick post a
+       request: bot_status 3 with BOT_AWAIT_CHAT unset and nothing pending (bot_requested false),
+       and 4, whose retry re-requests after the cooldown. Every other outcome requests nothing, so
+       there is nothing to ask about. Above all, a CodeRabbit round closed in its threads (7) gets
+       no ask and no offer, except the large-PR full-review offer under 7
 prev_head = ""; round = 0; fails = 0; processed = 0
 repeat:
   round += 1;  if round > MAX_ROUNDS: STOP "hit round cap -- escalate"
   if no explicit loop instruction and no permissive policy:
-    if (processed >= 1 or (no pending bot request and no bot review or clean-review notice at HEAD))
-       and bot_status gives neither 7 nor 3 with BOT_AWAIT_CHAT=1:
-      # this tick would issue a billable request; auto-review rounds arrive without one, and a
-      # due or landed thread confirmation issues none (read-only preflight: bot_status itself)
-      ASK "next review request bills fully -- proceed?" (recommend from the last round's finding quality)
+    bot_status N   # read-only preflight
+    if it gives 4, or 3 with BOT_AWAIT_CHAT unset and bot_requested N is false:
+      # this tick would issue a billable request: round 1 on a repo without auto-review, a
+      # bot that does not re-review on push (Copilot), a fresh trigger after a bounce, or the
+      # retry after a failed review
+      ASK "next review request bills fully -- proceed?" (recommend from the last round's finding
+          quality; for CodeRabbit after its first full review, recommend against unless the PR is large)
       on no answer / decline: STOP "awaiting approval for the billable review request"
   head = gh pr view N --json headRefOid --jq .headRefOid
   if round > 1 and head == prev_head: STOP "no code change -- re-review would resurface the same points"
@@ -606,15 +653,18 @@ repeat:
          has a recorded verdict AND the count reconciles. Only then:
          STOP "clean -- this bot has no unresolved comments"
     7 -> fixes confirmed in the thread; HEAD itself was not re-reviewed (Fixes Confirmed in the
-         Thread). No re-request. If the fix commits added code beyond what the findings asked for,
+         Thread). No re-request, and no question about one. If the fix commits added code beyond
+         what the findings asked for, or commits landed after the answers (bot_status names them),
          cover it in the local lane (coderabbit review --committed --base {base} --agent); then the
          same completeness check as 0, and STOP "clean -- fixes confirmed in the thread; HEAD not
          re-reviewed" (say both halves to the user). On a large PR, end with an offer: one
          "@coderabbitai full review", posted only if the user says yes
     5 -> STOP "not applicable -- non-GitHub remote, the bot isn't enabled here, or its status says
          it is SKIPPING this PR (draft, disabled base branch, incremental reviews off); report the
-         reason, don't trigger. With incremental reviews off, a manual @coderabbitai review is the
-         only re-review and it spends a PR review -- ask first"
+         reason, don't trigger. Incremental reviews off is the configured flow, not a missing
+         round: the thread answers verify the fixes (7), so request no review and ask about none.
+         A disabled base branch is a stacked PR: its round is an explicit @coderabbitai review
+         when its turn comes (stacked-prs.md)"
     3 -> still pending: re-run bot_tick within the same round -- do NOT re-enter the round header,
          so the unchanged-HEAD guard never aborts a wait (it applies only after a processed review
          outcome); after a couple of timeouts STOP "timed out / maybe unavailable"
@@ -623,18 +673,21 @@ repeat:
          oversized PR, binary/minified files, quota; fix the cause". Else re-run bot_tick (polls the
          retry). Retries don't consume a round -- no review happened.
     6 -> rate-limited -- HEAD is UNREVIEWED; never report the round as reviewed or clean, and say
-         so plainly to the user (a green "CodeRabbit -- Review rate limited" check in the PR's
-         checks list is the same fact, not a passing review).
+         so plainly to the user (a non-failing CodeRabbit check whose verdict is "Review rate
+         limited" -- neutral check run or green status -- is the same fact, not a passing review).
          Copilot (hard weekly limit, diagnosed from the review run's CI log):
          STOP immediately and report the real cause + reset date from the log to the user --
          the reset is days away, and every re-request until then fails identically while
          still burning a billable round + Actions minutes. CodeRabbit (hourly window): if
          another review bot is active on this repo, STOP this bot's loop and rely on that
-         one; otherwise BOT_BOUNCES += 1, then run bot_bucket ONCE: if any of your open PRs
-         shows a "Review completed" newer than this bounce, the bucket is open now -- skip the
-         wait entirely and re-tick. Only without that evidence, wait until BOT_WAIT_UNTIL
+         one; otherwise BOT_BOUNCES += 1, then run bot_bucket ONCE: if its newest line is a
+         "Review completed" (on any of your open PRs) newer than this bounce, the bucket is open
+         now -- skip the wait entirely. An older completion under a newer bounce proves nothing. Only without that evidence, wait until BOT_WAIT_UNTIL
          (which bot_status exported with this 6) plus 1-2 min slack -- bot_sleep_until in a
-         BACKGROUND Bash, never a foreground sleep -- then re-run bot_tick: the bounced request was never
+         BACKGROUND Bash, never a foreground sleep. Either way the re-tick posts a fresh trigger,
+         a billable request: without an explicit loop instruction or a permissive policy, ASK as
+         the GATE says before it (unless the threads closed the round in the meantime: 7 needs
+         no trigger). Then re-run bot_tick: the bounced request was never
          queued, so the re-run's fresh trigger (or the next push) is what starts the review,
          and its ack is the first thing to read. bot_tick sends that trigger as a FULL review
          (BOT_HEAD_LIMITED), because the bounce stamped the commits as reviewed. To date the
@@ -677,11 +730,11 @@ To clear *every* reviewer in one pass, run the loop once per active bot (and add
 
 ## Scheduling Several PRs Through One Bucket (CodeRabbit)
 
-The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Trials and adaptive throttling push the effective rate below the table. Several PRs in flight is therefore a scheduling problem, not N independent loops:
+The PR-side quota is **per developer, not per PR** (docs: limits are enforced per developer over rolling hourly windows): one bucket spans every PR in every repo, so all of a developer's open PRs contend for the same review windows -- including PRs being merged in parallel, whose auto-reviews consume slots just like re-requests. The bucket is a rolling hourly allowance (Free: 1 PR review/hour, Essentials: 5, Team: 8, Advanced: 10, and a grandfathered Pro+ keeps 10 -- full table in the `coderabbit` skill), and it refills continuously as hour-old reviews age out rather than reopening at a stated time: observed bursts show two reviews completing 4 minutes apart minutes after a refusal, so the practical rate is neither the plan number nor an even spacing. Adaptive throttling pushes the effective rate below the table. A trial gets the selected plan's rate, and over-limit PR reviews run free during the initial subscription trial unless an admin already chose `Off` or `On demand` (`coderabbit` skill, Rate Limits). Several PRs in flight is therefore a scheduling problem, not N independent loops:
 
-**The plan sets how many PRs you can honestly keep in flight**, so re-plan when it changes -- a trial expiring into a lower tier halves the queue overnight. On Advanced (10/hour, or a grandfathered Pro+ now shown as Team) two PRs can sensibly be non-draft at once; on Team (8/hour) one or two; on Essentials (5/hour, formerly Pro) it is one active PR plus drafts, with local CLI reviews carrying the rest of the iteration; on Free (private repos: 1/hour, summary only; public repos draw the OSS allowance instead, 1--10/hour with full reviews) the PR lane is a final confirmation and nothing more. When the tier drops, drafts do the work the allowance used to.
+**The plan sets how many PRs you can honestly keep in flight**, so re-plan when it changes -- a trial expiring into a lower tier halves the queue overnight. On Advanced (10/hour, or a grandfathered Pro+ now shown as Team) two PRs can sensibly be non-draft at once; on Team (8/hour) one or two; on Essentials (5/hour, formerly Pro) it is one active PR plus drafts, with local CLI reviews carrying the rest of the iteration; on Free (private repos: 1/hour, summary only; public repos draw the OSS allowance instead, 1--10/hour with full reviews, and under 10 stars nothing is reviewed until a `@coderabbitai review` comment asks) the PR lane is a final confirmation and nothing more. When the tier drops, drafts do the work the allowance used to.
 
-1. **Drafts are the queue control.** Draft PRs are excluded from auto-review by default (`auto_review.drafts: false`) and cost nothing until manually triggered -- their commit status says so outright (`Review skipped: draft pull request`); with auto-review enabled, **marking one ready IS the auto-review request** (auto-review off or gated: post `@coderabbitai review` after promoting) -- promote one PR at a time, when it is that PR's turn for the window. **Opening a non-draft PR spends a slot exactly like a push does** -- a fresh PR gets no separate allowance (observed: two PRs refused 14 and 12 seconds after creation, first review ever, while the bucket was short), so a batch of PRs opened back-to-back mostly reviews the first one or two and bounces the rest.
+1. **Drafts are the queue control.** Draft PRs are excluded from auto-review by default (`auto_review.drafts: false`) and cost nothing until manually triggered -- their check says so outright (`Review skipped`; the legacy status adds `: draft pull request`); with auto-review enabled, **marking one ready IS the auto-review request** (auto-review off or gated: post `@coderabbitai review` after promoting) -- promote one PR at a time, when it is that PR's turn for the window. **Opening a non-draft PR spends a slot exactly like a push does** -- a fresh PR gets no separate allowance (observed: two PRs refused 14 and 12 seconds after creation, first review ever, while the bucket was short), so a batch of PRs opened back-to-back mostly reviews the first one or two and bounces the rest.
 2. **One window, one PR, one trigger.** Give the next window to the PR closest to merge. Parallel triggers race for the remaining allowance -- on a depleted bucket, a single slot -- and the losers bounce with the rate-limit ack; a bounced request is never queued (Per-Bot Setup), so it must be re-posted in a later window.
 3. **Prep waiting drafts with the CLI lane meanwhile.** Local CodeRabbit CLI reviews (`coderabbit` skill) draw from a separate hourly bucket (included allowances only -- usage-based overage credits are one shared org pool), so a draft arrives at its PR-side round already CLI-clean and typically needs only one confirming window.
 4. **Merge as soon as clean.** Bot-clean is not the merge bar by itself: the repo's merge requirements (CI, required human approvals -- bot reviews satisfy none of them) still apply. Once they pass, merge immediately -- a merged PR stops contending and frees the next window for the queue.
@@ -690,10 +743,10 @@ The PR-side quota is **per developer, not per PR** (docs: limits are enforced pe
 
 - **State is always `COMMENTED`** -- these bots never approve, request changes, block a merge, or satisfy a required-approval rule. Don't use `reviewDecision` to detect them.
 - **Identity differs by surface and by bot** -- a `[bot]`-suffixed login on REST, unsuffixed on GraphQL threads (see Per-Bot Setup). Filter the wrong one and detection silently returns nothing.
-- **A green check is not a completed review** (CodeRabbit) -- its commit status on the reviewed sha is `success` whether the review ran or the bucket refused it; only the `description` (`Review completed` / `Review rate limited`) says which, and `gh pr view --json statusCheckRollup` does not carry it. See The Status Check Nobody Reads.
+- **A passing or neutral check is not a completed review** (CodeRabbit) -- its check run on the reviewed sha is `success` or `neutral`, and the legacy commit status is `success` whether the review ran or the bucket refused it; only the verdict (`Review completed` / `Review rate limited`: the check run's summary line or the status `description`) says which, and neither `gh pr view --json statusCheckRollup` nor `gh pr checks` carries the check run's. See The Status Check Nobody Reads.
 - **A pending request is only visible via REST** -- while requested (auto-review or manual), Copilot appears as login `Copilot` in `gh api repos/{owner}/{repo}/pulls/{n}/requested_reviewers`; the entry disappears when the review is submitted. `gh pr view --json reviewRequests` omits bot reviewers entirely (it shows humans/teams only), so it always looks "not requested" -- the wrong surface. That pending window is when a manual re-request collides -- `bot_requested` guards it.
 - **Copilot specifics** -- requires gh >= 2.88; does **not** auto re-review on push unless the ruleset's `review_on_push` is set (otherwise re-request every round; repo auto-review covers only round 1); **every review bills fully** -- 13 premium requests (legacy annual plans) or AI credits + Actions minutes (current plans; see `copilot-review-config.md`), with no re-request discount. An exhausted quota **and a hard weekly rate limit** both fail the review with the same opaque error comment as a transient failure: `Copilot encountered an error and was unable to review this pull request. You can try again by re-requesting a review.` (detect via `BOT_FAIL_RE`, never treat as clean). The comment is misleading -- the review run's **Actions log is the ground truth**: each review runs as workflow `Copilot` (event `dynamic`, job `copilot-pull-request-reviewer`), so `bot_fail_diag` greps the latest run's log on the head branch. A `SessionModelError ... You've reached your weekly rate limit. Please wait for your limit to reset on <date> ...` (errorType `rate_limit`, HTTP 429) is a hard model cap separate from the premium-request/credit budget -- never re-request before the logged reset; report the date instead. With no such log line the failure is usually **transient**, and a re-request after a short cooldown typically succeeds (`bot_tick` automates the ~5-min wait + re-request); when retries keep failing near end-of-month, check the quota before blaming PR size. The summary says `... generated K comments` (singular at `K==1`).
-- **CodeRabbit specifics** -- auto-reviews each push when auto-review is enabled (the default; **incremental**: new changes only), so a push usually re-triggers it; re-request on demand with a `@coderabbitai review` PR comment (also incremental), or `@coderabbitai full review` for a from-scratch pass over all files (after big rebases/refactors, or when early reviews predate significant context). Every trigger comment gets an **ack within ~a minute** -- read it instead of blind-polling: "Action performed / Review triggered." means accepted and running (poll, don't re-request); "Action not completed / Review rate limited." means bounced with the `Next review available in: N minutes` window, and **never queued** -- after the window, only a fresh trigger starts a review, and it must be `@coderabbitai full review` (the bounce stamped those commits as reviewed, so an incremental one answers "Review finished."). To date the window without guessing, ask `@coderabbitai rate limit`: remaining allowance and next availability, no review spent. Auto-reviews **silently pause after 5 reviewed commits** by default (`auto_pause_after_reviewed_commits`) -- a long-running PR that "stopped getting reviews" needs `@coderabbitai resume`, not more requests. Reply to every one of its threads, fixed or rejected, and leave them for CodeRabbit to resolve: its chat answer re-checks a fix at HEAD or weighs your reason, then resolves the thread, which is the confirmation `bot_status` reads as `7` (Fixes Confirmed in the Thread). Resolve one yourself only when no answer came within 10 minutes -- that thread alone, with the `resolveReviewThread` mutation (`pr-comment-workflow.md`). Never use `@coderabbitai resolve` for it: that closes every CodeRabbit thread on the PR, including those it left open because it still disagrees. **A clean review is invisible on the reviews API**: with zero actionable comments CodeRabbit submits no review object -- the walkthrough comment ("No actionable comments were generated in the recent review" / "Actionable comments posted: 0", edited in place on later reviews) is the only evidence, and re-requesting anyway just gets the "Action performed / Review finished." ack: the incremental system has already covered these commits and no new review will come. That ack is a terminal "done" -- never read it as a failure or rate limit (`bot_status` detects all of this via `BOT_CLEAN_RE`). **Not every finding is a thread**: with `profile: chill` the nitpicks, plus any outside-diff-range or failed-to-post findings, live only in the review **body** (Findings That Never Become Threads) -- `Actionable comments posted: N` counts the inline ones alone. **All plans are quota-limited** (refilling per-hour review buckets; Free: 1 PR review/hour, summary only; Essentials, Team and Advanced add adaptive limits under sustained volume), and **each push consumes a review** just like a manual trigger, so batch a round's commits into one push (One Push Per Round). When the bucket is empty it posts `Review limit reached` / `Rate limit exceeded` with the window as either `Next review available in: N minutes` or `Please wait N minutes and M seconds`, usually **edited into the existing summary comment** rather than posted fresh (detect via `BOT_LIMIT_RE`; `bot_status` dates it by `updated_at`, sums h/m/s, and returns `6` only while the window is still binding). **A bounced *auto-review* is silent where you would look for it** -- a push-triggered round has no trigger comment to answer, so it posts no review and no thread; the docs say a rate-limit comment accompanies the check, but in practice the notice is an **edit to the existing summary comment**, which a poll for *new* comments misses entirely and a later walkthrough edit removes (observed on this repo: a refused push at 12:07 left no new comment, and the summary carried no marker eight minutes later). What always remains is the sha's `CodeRabbit` commit status reading `Review rate limited` while still rendering as a green check among the CI jobs (a manual `@coderabbitai review` always gets its ack, bounced or not). That status is the detector of last resort (`BOT_CHECK_LIMIT_RE`, The Status Check Nobody Reads), and the reason a rate-limited round is so often mistaken for a clean one. Re-requesting inside the window is pointless; wait it out -- or, when Copilot is also active on the repo, just rely on Copilot and skip CodeRabbit for that round. The buckets are **per developer, not per PR** -- all of a developer's open PRs across repos share one pool; see Scheduling Several PRs Through One Bucket. `.coderabbit.yaml` tuning and the local CLI flow live in the `coderabbit` skill.
+- **CodeRabbit specifics** -- auto-reviews each push when auto-review is enabled (the default; **incremental**: new changes only), so a push usually re-triggers it; re-request on demand with a `@coderabbitai review` PR comment (also incremental), or `@coderabbitai full review` for a from-scratch pass over all files (after big rebases/refactors, or when early reviews predate significant context). Every trigger comment gets an **ack within ~a minute** -- read it instead of blind-polling: "Action performed / Review triggered." means accepted and running (poll, don't re-request); "Action not completed / Review rate limited." means bounced with the `Next review available in: N minutes` window, and **never queued** -- after the window, only a fresh trigger starts a review, and it must be `@coderabbitai full review` (the bounce stamped those commits as reviewed, so an incremental one answers "Review finished."). To date the window without guessing, ask `@coderabbitai rate limit`: remaining allowance and next availability, no review spent. Auto-reviews **silently pause after 5 reviewed commits** by default (`auto_pause_after_reviewed_commits`) -- a long-running PR that "stopped getting reviews" needs `@coderabbitai resume`, not more requests. Reply to every one of its threads, fixed or rejected, and leave them for CodeRabbit to resolve: its chat answer re-checks a fix at HEAD or weighs your reason, then resolves the thread, which is the confirmation `bot_status` reads as `7` (Fixes Confirmed in the Thread). Resolve one yourself only when no answer came within 10 minutes and no review on HEAD is running or just finished -- that thread alone, with the `resolveReviewThread` mutation (`pr-comment-workflow.md`). Never use `@coderabbitai resolve` for it: that closes every CodeRabbit thread on the PR, including those it left open because it still disagrees. **A clean review is invisible on the reviews API**: with zero actionable comments CodeRabbit submits no review object -- the walkthrough comment ("No actionable comments were generated in the recent review" / "Actionable comments posted: 0", edited in place on later reviews) is the only evidence, and re-requesting anyway just gets the "Action performed / Review finished." ack: the incremental system has already covered these commits and no new review will come. That ack is a terminal "done" -- never read it as a failure or rate limit (`bot_status` detects all of this via `BOT_CLEAN_RE`). **Not every finding is a thread**: with `profile: chill` the nitpicks, plus any outside-diff-range or failed-to-post findings, live only in the review **body** (Findings That Never Become Threads) -- `Actionable comments posted: N` counts the inline ones alone. **All plans are quota-limited** (refilling per-hour review buckets; Free: 1 PR review/hour, summary only; Essentials, Team and Advanced add adaptive limits under sustained volume), and **each push consumes a review** just like a manual trigger, so batch a round's commits into one push (One Push Per Round). When the bucket is empty it posts `Review limit reached` / `Rate limit exceeded` with the window as either `Next review available in: N minutes` or `Please wait N minutes and M seconds`, usually **edited into the existing summary comment** rather than posted fresh (detect via `BOT_LIMIT_RE`; `bot_status` dates it by `updated_at`, sums h/m/s, and returns `6` only while the window is still binding). **A bounced *auto-review* is silent where you would look for it** -- a push-triggered round has no trigger comment to answer, so it posts no review and no thread; the docs say a rate-limit comment accompanies the check, but in practice the notice is an **edit to the existing summary comment**, which a poll for *new* comments misses entirely and a later walkthrough edit removes (observed on this repo: a refused push at 12:07 left no new comment, and the summary carried no marker eight minutes later). What always remains is the sha's `CodeRabbit` check with the verdict `Review rate limited` -- a `neutral` check run, or a commit status that still renders as a green check among the CI jobs (a manual `@coderabbitai review` always gets its ack, bounced or not). That check is the detector of last resort (`BOT_CHECK_LIMIT_RE`, The Status Check Nobody Reads), and the reason a rate-limited round is so often mistaken for a clean one. Re-requesting inside the window is pointless; wait it out -- or, when Copilot is also active on the repo, just rely on Copilot and skip CodeRabbit for that round. The buckets are **per developer, not per PR** -- all of a developer's open PRs across repos share one pool; see Scheduling Several PRs Through One Bucket. `.coderabbit.yaml` tuning and the local CLI flow live in the `coderabbit` skill.
 
 ## Preconditions
 
@@ -713,7 +766,7 @@ For unattended loops the commands must match the patterns in `allowlist.md`:
 
 1. **Identity differs by surface and bot** (Per-Bot Setup) -- the most common detection bug; filter the right login.
 2. **A failed review looks like "no comments"** (Copilot) -- detect the error phrase; never treat it as clean. The generic comment masks three distinct causes; the review run's CI log tells them apart (`bot_fail_diag`, run automatically by `bot_status` before any retry). A logged `rate_limit`/429 `SessionModelError` is a **hard weekly limit**: never re-request before the reset date the log states -- each attempt fails identically while still burning a round + Actions minutes; report the date to the user. No log hit -- usually transient: cool down ~5 min, re-request (`bot_tick` does both), escalate only after repeated failures. **Exhausted quota also fails with the identical error**: on repeated failures, check billing usage (`copilot-review-config.md`) before more retries.
-3. **A rate-limited bot looks stuck, not broken -- and when it bounces silently it looks *clean*** (CodeRabbit, any plan). With no review, no thread and no comment, the only evidence is the sha's `CodeRabbit` commit status: `success` (green tick in the checks list) with `description` = `Review rate limited`. Check it before concluding a round came back clean (gotcha 14). When a notice *is* posted, **the window is the part that gets computed wrong**. It states when the quota refills in one of two shapes (`Next review available in: N minutes`, bolded and sometimes wrapped onto the next line; `Please wait N minutes and M seconds`), so **parse hours, minutes and seconds and sum them** -- a minutes-only regex turns "1 hour and 5 minutes" into 5 minutes and re-triggers into a window that is still closed. It normally arrives as an **edit to the summary comment** (`created_at` never moves -- date the window by `updated_at`). Do **not** gate the check on the last commit date or on the notice matching HEAD: the window is per developer and wall-clock, so one opened before your newest push is still closed after it, and an expired notice is harmless because the deadline decides. Then wait it out and post a **fresh** trigger -- a bounced request is never queued, so nothing runs at window-reopen on its own. Or prefer Copilot when both bots are installed.
+3. **A rate-limited bot looks stuck, not broken -- and when it bounces silently it looks *clean*** (CodeRabbit, any plan). With no review, no thread and no comment, the only evidence is the sha's `CodeRabbit` check with the verdict `Review rate limited`: a `neutral` check run (`skipping` in the checks list), or a `success` commit status (green tick). Check it before concluding a round came back clean (gotcha 14). When a notice *is* posted, **the window is the part that gets computed wrong**. It states when the quota refills in one of two shapes (`Next review available in: N minutes`, bolded and sometimes wrapped onto the next line; `Please wait N minutes and M seconds`), so **parse hours, minutes and seconds and sum them** -- a minutes-only regex turns "1 hour and 5 minutes" into 5 minutes and re-triggers into a window that is still closed. It normally arrives as an **edit to the summary comment** (`created_at` never moves -- date the window by `updated_at`). Do **not** gate the check on the last commit date or on the notice matching HEAD: the window is per developer and wall-clock, so one opened before your newest push is still closed after it, and an expired notice is harmless because the deadline decides. Then wait it out and post a **fresh** trigger -- a bounced request is never queued, so nothing runs at window-reopen on its own. Or prefer Copilot when both bots are installed.
 4. **Stop on zero *valid* comments, not zero comments** -- reject out-of-context/outdated points with a rationale + resolve; don't blind-fix to silence a bot, and don't chase one that resurfaces rejected points.
 5. **Never request a review over outstanding work** -- unresolved bot comments mean *handle them*; a pending request (auto-review) means *wait*. `bot_status` (threads first) and `bot_requested` encode both; requesting anyway yields a duplicate round of the same points.
 6. **Pending bot requests hide from `gh pr view --json reviewRequests`** -- that field omits bot reviewers, so it reads `[]` while a Copilot request is in flight. Only REST `requested_reviewers` (login `Copilot`) tells the truth; checking the wrong surface re-introduces the duplicate-request collision.
@@ -724,8 +777,8 @@ For unattended loops the commands must match the patterns in `allowlist.md`:
 11. **A review object at HEAD is not proof the bot reviewed HEAD** -- every inline reply (the bot's or yours) is wrapped in an empty-body `COMMENTED` review submitted at the current HEAD, so a reply-container shell can sit at a commit the bot never reviewed (e.g. while its incremental re-review bounced on quota). Filter empty bodies when keying "clean" off a HEAD review (`bot_status` does).
 12. **Zero unresolved threads is not zero findings** -- CodeRabbit puts nitpicks (`profile: chill`), outside-diff-range findings and failed-to-post comments in the review **body**, where `reviewThreads` never sees them; a PR can read "clean" with four untouched findings in it. Triage the body buckets and reconcile the claimed `Actionable comments posted: N` against the threads that exist before calling a round done (Findings That Never Become Threads).
 13. **One push per round -- pushes are what spend the quota** -- on an auto-review repo each push triggers another incremental review from the same per-developer hourly bucket, so three commits pushed separately are three reviews of a change that was never finished. Commit as often as the change needs, but push once, after every fix in the round is committed; iterate in draft (not auto-reviewed) while the change is still moving.
-14. **A green `CodeRabbit` check does not mean the code was reviewed** -- the commit status it writes on each processed sha is `success` in both outcomes; the truth is in `description` (`Review completed` vs `Review rate limited`), which `gh pr view --json statusCheckRollup` omits and `gh pr checks` returns only when `description` is requested explicitly. A rate-limited round leaves nothing else behind -- no review object, no threads, often no comment -- so a checks list that reads all-green next to CI jobs is exactly what an unreviewed PR looks like. Read the description (or the `/commits/{sha}/status` API -- **not** `/check-runs`, which does not have it) before reporting a PR as reviewed or merging on that basis.
-15. **The rate-limit window expires as evidence, not just as a deadline** -- the quota notice is an *edit* to the summary comment, so a later walkthrough edit can delete it while the sha's status still reads `Review rate limited` (observed on this repo: window text present, gone ~100 seconds later). Capture the deadline when you first see it -- `bot_status` exports `BOT_WAIT_UNTIL` with every `6` -- and schedule from that; re-reading the PR later can leave you with a limit you can no longer date. Treat a stated window as a lower bound and back off on repeat bounces (Waiting Out a Bounce), and don't go hunting for a CI log: CodeRabbit has no Actions run, empty `check-runs`, and a `null` `target_url`.
+14. **A non-failing `CodeRabbit` check does not mean the code was reviewed** -- the legacy commit status is `success` in both outcomes, and the default check run is `success` or `neutral`; the truth is the verdict (`Review completed` vs `Review rate limited`), which `gh pr view --json statusCheckRollup` omits on both surfaces and `gh pr checks` returns only for a status (as `description`, when requested), never for a check run. A rate-limited round leaves nothing else behind -- no review object, no threads, often no comment -- so a checks list with no failures next to CI jobs is exactly what an unreviewed PR looks like. Read the verdict with `bot_check` -- it reads `/commits/{sha}/check-runs` **and** `/commits/{sha}/status`, since a repo can be on either surface -- before reporting a PR as reviewed or merging on that basis.
+15. **The rate-limit window expires as evidence, not just as a deadline** -- the quota notice is an *edit* to the summary comment, so a later walkthrough edit can delete it while the sha's check still reads `Review rate limited` (observed on this repo: window text present, gone ~100 seconds later). Capture the deadline when you first see it -- `bot_status` exports `BOT_WAIT_UNTIL` with every `6` -- and schedule from that; re-reading the PR later can leave you with a limit you can no longer date. Treat a stated window as a lower bound and back off on repeat bounces (Waiting Out a Bounce), and don't go hunting for a CI log: CodeRabbit has no Actions run, and its check run's summary is a step table, not a log.
 16. **Push only what is ready to be reviewed** -- with auto-review plus `auto_incremental_review`, `git push` *is* the review request, and it reviews whatever is on the branch at that moment. Finish every task of the round -- fixes, tests, docs, local checks, everything committed -- and push once (see the pre-push gate in One Push Per Round); a progress push spends a scarce per-developer window on code you already intend to change.
 17. **A thread reply is a chat, not a review -- after the first full review, it replaces the re-review** -- CodeRabbit answers replies in its threads from the separate chat allowance, re-checking a claimed fix at HEAD or weighing a stated reason, and resolving the thread when it agrees, even while the PR review bucket is empty. A round whose threads were all closed that way needs no `@coderabbitai review` (exit `7`); cover any extra code the fixes added in the local CLI lane, and only offer a `full review` on a large PR. Resolving a CodeRabbit thread yourself -- fixed or rejected -- throws that confirmation away, and with it exit `7` and the learning a withdrawn finding records (Fixes Confirmed in the Thread).
 18. **A host that forbids polling does not cancel the wait** -- the round stays in flight after the turn ends, and `bot_tick`'s poll is off the table. Hand the wait to the host's PR monitor (Claude Code desktop app: Auto-fix) or to the user, and say plainly that the round is not processed yet. The monitor misses a clean CodeRabbit round (no review comment) and a rate-limited one (only the commit-status description changes), so the fallback is the user re-invoking `/git-pr`, which reads the outcome with `bot_status` (Waiting for an In-Flight Round).

@@ -111,7 +111,7 @@ Escalate `profile: chill` to `quiet` if reviews still feel noisy; `quiet` restri
 3. **`tone_instructions`** -- max 250 chars, applies to reviews and chat.
 4. **`path_instructions`** -- per-glob focus instructions (up to 20,000 chars each); `path: "**"` works for repo-wide instructions.
 5. **`path_filters`** -- `!`-prefixed globs remove generated/vendored files from review entirely.
-6. **Presentation toggles** -- `poem`, `sequence_diagrams`, `changed_files_summary`, `review_status`, `collapse_walkthrough` shrink each review's comment bulk without affecting findings.
+6. **Presentation toggles** -- `poem`, `sequence_diagrams`, `changed_files_summary`, `review_status`, `collapse_walkthrough` shrink each review's comment bulk without affecting findings. Where the verdict lands is separate: `reviews.review_progress` (the default since 2026-07-22) publishes it as a `CodeRabbit` check run, and `reviews.commit_status` brings back the legacy commit status, only while `review_progress` is off. `reviews.fail_commit_status` sets failure reporting on whichever surface is active. Keep the default unless a required check depends on the status; the `git-pr` detector reads both.
 7. **Learnings** -- reply to an unwanted comment with `@coderabbitai` + why it should not be flagged; the learning persists to future reviews (manage at app.coderabbit.ai/learnings). `knowledge_base.code_guidelines` auto-ingests CLAUDE.md/.cursorrules-style files -- encode "no style nits" there too.
 
 ## Auto-Review Behavior
@@ -144,7 +144,7 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai full review` | Full from-scratch review of all files in the PR |
 | `@coderabbitai pause` / `resume` | Stop / restart automatic reviews on this PR |
 | `@coderabbitai ignore` | In the PR **description**: permanently disable auto-review for the PR |
-| `@coderabbitai resolve` | Resolve all CodeRabbit review threads |
+| `@coderabbitai resolve` | Resolve **all** CodeRabbit review threads, including ones it left open because it still disagrees. Only works as a new top-level PR comment, not as a thread reply, and with `reviews.auto_approvals.allow_author_approval: false` (top-level `reviews.allow_author_approval` is a deprecated alias) the PR author cannot use it on their own PR |
 | `@coderabbitai fix comments` | Fix comments: apply fixes for unresolved findings once, as a commit (`fix comments stacked pr`: as a stacked PR). `autofix`, `fix` and `fix-comments` are legacy aliases of this one-off repair, not of Autofix |
 | `@coderabbitai autopilot` / `autopilot resume` / `autopilot stop` | Turn Autofix (formerly Autopilot) on for the PR, resume it after a pause, or turn it off -- it keeps fixing review feedback and failing CI until the PR is ready |
 | `@coderabbitai rate limit` | Remaining PR review allowance + next availability -- **consumes no review** (aliases `rate-limit`, `limits`, `quota`) |
@@ -161,7 +161,7 @@ Every review run -- automatic incremental on push, `@coderabbitai review`, or `f
 knowledge_base:
   opt_out: false                # true disables the knowledge base entirely
   code_guidelines:
-    enabled: true               # auto-ingests CLAUDE.md, .cursorrules, etc.
+    enabled: true               # auto-ingests CLAUDE.md, .cursorrules, .claude/rules/ (a rule's `paths` frontmatter scopes it), etc.
     filePatterns: []            # add custom guideline files, e.g. "docs/STANDARDS.md"
   learnings:
     scope: "auto"               # local | global | auto (repo-local for public, org-wide for private)
