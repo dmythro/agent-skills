@@ -22,7 +22,7 @@ A passing check can still mean "did nothing" -- only the verdict says so. CodeRa
 ```bash
 # Check run (default surface), pinned to the PR head: the verdict is the first summary line
 gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '
-  [.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at)
+  [.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.completed_at // .started_at)
   | if . == null then empty else {status, conclusion, verdict: ((.output.summary // "") | split("\n")[0])} end'
 
 # Legacy commit status, pinned to the PR head

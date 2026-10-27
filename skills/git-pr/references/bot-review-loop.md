@@ -169,7 +169,7 @@ Sampled on the commit status across 25 PRs of one account (62 stamped rounds): 4
 # Usage: bot_check <PR>   (read-only; a Per-Bot Setup block must be sourced)
 # An unfinished check run reads "Review in progress"; a run without a summary falls back to its title.
 bot_check() {
-  { gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at | fromdateiso8601)|Review in progress\" else \"\((.completed_at // .started_at) | fromdateiso8601)|\(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end"
+  { gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.completed_at // .started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at | fromdateiso8601)|Review in progress\" else \"\((.completed_at // .started_at) | fromdateiso8601)|\(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end"
     gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select((.context | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at | fromdateiso8601)|\(.description // \"\")\" end"
   } 2>/dev/null | sort -n | tail -1
 }
@@ -179,7 +179,7 @@ To read it by hand:
 
 ```bash
 # Check run (default surface), HEAD-pinned
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '[.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at) | if . == null then empty else {status, conclusion, title: .output.title, verdict: ((.output.summary // "") | split("\n")[0]), completed_at} end'
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '[.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.completed_at // .started_at) | if . == null then empty else {status, conclusion, title: .output.title, verdict: ((.output.summary // "") | split("\n")[0]), completed_at} end'
 
 # Legacy commit status, HEAD-pinned
 gh api repos/{owner}/{repo}/commits/"$(gh pr view {pr} --json headRefOid --jq .headRefOid)"/status --paginate --slurp | jq '[.[].statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at) | if . == null then empty else {state, description, updated_at} end'
@@ -542,7 +542,7 @@ Observed 2026-09-29, on a repo with `auto_incremental_review: false`: the fix pu
 bot_bucket() {
   gh search prs --author=@me --state=open --sort updated --order desc --limit "${1:-50}" --json repository,number --jq '.[] | "\(.repository.nameWithOwner) \(.number)"' | while read -r r n; do
     gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select(.context|ascii_downcase|startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at) $r#$n \(.description // \"\")\" end" 2>/dev/null
-    gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at) $r#$n Review in progress\" else \"\(.completed_at // .started_at) $r#$n \(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end" 2>/dev/null
+    gh api repos/$r/commits/"$(gh pr view "$n" --repo "$r" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.completed_at // .started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at) $r#$n Review in progress\" else \"\(.completed_at // .started_at) $r#$n \(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end" 2>/dev/null
   done | sort -r
 }
 ```

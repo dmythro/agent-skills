@@ -72,7 +72,7 @@ glab ci get             # full detail for the branch's pipeline
 ```bash
 # Check run (default): the verdict is the first line of output.summary, "Result: <outcome> - <verdict>"
 # (gh api: not in this skill's allowlist, so it needs manual approval; the git-pr allowlist covers it)
-gh api repos/{owner}/{repo}/commits/"$(gh pr view --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '[.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at) | if . == null then empty else {status, conclusion, verdict: ((.output.summary // "") | split("\n")[0])} end'
+gh api repos/{owner}/{repo}/commits/"$(gh pr view --json headRefOid --jq .headRefOid)"/check-runs --paginate --slurp | jq '[.[].check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.completed_at // .started_at) | if . == null then empty else {status, conclusion, verdict: ((.output.summary // "") | split("\n")[0])} end'
 
 # Legacy commit status: the verdict is the description, which gh pr checks returns when asked
 gh pr checks --json name,state,bucket,description --jq '.[] | select(.name|ascii_downcase|startswith("coderabbit"))'
