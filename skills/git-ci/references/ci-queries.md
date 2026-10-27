@@ -21,12 +21,12 @@ A passing check can still mean "did nothing" -- only the verdict says so. CodeRa
 
 ```bash
 # Check run (default surface), pinned to the PR head: the verdict is the first summary line
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/check-runs --jq '
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq '
   [.check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at)
   | if . == null then empty else {status, conclusion, verdict: ((.output.summary // "") | split("\n")[0])} end'
 
 # Legacy commit status, pinned to the PR head
-gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/status --jq '
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/status --paginate --jq '
   [.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at)
   | if . == null then empty else {state, description, updated_at} end'
 

@@ -101,6 +101,8 @@ Match any read-only subcommand variation regardless of `--json` fields or flags.
 "Bash(gh api repos/*/commits/*/status --jq *)",
 "Bash(gh api repos/*/commits/*/check-runs)",
 "Bash(gh api repos/*/commits/*/check-runs --jq *)",
+"Bash(gh api repos/*/commits/*/check-runs --paginate --jq *)",
+"Bash(gh api repos/*/commits/*/status --paginate --jq *)",
 "Bash(gh api repos/*/rules/branches/*)",
 "Bash(gh api repos/*/rules/branches/* --jq *)",
 "Bash(gh api repos/*/rulesets)"

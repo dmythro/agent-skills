@@ -34,7 +34,7 @@ gh pr view --json number,state,reviewDecision,reviewRequests,title 2>/dev/null
 | PR exists, `REVIEW_REQUIRED` or has pending `reviewRequests` | Check review state or wait for reviewers  |
 | PR exists, a bot review in flight: pending in REST `requested_reviewers` (Copilot shows as `Copilot`), or HEAD's `CodeRabbit` check is still running | Auto-review in flight -- wait for it the way the host allows (Critical Rule 9); do NOT re-request |
 | PR exists, unresolved review comments      | Address the comments first (Review Comment Handling); never request a new review over outstanding ones |
-| PR exists, no unresolved CodeRabbit threads, and `coderabbitai` itself resolved every thread of its newest round after answering, with no review running (`bot_status` exit `7`) | Round closed in the threads -- report it done and request no review (Critical Rule 10) |
+| PR exists, no unresolved CodeRabbit threads, and `coderabbitai` itself resolved every thread of its newest round after answering, with no review running (`bot_status` exit `7`) | Round closed in the threads -- run the body-only completeness check (Critical Rule 6), then report it done and request no review (Critical Rule 10) |
 | PR exists, `APPROVED`                      | Check CI status, then merge -- after the stack check (Critical Rule 11) |
 | PR exists, no review decision yet          | On an auto-review repo, read the bot round's outcome first (`bot_status`, Bot Review Loop) -- a clean or rate-limited round shows nothing in this query; then check CI status, review state, or push more changes |
 | No PR for current branch                   | Create a PR (see PR/MR Creation)                           |
@@ -260,7 +260,7 @@ The workflow has two distinct phases -- never mix them:
 **Phase 2: Reply and Resolve (one batched command, one approval)**
 6. Combine all replies and all resolves into a single `&&`-chained command
 7. REST replies first, then a single GraphQL mutation with aliases to batch-resolve all handled threads
-8. Leave "Needs discussion" threads unresolved -- and every CodeRabbit thread you replied to, rejected ones included: its answer re-checks a fix at HEAD or weighs your reason, then resolves the thread itself, the confirmation that stands in for a re-review (`references/bot-review-loop.md`, Fixes Confirmed in the Thread). Resolve one yourself only when no answer came within 10 minutes and no review is running on HEAD, and don't count it as confirmed
+8. Leave "Needs discussion" threads unresolved -- and every CodeRabbit thread you replied to, rejected ones included: its answer re-checks a fix at HEAD or weighs your reason, then resolves the thread itself, the confirmation that stands in for a re-review (`references/bot-review-loop.md`, Fixes Confirmed in the Thread). Resolve one yourself only when no answer came within 10 minutes and no review on HEAD is running or just finished (its answers follow it), and don't count it as confirmed
 
 This ordering matters: pushing fixes first ensures reviewers see the changes when they read replies. Never reply to a comment claiming "Fixed" before the fix is actually pushed.
 
