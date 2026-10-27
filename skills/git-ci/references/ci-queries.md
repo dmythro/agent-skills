@@ -17,20 +17,25 @@ gh pr checks {number} --json name,state,bucket,description,startedAt,completedAt
 
 ## GitHub: Review-Bot Check Verdict
 
-A passing check can still mean "did nothing" -- `description` is the only field that says so (CodeRabbit reports `Review rate limited` as `SUCCESS`).
+A passing check can still mean "did nothing" -- only the verdict says so. CodeRabbit reports `Review rate limited` as a `neutral` check run by default, or as a `SUCCESS` commit status where the legacy surface is kept.
 
 ```bash
-# From the checks list
-gh pr checks {number} --json name,state,description --jq '
-  .[] | select(.name|ascii_downcase|startswith("coderabbit"))'
+# Check run (default surface), pinned to the PR head: the verdict is the first summary line
+gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/check-runs --jq '
+  [.check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at)
+  | if . == null then empty else {status, conclusion, verdict: ((.output.summary // "") | split("\n")[0])} end'
 
-# From the commit status API, pinned to the PR head (check-runs does NOT contain it)
+# Legacy commit status, pinned to the PR head
 gh api repos/{owner}/{repo}/commits/"$(gh pr view {number} --json headRefOid --jq .headRefOid)"/status --jq '
   [.statuses[] | select(.context|ascii_downcase|startswith("coderabbit"))] | max_by(.updated_at)
   | if . == null then empty else {state, description, updated_at} end'
+
+# From the checks list: the status description, never a check run's verdict
+gh pr checks {number} --json name,state,bucket,description --jq '
+  .[] | select(.name|ascii_downcase|startswith("coderabbit"))'
 ```
 
-The `gh api` form is **not** covered by this skill's allowlist, which keeps every `gh api` call manual (`references/allowlist.md`); the `git-pr` skill allowlists it as a GET-only pattern (`repos/*/commits/*/status`). The `gh pr checks` form above needs no exception.
+The `gh api` forms are **not** covered by this skill's allowlist, which keeps every `gh api` call manual (`references/allowlist.md`); the `git-pr` skill allowlists both as GET-only patterns (`repos/*/commits/*/status`, `repos/*/commits/*/check-runs`). The `gh pr checks` form needs no exception.
 
 ## GitHub: Required Checks Status
 

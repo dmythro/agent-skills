@@ -28,7 +28,7 @@ description: >-
 1. **Use `gh pr checks` (not `gh run`) for current-branch CI status.** The `pr checks` subcommand maps directly to the PR's required status checks.
 2. **Use `glab ci status` for current-branch CI in GitLab.** It shows the pipeline for the current branch without needing a pipeline ID.
 3. **Always use `--json` with `gh` to filter output fields.** Full JSON output wastes tokens. `gh pr checks` accepts exactly `bucket`, `completedAt`, `description`, `event`, `link`, `name`, `startedAt`, `state`, `workflow` -- **there is no `conclusion` field here** (that one belongs to `gh run` and to `statusCheckRollup`), and an unknown field aborts the command with `Unknown JSON field`.
-4. **A green check is not always a completed job -- read `description`.** App and bot checks report `state: SUCCESS` / `bucket: pass` for outcomes that did no work: CodeRabbit posts `Review rate limited` as a **successful** check when it never reviewed the code. `description` is where the outcome lives, it is not returned by default, and `gh pr view --json statusCheckRollup` drops it entirely. See Review-Bot Checks below before calling a PR reviewed or merge-ready.
+4. **A check that did not fail is not always a completed job.** App and bot checks report non-failing states for outcomes that did no work: CodeRabbit reports `Review rate limited` as a `neutral` check run (or, on its legacy commit status, a **successful** one) when it never reviewed the code. The outcome lives in the check run's summary or the status `description`; `gh pr checks` returns only the latter (when asked), and `gh pr view --json statusCheckRollup` drops both. See Review-Bot Checks below before calling a PR reviewed or merge-ready.
 5. **Use commands exactly as shown in this skill.** The commands below are designed to match auto-approval allowlist patterns. Improvising flags may trigger permission prompts.
 
 ---
@@ -67,25 +67,26 @@ glab ci get             # full detail for the branch's pipeline
 
 ## Review-Bot Checks (GitHub)
 
-**Review bots publish their outcome as a commit status, always green.** In the checks list it sits among the CI jobs as `CodeRabbit -- Review rate limited` with a tick, which reads as "everything passed" while meaning the code was never reviewed.
+**Review bots publish their outcome as a check that never fails.** CodeRabbit writes a `CodeRabbit` check run by default (its review progress reports, `reviews.review_progress`), or the legacy commit status where `reviews.commit_status` keeps it. In the checks list it sits among the CI jobs, and a round that reviewed nothing still reads as "nothing failed".
 
 ```bash
-# Read the bot rows with their description (name + state + the line that actually matters)
+# Check run (default): the verdict is the first line of output.summary, "Result: <outcome> - <verdict>"
+gh api repos/{owner}/{repo}/commits/"$(gh pr view --json headRefOid --jq .headRefOid)"/check-runs --jq '[.check_runs[] | select(.app.slug=="coderabbitai")] | max_by(.started_at) | if . == null then empty else {status, conclusion, verdict: ((.output.summary // "") | split("\n")[0])} end'
+
+# Legacy commit status: the verdict is the description, which gh pr checks returns when asked
 gh pr checks --json name,state,bucket,description --jq '.[] | select(.name|ascii_downcase|startswith("coderabbit"))'
 ```
 
-| `state` / `bucket`     | `description`         | Reality                                             |
-|------------------------|-----------------------|------------------------------------------------------|
-| `PENDING` / `pending`  | `Review in progress`  | Running right now -- the PR is not reviewed *yet*    |
-| `SUCCESS` / `pass`     | `Review completed`    | The bot reviewed this commit                         |
-| `SUCCESS` / `pass`     | `Review rate limited` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
-| `SUCCESS` / `pass`     | `Review skipped: <reason>` | Excluded by config (`draft pull request`, `reviews are disabled for this base branch`) -- nothing was reviewed |
+| Verdict | Check run `conclusion` (`gh pr checks` state / bucket) | Commit status (`gh pr checks` state / bucket) | Reality |
+|---------|--------------------------------------------------------|-----------------------------------------------|---------|
+| `Review in progress` | not completed (`PENDING` / `pending`) | `PENDING` / `pending` | Running right now -- the PR is not reviewed *yet* |
+| `Review completed` | `success` (`SUCCESS` / `pass`) | `SUCCESS` / `pass` | The bot reviewed this commit |
+| `Review rate limited` | `neutral` (`NEUTRAL` / `skipping`) | `SUCCESS` / `pass` | The hourly bucket was empty -- **nothing was reviewed**, and nothing is queued |
+| `Review skipped` | `skipped` (`SKIPPED` / `skipping`), no reason given | `SUCCESS` / `pass`, `Review skipped: <reason>` | Excluded by config (`draft pull request`, `reviews are disabled for this base branch`) -- nothing was reviewed |
 
-`gh pr checks` uppercases `state` and adds the lowercase `bucket`; the underlying REST commit status returns lowercase (`success`) and no bucket at all. Across 25 PRs of one account, 15 of 62 rounds came back `Review rate limited` -- a green check next to the CI jobs meaning nothing was reviewed, roughly a quarter of the time.
+On the legacy status, across 25 PRs of one account, 15 of 62 rounds came back `Review rate limited` -- a green check next to the CI jobs meaning nothing was reviewed, roughly a quarter of the time. The check run at least buckets those as `skipping`, but `gh pr checks` shows no `description` for a check run and lumps a refused review with a skipped one: only the summary line says which.
 
-`state` tells running from finished, nothing more: both finished outcomes are `success`.
-
-Two surfaces make this invisible, so avoid both for bot checks: `gh pr view --json statusCheckRollup` returns `context`/`state`/`targetUrl` only (no description), and `gh api repos/{owner}/{repo}/commits/{sha}/check-runs` does not list it at all -- it is a commit *status*, readable per sha via `gh api repos/{owner}/{repo}/commits/{sha}/status`. Handling the rate-limited case (windows, re-triggers, the review loop) is the `git-pr` skill's `references/bot-review-loop.md`.
+`gh pr view --json statusCheckRollup` drops the verdict on both surfaces (a `StatusContext` has no description, a `CheckRun` only its conclusion), so avoid it for bot checks. Handling the rate-limited case (windows, re-triggers, the review loop, and `bot_check`, which reads both surfaces) is the `git-pr` skill's `references/bot-review-loop.md`.
 
 ## Watch Until Complete
 

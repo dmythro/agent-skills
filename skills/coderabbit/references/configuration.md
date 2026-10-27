@@ -111,7 +111,7 @@ Escalate `profile: chill` to `quiet` if reviews still feel noisy; `quiet` restri
 3. **`tone_instructions`** -- max 250 chars, applies to reviews and chat.
 4. **`path_instructions`** -- per-glob focus instructions (up to 20,000 chars each); `path: "**"` works for repo-wide instructions.
 5. **`path_filters`** -- `!`-prefixed globs remove generated/vendored files from review entirely.
-6. **Presentation toggles** -- `poem`, `sequence_diagrams`, `changed_files_summary`, `review_status`, `collapse_walkthrough` shrink each review's comment bulk without affecting findings.
+6. **Presentation toggles** -- `poem`, `sequence_diagrams`, `changed_files_summary`, `review_status`, `collapse_walkthrough` shrink each review's comment bulk without affecting findings. Where the verdict lands is separate: `reviews.review_progress` (the default since 2026-07-22) publishes it as a `CodeRabbit` check run, and `reviews.commit_status` brings back the legacy commit status, only while `review_progress` is off. `reviews.fail_commit_status` sets failure reporting on whichever surface is active. Keep the default unless a required check depends on the status; the `git-pr` detector reads both.
 7. **Learnings** -- reply to an unwanted comment with `@coderabbitai` + why it should not be flagged; the learning persists to future reviews (manage at app.coderabbit.ai/learnings). `knowledge_base.code_guidelines` auto-ingests CLAUDE.md/.cursorrules-style files -- encode "no style nits" there too.
 
 ## Auto-Review Behavior
