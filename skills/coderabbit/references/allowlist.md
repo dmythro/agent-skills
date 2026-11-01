@@ -52,7 +52,7 @@ Read-only or local-only commands -- no code leaves the machine, no quota is cons
 - `config validate` -- checks a local `.coderabbit.yaml` against the official schema; no review, no code upload
 - `usage` -- reads the included-review allowance and billing period (`:*` covers `--agent`); spends nothing. Its aliases `coderabbit --usage` and `coderabbit review --usage` do not match this pattern -- call `coderabbit usage` instead of allowlisting a `review` prefix
 - `pullrequest` -- reads CodeRabbit's existing threads and prompts on a PR (`--show-threads`, `--show-prompts`, `--agent`); runs no review, uploads no code
-- `code ls`, `code show`, `code autofix status` (v0.9.1; `code autopilot status` on v0.9.0, an alias since) -- read cloud task state only; the docs mark `ls` and `show` safe to rerun freely. Both status patterns are keyed on the action word, so they cannot match `on`, `off` or `resume`
+- `code ls`, `code show`, `code autofix status` (v0.9.1; `code autopilot status` on v0.9.0, an alias since) -- read cloud task state only; the docs mark `ls` and `show` safe to rerun freely. Both status patterns are keyed on the action word, so they cannot match `on`, `off`, `resume` or `recover`
 
 ## Review Runs (Opt-In)
 
@@ -86,14 +86,14 @@ Keying on an explicit scope flag in first position (`--committed`, `--uncommitte
 - **`coderabbit review --remote ...`** -- a server-side review of any installed repo, outside the scope-first prefixes above; approve each run
 - **`coderabbit config`** (bare, `--generate`, `apply`) -- writes repository config; only `config validate` is read-only
 - **`coderabbit code new`** (v0.9.0) -- starts a billed cloud task
-- **`coderabbit code resume`** (v0.9.0) -- watching is read-only, but `-m`, `--steer` and `--answer` send into the task and start billed work, as does a session opened with `--interactive` (v0.9.1); the prefix cannot tell them apart
+- **`coderabbit code resume`** (v0.9.0) -- watching is read-only, but `-m`, `--steer` and `--answer` send into the task and start billed work, as does a `message`, `steer` or `answer` request in an `--interactive` session (v0.9.1); the prefix cannot tell them apart
 - **`coderabbit code ask`** (v0.9.0) -- every question is billed
 - **`coderabbit code plan`** (v0.9.0) -- read-only alone, but the prefix also matches `--approve`, which records a plan approval
 - **`coderabbit code cancel`** (v0.9.0) -- stops the running turn; queued messages do not run after it
 - **`coderabbit code goal`** (v0.9.1) -- reading is harmless, but the prefix also matches `--set` and `--clear`, and editing a completed goal restarts it
 - **`coderabbit code archive`** (v0.9.1) -- hides the task, makes it read-only and pauses its schedules
 - **`coderabbit code push`** (v0.9.0) -- commits and pushes the task's changes, or opens a pull request with `--stacked`
-- **`coderabbit code autofix on` / `off` / `resume`** (v0.9.1; `autopilot` on v0.9.0, an alias since) -- Autofix (formerly Autopilot) publishes changes and pushes follow-up fixes on its own
+- **`coderabbit code autofix on` / `off` / `resume` / `recover`** (v0.9.1; `autopilot` on v0.9.0, an alias since; `recover` v0.9.2) -- Autofix (formerly Autopilot) publishes changes and pushes follow-up fixes on its own; `recover` resolves a pending delivery conflict and checks Coding Agent billing
 - **`coderabbit code handoff`** (v0.8.1; the v0.8.0 top-level `coderabbit handoff` still works as a hidden alias) -- uploads a session summary, an optional plan, and the discovered session transcript to a new CodeRabbit Cloud task
 - **`coderabbit code skills import`** (v0.8.1) -- uploads local agent skills to the cloud Coding Agent library; `--scope organization` publishes them to the whole org, and `--yes` skips the confirmation
 - **`coderabbit review --api-key ...`** -- inline credentials: never add a pattern targeting them, and note the opt-in review prefixes above cannot *exclude* them (see their Caveat); skip those patterns where inline keys are a real risk
