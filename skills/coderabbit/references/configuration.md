@@ -126,7 +126,7 @@ Key `reviews.auto_review` knobs:
 | `auto_pause_after_reviewed_commits` | `5` | **Silently pauses** auto-reviews after 5 reviewed commits; `0` disables the pause |
 | `ignore_title_keywords` | `[]` | Skip PRs by title keyword (e.g. `["wip"]`) |
 | `labels` | `[]` | Label gate; `"!no-review"` = skip labeled PRs |
-| `base_branches` | `[]` | Regex patterns for extra base branches to review. Since CLI v0.9.1 a single plain branch name here is also the local review's default base (SKILL.md, Review Scopes and Checkpoints) |
+| `base_branches` | `[]` | Regex patterns for extra base branches to review. Since CLI v0.9.1 a single entry naming an existing branch is also the local review's default base (SKILL.md, Review Scopes and Checkpoints) |
 
 The `auto_pause_after_reviewed_commits` default is a common "CodeRabbit stopped reviewing" cause on long-running PRs -- it is a quota guard, not a failure. Resume with `@coderabbitai resume` or raise/zero the setting.
 
@@ -148,7 +148,7 @@ Posted as PR comments (except `ignore`):
 | `@coderabbitai fix comments` | Fix comments: apply fixes for unresolved findings once, as a commit to the PR branch (`fix comments stacked pr`: on a new branch, as a stacked PR). Aliases `fix` and `fix-comments`; `autofix stacked pr` also means this. Needs write access, the Essentials plan or above, and `reviews.finishing_touches.autofix.enabled` (on by default) |
 | `@coderabbitai autofix` / `autofix resume` / `autofix stop` | Turn Autofix (formerly Autopilot) on for the PR, restart it after a pause, or turn it off -- it keeps fixing CodeRabbit findings, failing required CI and merge conflicts until the PR is ready. Aliases `autopilot`, `auto-fix`, `auto fix`; a plain-language request such as "take this PR to completion" also turns it on. **On 2026-10-27 the docs still listed bare `autofix` as an alias of Fix comments** -- never post it expecting a one-off fix |
 | `@coderabbitai fix-ci` / `resolve merge conflict` / `simplify` | Write to the PR: fix failing CI (a stacked PR, or a commit with `fix-ci commit`), resolve conflicts with the base branch as a commit, or apply simplifications. Each needs write access, its `reviews.finishing_touches.*` switch (`simplify` is off by default) and the Team plan or above (`simplify`: Essentials on public repos) |
-| `@coderabbitai approve` | Resolve **all** CodeRabbit threads, like `resolve`, and submit its approval when `reviews.auto_approvals.enabled` is on (off by default; never on Free) -- with it off, the threads are still resolved. Top-level comment only; on their own PR an author also needs `reviews.auto_approvals.allow_author_approval` |
+| `@coderabbitai approve` | Resolve **all** CodeRabbit threads, like `resolve`, and approve the PR when [Automatic Approvals](https://docs.coderabbit.ai/pr-reviews/automatic-approvals) is on (`reviews.auto_approvals.enabled`: off by default, Essentials and above) -- with it off, the threads are still resolved. That approval counts toward the provider's required approvals, and the same setting makes CodeRabbit submit request-changes reviews for actionable findings. Top-level comment only; an author can run it on their own PR while `reviews.auto_approvals.allow_author_approval` stays on (the default) |
 | `@coderabbitai rate limit` | Remaining PR review allowance + next availability -- **consumes no review** (aliases `rate-limit`, `limits`, `quota`) |
 | `@coderabbitai configuration` | Dump the resolved config with per-setting sources |
 | `@coderabbitai generate configuration` | Open a PR adding a `.coderabbit.yaml` |
