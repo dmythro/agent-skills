@@ -2,7 +2,7 @@
 
 **A stacked PR targets another PR's branch instead of the default branch** (`main <- parent <- child`). Opening one is easy. Merging is where it goes wrong, and in two ways that cost real money or work: the child PR gets **closed** instead of moving to `main`, and every merge into the default branch starts whatever runs on a push to it (deploys, releases, publishing), so a stack merged one PR at a time runs those pipelines once per PR. **Never merge a PR in a stack without asking the user which way** (SKILL.md, Critical Rule 11).
 
-GitHub only. Commands checked against `gh` v2.103.2 `--help` (2026-10-27), the skill's pin.
+GitHub only. Commands checked against `gh` v2.103.2 `--help` (2026-10-27); v2.103.3, the skill's pin, changes none of them.
 
 ## Create a Stack
 

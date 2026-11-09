@@ -51,7 +51,7 @@ Match any read-only CI subcommand variation regardless of `--json` fields or fla
 - `gh variable list`, `gh secret list`, `gh cache list` -- read-only listing (names only, not values)
 - `gh ruleset list/view/check` -- read-only inspection
 - `glab ci status/get/list/view/trace` -- all read-only CI queries
-- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials. Since gh v2.103, `gh auth status` also renews and stores an expired or near-expiry token when the login uses refreshable credentials (`gh auth login --expiring`), unless `--no-refresh` is given. That is the same renewal every gh command's API client performs under such a login, so the pattern stays bare -- `--no-refresh` does not exist before v2.103. Classic tokens are untouched
+- `gh auth status`, `glab auth status` -- exact match (no `:*`) because `--show-token` flag would expose credentials. Since gh v2.103, `gh auth status` also renews and stores an expired or near-expiry token when the login uses refreshable credentials (`gh auth login --expiring`), unless `--no-refresh` is given. That is the same renewal every gh command's API client performs under such a login, so the pattern stays bare -- `--no-refresh` does not exist before v2.103. For an expired expiring token, v2.103.3 `--no-refresh` reports that the token `has expired` and names the fix (rerun without `--no-refresh`, or `gh auth login -h <host>` once the refresh token has expired too); v2.103.0 through v2.103.2 report a failed login (`The token in <source> is invalid`) and suggest re-authenticating, although a bare `gh auth status` would renew the token. Classic tokens are untouched
 - Shell operator awareness prevents injection
 
 ---

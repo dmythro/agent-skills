@@ -27,6 +27,7 @@ Read-only or local-only commands -- no code leaves the machine, no quota is cons
       "Bash(coderabbit code show:*)",
       "Bash(coderabbit code autopilot status:*)",
       "Bash(coderabbit code autofix status:*)",
+      "Bash(coderabbit api me:*)",
       "Bash(cr auth status)",
       "Bash(cr doctor)",
       "Bash(cr stats:*)",
@@ -37,7 +38,8 @@ Read-only or local-only commands -- no code leaves the machine, no quota is cons
       "Bash(cr code ls:*)",
       "Bash(cr code show:*)",
       "Bash(cr code autopilot status:*)",
-      "Bash(cr code autofix status:*)"
+      "Bash(cr code autofix status:*)",
+      "Bash(cr api me:*)"
     ]
   }
 }
@@ -53,6 +55,7 @@ Read-only or local-only commands -- no code leaves the machine, no quota is cons
 - `usage` -- reads the included-review allowance and billing period (`:*` covers `--agent`); spends nothing. Its aliases `coderabbit --usage` and `coderabbit review --usage` do not match this pattern -- call `coderabbit usage` instead of allowlisting a `review` prefix
 - `pullrequest` -- reads CodeRabbit's existing threads and prompts on a PR (`--show-threads`, `--show-prompts`, `--agent`); runs no review, uploads no code
 - `code ls`, `code show`, `code autofix status` (v0.9.1; `code autopilot status` on v0.9.0, an alias since) -- read cloud task state only; the docs mark `ls` and `show` safe to rerun freely. Both status patterns are keyed on the action word, so they cannot match `on`, `off`, `resume` or `recover`
+- `api me` (v0.9.3, internal preview) -- prints the stored API key's owner and organization (`:*` covers `--org-id`); keyed on `me`, so later Platform API subcommands do not match
 
 ## Review Runs (Opt-In)
 
@@ -92,6 +95,7 @@ Keying on an explicit scope flag in first position (`--committed`, `--uncommitte
 - **`coderabbit code cancel`** (v0.9.0) -- stops the running turn; queued messages do not run after it
 - **`coderabbit code goal`** (v0.9.1) -- reading is harmless, but the prefix also matches `--set` and `--clear`, and editing a completed goal restarts it
 - **`coderabbit code archive`** (v0.9.1) -- hides the task, makes it read-only and pauses its schedules
+- **`coderabbit code permissions`** (v0.9.3) -- reading is harmless, but the prefix also matches `--set`, which changes the task's repository access for later turns (`full-access` rides on the user's GitHub grant)
 - **`coderabbit code push`** (v0.9.0) -- commits and pushes the task's changes, or opens a pull request with `--stacked`
 - **`coderabbit code autofix on` / `off` / `resume` / `recover`** (v0.9.1; `autopilot` on v0.9.0, an alias since; `recover` v0.9.2) -- Autofix (formerly Autopilot) publishes changes and pushes follow-up fixes on its own; `recover` resolves a pending delivery conflict and checks Coding Agent billing
 - **`coderabbit code handoff`** (v0.8.1; the v0.8.0 top-level `coderabbit handoff` still works as a hidden alias) -- uploads a session summary, an optional plan, and the discovered session transcript to a new CodeRabbit Cloud task
