@@ -1,6 +1,6 @@
 # Cloud Coding Agent Tasks
 
-Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta since v0.9.0) in agent mode: the record stream, what to do with each outcome, and which reruns are safe. Distilled from the [cloud task docs](https://docs.coderabbit.ai/cli/cloud-tasks) and v0.9.2 `--help`; only the read-only `code ls` was exercised here. The cloud task guide does not cover the v0.9.1 additions yet -- `goal`, `archive`, `new --goal`/`--private`/`--access`, `resume --interactive` -- so their notes come from `--help` and the [CLI command reference](https://docs.coderabbit.ai/cli/reference), which is generated from v0.9.1 `--help`. v0.9.2's `autofix recover` is in neither, so its note comes from `--help` alone.
+Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta since v0.9.0) in agent mode: the record stream, what to do with each outcome, and which reruns are safe. Distilled from the [cloud task docs](https://docs.coderabbit.ai/cli/cloud-tasks) and v0.9.3 `--help`; only the read-only `code ls` was exercised here (v0.9.2). The cloud task guide does not cover the v0.9.1 additions yet -- `goal`, `archive`, `new --goal`/`--private`/`--access`, `resume --interactive` -- or v0.9.2's `autofix recover`, so their notes come from `--help` and the [CLI command reference](https://docs.coderabbit.ai/cli/reference), which is generated from v0.9.2 `--help`. v0.9.3's `permissions` and `new --access full-access` are in neither, so their notes come from `--help` alone.
 
 ## Before Scripting
 
@@ -8,7 +8,7 @@ Driving CodeRabbit's cloud Coding Agent from the CLI (`coderabbit code`, beta si
 - **Coding Agent must be enabled for the organization**, and the first task starts its trial if it has not begun. `billing_required` means a person must start a trial or set up billing in the web app.
 - **A task starts from the branch on `origin`** that the current branch tracks (or the same-named branch), never from the working tree: push first. A detached HEAD is refused, and `new` warns with `unpushed_commits`, `uncommitted_changes` or `branch_not_on_origin`.
 - **`handoff` needs a clean checkout on a pushed branch.** Untracked files count as changes, so keep the summary and plan files outside the repository. Each run creates another task.
-- **`--access full`** (v0.9.1, on `new` and `handoff`) requests full repository access, which needs a GitHub authorization in the browser -- a person's step, like `authorize_github`.
+- **`--access full`** (v0.9.1, on `new` and `handoff`) requests full repository access, which needs a GitHub authorization in the browser -- a person's step, like `authorize_github`. On v0.9.3 `new --access full-access` (`full` an alias) sets that access from the first turn and needs a verified personal GitHub grant; `handoff --access full` still requests it after creation. `code permissions` (v0.9.3) changes it on an existing task.
 - **Pass `--agent` right after the command name**, and before `--plan` on `new`. Every `code` command except `skills import` accepts it; only an explicit `--agent` turns argument errors into JSON.
 
 ## The Record Stream
@@ -42,7 +42,7 @@ A last record whose `status` or `action` is not covered here: stop and ask a per
 - `message_dropped` and `steer_not_delivered` mean the send did not land: send again.
 - No last record (killed, or exit `130`/`143`) and no commit point seen from `new` or `handoff`? A task may still exist: check `coderabbit code ls --agent --repo .` before rerunning.
 - After `-m`, keep `clientOperationId` from `message_sent`: the turn is yours when its `turn.queueItemId` matches. Never resend `-m`.
-- **Safe to rerun**: `ls`, `show`, `plan` without `--approve`, `goal` without `--set` or `--clear`, `archive` (a repeat succeeds), and `push` with identical flags -- unless its last record was `delivery_failed`, `delivery_conflicts` or `push_rejected`. Never rerun `cancel` to wait: it stops whatever turn runs then, and queued messages do not run after it.
+- **Safe to rerun**: `ls`, `show`, `plan` without `--approve`, `goal` without `--set` or `--clear`, `permissions` without `--set`, `archive` (a repeat succeeds), and `push` with identical flags -- unless its last record was `delivery_failed`, `delivery_conflicts` or `push_rejected`. Never rerun `cancel` to wait: it stops whatever turn runs then, and queued messages do not run after it.
 
 ## Outcomes by Command
 
@@ -94,12 +94,13 @@ Billed from `question_sent` on. A task holds 3 open side chats, an idle one expi
 | `error` `task_busy`, `turn_active`, `pending_queue_exists` | Nothing was pushed: wait, then rerun |
 | `error` `delivery_failed`, `delivery_conflicts`, `push_rejected` | Report it; fix the cause (conflicts: on the task page) before pushing again |
 
-### cancel, plan, autofix, goal, archive
+### cancel, plan, autofix, goal, permissions, archive
 
 - **`cancel`**: `complete` `cancel_pending` is not final -- poll `code show --agent <task>` until `task.turnStatus` is not `in_progress` and `task.cancellationPending` is false. Queued messages do not run afterwards: CodeRabbit pauses them where queue pause has rolled out (resume them from the task page in the web app), and automated tasks such as pull request monitoring drop them.
 - **`plan`**: `plan_stale` -- show the plan again and get approval again; `plan_not_found` -- no finished plan yet, and a code-mode task never has one.
 - **`autofix`** (v0.9.1; `autopilot` on v0.9.0, an alias since): the records keep the `autopilot` field and `autopilot_*` status codes. `autopilot_paused` (`on` only) -- run `code autofix resume --agent` on the same target; `billing_required` -- a person acts. A successful `on` or `resume` does not confirm that a repair turn started, and a failed task may need retrying or continuing before `resume`: check `code autofix status --agent <task>` (or `--pr <n>`). `recover` (v0.9.2) resolves a pending delivery conflict while keeping unpublished work; run `resume` once it finishes. Like `on` and `resume` it checks Coding Agent billing, and its records are not documented yet, so get the user's OK first and stop on any last record not covered here.
 - **`goal`** (v0.9.1): reads the goal by default. `--set <objective>` (1--4,000 characters, `-` for stdin) keeps a paused or limited state but restarts a completed goal; `--clear` removes it. Get the user's OK for either.
+- **`permissions`** (v0.9.3): reads the task's saved and active-turn repository access by default. `--set manual|full-access` (`full` an alias) applies to later turns through the existing revocation policy and never restarts or resends work; full access needs the user's verified GitHub grant and does not bypass branch protection. Get the user's OK for `--set`; its records are not documented yet, so stop on any last record not covered here.
 - **`archive`** (v0.9.1): hides the task from `ls` (`show` still reads it), makes it read-only and pauses its schedules; it can be unarchived later. Running, starting or stopping turns must finish first, and it neither cancels turns nor deletes the task.
 
 ### Any command
