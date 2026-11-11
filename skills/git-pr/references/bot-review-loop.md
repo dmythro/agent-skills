@@ -48,7 +48,7 @@ With consent, right after opening the PR or triggering a round:
 
 1. **Switch the host's PR monitor on without asking, where the consent names it** (Claude Code desktop app: `set_monitor` with `auto_fix: true`). It reports what comes later: a CI failure, a merge conflict, a late comment. A denied call is not a blocker: name the fix once (an allow rule for that tool in the user's settings) and carry on. Where the consent is silent on the monitor, ask for it once or leave it off: the wait covers the round either way.
 2. **Start `bot_wait {N}` with the harness's background facility** -- never in the foreground -- and close the turn saying the round is being waited on. Its exit re-invokes the session.
-3. **On that wake, the wait's output is the read**: it ends with `bot_status`'s own verdict and exit code, so branch on it as The Loop does without reading again. On `6` take the deadline from the `BOT_WAIT_UNTIL` it printed: a later read can lose the notice that value was parsed from. `bot_wait` only reads, so a re-request that falls due (`4`, or `3` after an expired rate-limit window) stays under The Loop's approval gate.
+3. **On that wake, the wait's output is the read**: it ends with `bot_status`'s own verdict and exit code, so branch on it as The Loop does without reading again. One exit differs: `4` from the wait means the review failed and nothing was retried, where The Loop's `4` assumes `bot_tick` already cooled down and re-requested -- so the retry is a request, under the approval gate. On `6` take the deadline from the `BOT_WAIT_UNTIL` it printed: a later read can lose the notice that value was parsed from. `bot_wait` only reads, so a re-request that falls due (`4`, or `3` after an expired rate-limit window) stays under The Loop's approval gate.
 4. **One wait per round.** A wait that ends on its deadline is reported with what is still pending; waiting longer is the user's call.
 
 A line the user can copy into their instructions:
@@ -511,7 +511,7 @@ bot_tick() {
 
 ## bot_wait (read-only bounded wait)
 
-The wait for a host that forbids self-polling, started under the user's standing consent (Waiting for an In-Flight Round). It reads `bot_status` once a minute until the round has an outcome, nothing is in flight any more, or the deadline passes (30 minutes by default). **It posts nothing**: no re-request and no cooldown retry, which stay `bot_tick`'s where polling is allowed. Run it in the background: the process's exit is the wake-up.
+The wait for a host that forbids self-polling, started under the user's standing consent (Waiting for an In-Flight Round). It reads `bot_status` once a minute until the round has an outcome, nothing is in flight any more, or the deadline passes (30 minutes by default). A clean verdict ends it only when no round is in flight and three minutes have passed: on a HEAD an earlier round already covered, `bot_status` keeps reporting that round until the new one lands. **It posts nothing**: no re-request and no cooldown retry, which stay `bot_tick`'s where polling is allowed. Run it in the background: the process's exit is the wake-up.
 
 ```bash
 # Usage: bot_wait <PR_NUMBER> [MINUTES]   (read-only; needs the config block + bot_check,
@@ -520,15 +520,18 @@ The wait for a host that forbids self-polling, started under the user's standing
 #       is in flight to wait for (the round needs a trigger) or MINUTES (default 30) ran out.
 bot_wait() {
   pr="$1"; mins="${2:-30}"; log="$(mktemp)"
-  start="$(date +%s)"; deadline=$(( start + mins * 60 ))
+  start="$(date +%s)"; grace=$(( start + 180 )); deadline=$(( start + mins * 60 ))
   while :; do
+    # "In flight" is read BEFORE the verdict: a round that ends between the two reads is then
+    # judged by a verdict taken after it, never by an earlier round's.
+    bot_requested "$pr"; flying=$?
     bot_status "$pr" > "$log" 2>&1; rc=$?      # a redirect, not $(...): BOT_AWAIT_CHAT must survive
-    # A round requested again on a HEAD that an earlier round covered still reads as that round's
-    # clean result, so "clean" only ends the wait once nothing is in flight.
-    [ "$rc" -eq 0 ] && bot_requested "$pr" && rc=3
+    # "Clean" can be an EARLIER round's verdict on this HEAD. It ends the wait only when nothing
+    # was in flight, and not in the first 3 minutes, when a round just requested may not show yet.
+    if [ "$rc" -eq 0 ] && { [ "$flying" -eq 0 ] || [ "$(date +%s)" -lt "$grace" ]; }; then rc=3; fi
     [ "$rc" -ne 3 ] && break
     # A fresh PR's check takes a moment to appear, so "not requested" only counts after 3 minutes.
-    if [ -z "$BOT_AWAIT_CHAT" ] && [ "$(date +%s)" -ge $(( start + 180 )) ] && ! bot_requested "$pr"; then
+    if [ -z "$BOT_AWAIT_CHAT" ] && [ "$flying" -ne 0 ] && [ "$(date +%s)" -ge "$grace" ] && ! bot_requested "$pr"; then
       echo "Nothing in flight to wait for -- the round needs a trigger (The Loop's approval gate)" >> "$log"; break
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
