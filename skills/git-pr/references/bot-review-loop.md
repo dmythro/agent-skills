@@ -452,9 +452,12 @@ bot_status() {
 Auto-review (and any earlier request) leaves the bot as a pending requested reviewer until its review lands. Re-requesting on top of that is the collision to avoid. **The pending entry is only visible on the REST endpoint** -- `gh pr view --json reviewRequests` omits bot reviewers entirely (verified: it stays `[]` while REST shows the request), so never use it for this check. CodeRabbit is comment-triggered and never appears there at all; its equivalent evidence is HEAD's check still running (`bot_check` reads `Review in progress`: a check run not yet `completed`, or a `pending` commit status), so the check covers both surfaces:
 
 ```bash
-# Usage: bot_requested <PR_NUMBER>   (read-only; exit 0 = a review for this bot is already in flight)
+# Usage: bot_requested <PR_NUMBER>   (read-only)
+# Exit: 0 a review for this bot is in flight | 1 none is | 2 the lookup failed, so it is unknown.
+#       A caller that only asks "in flight?" reads 2 as "no"; bot_wait keeps waiting on it.
 bot_requested() {
-  [ "$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" = "true" ] && return 0
+  rq="$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" || return 2
+  [ "$rq" = "true" ] && return 0
   [ -n "$BOT_CHECK_RUNNING_RE" ] || return 1
   bot_check "$1" | cut -d'|' -f2- | grep -iqE "$BOT_CHECK_RUNNING_RE"
 }
@@ -511,25 +514,27 @@ bot_tick() {
 
 ## bot_wait (read-only bounded wait)
 
-The wait for a host that forbids self-polling, started under the user's standing consent (Waiting for an In-Flight Round). It reads `bot_status` once a minute until the round has an outcome, nothing is in flight any more, or the deadline passes (30 minutes by default). A clean verdict ends it only when no round is in flight and three minutes have passed: on a HEAD an earlier round already covered, `bot_status` keeps reporting that round until the new one lands. **It posts nothing**: no re-request and no cooldown retry, which stay `bot_tick`'s where polling is allowed. Run it in the background: the process's exit is the wake-up.
+The wait for a host that forbids self-polling, started under the user's standing consent (Waiting for an In-Flight Round). It reads `bot_status` once a minute until the round has an outcome, nothing is in flight any more, or the deadline passes (30 minutes by default). A verdict that a new round would replace (clean, skipped, confirmed in the threads) ends it only once the PR reads idle twice in a row and three minutes have passed: on a HEAD an earlier round already covered, `bot_status` keeps reporting that round until the new one lands. A lookup that fails counts as neither idle nor in flight. **It posts nothing**: no re-request and no cooldown retry, which stay `bot_tick`'s where polling is allowed. Run it in the background: the process's exit is the wake-up.
 
 ```bash
 # Usage: bot_wait <PR_NUMBER> [MINUTES]   (read-only; needs the config block + bot_check,
 #        bot_status, bot_requested). Run in the BACKGROUND: its exit re-invokes the session.
-# Exit: bot_status's code once the round has an outcome (0 / 2 / 4 / 5 / 6 / 7) | 3 when nothing
-#       is in flight to wait for (the round needs a trigger) or MINUTES (default 30) ran out.
+# Exit: bot_status's code once the round has an outcome (0 / 2 / 4 / 5 / 6 / 7; 0, 5 and 7 only
+#       after the 3-minute hold) | 3 when nothing is in flight to wait for (the round needs a
+#       trigger) or MINUTES (default 30) ran out.
 bot_wait() {
   pr="$1"; mins="${2:-30}"; log="$(mktemp)"
   start="$(date +%s)"; grace=$(( start + 180 )); deadline=$(( start + mins * 60 )); idle=0
   while :; do
     # "In flight" is read BEFORE the verdict: a round that ends between the two reads is then
-    # judged by a verdict taken after it, never by an earlier round's. A lookup that fails reads
-    # as "not in flight" too, so only two such reads in a row count as idle.
-    if bot_requested "$pr"; then idle=0; else idle=$(( idle + 1 )); fi
+    # judged by a verdict taken after it, never by an earlier round's. Two "none" reads in a row
+    # count as idle; a lookup that failed (2) says nothing, so idle stays where it was.
+    bot_requested "$pr"; case $? in 0) idle=0 ;; 1) idle=$(( idle + 1 )) ;; esac
     bot_status "$pr" > "$log" 2>&1; rc=$?      # a redirect, not $(...): BOT_AWAIT_CHAT must survive
-    # "Clean" can be an EARLIER round's verdict on this HEAD. It ends the wait only when the PR
-    # is idle, and not in the first 3 minutes, when a round just requested may not show yet.
-    if [ "$rc" -eq 0 ] && { [ "$idle" -lt 2 ] || [ "$(date +%s)" -lt "$grace" ]; }; then rc=3; fi
+    # Clean, skipped and confirmed-in-the-threads can be an EARLIER round's verdict on this HEAD.
+    # They end the wait only when the PR is idle, and not in the first 3 minutes, when a round
+    # just requested may not show yet.
+    case "$rc" in 0|5|7) if [ "$idle" -lt 2 ] || [ "$(date +%s)" -lt "$grace" ]; then rc=3; fi ;; esac
     [ "$rc" -ne 3 ] && break
     # A fresh PR's check takes a moment to appear, so "not requested" only counts after 3 minutes.
     if [ -z "$BOT_AWAIT_CHAT" ] && [ "$idle" -ge 2 ] && [ "$(date +%s)" -ge "$grace" ]; then
