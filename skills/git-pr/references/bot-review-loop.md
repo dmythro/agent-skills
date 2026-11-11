@@ -455,7 +455,7 @@ Auto-review (and any earlier request) leaves the bot as a pending requested revi
 ```bash
 # Usage: bot_requested <PR_NUMBER>   (read-only)
 # Exit: 0 a review for this bot is in flight | 1 none is | 2 the lookup failed, so it is unknown.
-#       A caller that only asks "in flight?" reads 2 as "no"; bot_wait keeps waiting on it.
+#       bot_tick requests a review only on 1, and bot_wait keeps waiting on 2.
 bot_requested() {
   rq="$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")"; rq_rc=$?
   [ "$rq" = "true" ] && return 0
@@ -492,7 +492,12 @@ bot_tick() {
     # bot_tick polls it -- returning 4 here lets the caller count failures and cap the retries.
     sleep 300
     # A request may have appeared during the cooldown (a human, draft->ready) -- never double-request.
-    if ! bot_requested "$pr" && ! bot_rerequest "$pr" >/dev/null 2>&1; then
+    # Only a definite "none" (1) re-requests: on 2 the lookup failed and a retry may be running.
+    bot_requested "$pr"; tk_rq=$?
+    if [ "$tk_rq" -eq 2 ]; then
+      echo "Could not tell whether a retry is already in flight -- nothing requested; re-run bot_tick"; return 3
+    fi
+    if [ "$tk_rq" -eq 1 ] && ! bot_rerequest "$pr" >/dev/null 2>&1; then
       echo "Re-request after failed review did not go through"; return 5
     fi
     echo "Retry requested after failed review -- re-run bot_tick to poll it"; return 4
@@ -504,8 +509,11 @@ bot_tick() {
   # due (BOT_AWAIT_CHAT: the answer may confirm the fixes, making the review unnecessary).
   # BOT_HEAD_LIMITED (set by bot_status) makes this a "full review" after a bounce -- an
   # incremental one would answer "Review finished." on commits the refused round already stamped.
-  if [ -z "$BOT_AWAIT_CHAT" ] && ! bot_requested "$pr"; then
-    if ! bot_rerequest "$pr" "$BOT_HEAD_LIMITED" >/dev/null 2>&1; then
+  # Only a definite "none" (1) re-requests: on 2 the lookup failed, a round may be running, and
+  # the poll below reads on without a trigger.
+  if [ -z "$BOT_AWAIT_CHAT" ]; then
+    bot_requested "$pr"; tk_rq=$?
+    if [ "$tk_rq" -eq 1 ] && ! bot_rerequest "$pr" "$BOT_HEAD_LIMITED" >/dev/null 2>&1; then
       echo "Re-request failed -- bot not enabled here, or wrong command (see Per-Bot Setup)"; return 5
     fi
   fi
