@@ -520,18 +520,19 @@ The wait for a host that forbids self-polling, started under the user's standing
 #       is in flight to wait for (the round needs a trigger) or MINUTES (default 30) ran out.
 bot_wait() {
   pr="$1"; mins="${2:-30}"; log="$(mktemp)"
-  start="$(date +%s)"; grace=$(( start + 180 )); deadline=$(( start + mins * 60 ))
+  start="$(date +%s)"; grace=$(( start + 180 )); deadline=$(( start + mins * 60 )); idle=0
   while :; do
     # "In flight" is read BEFORE the verdict: a round that ends between the two reads is then
-    # judged by a verdict taken after it, never by an earlier round's.
-    bot_requested "$pr"; flying=$?
+    # judged by a verdict taken after it, never by an earlier round's. A lookup that fails reads
+    # as "not in flight" too, so only two such reads in a row count as idle.
+    if bot_requested "$pr"; then idle=0; else idle=$(( idle + 1 )); fi
     bot_status "$pr" > "$log" 2>&1; rc=$?      # a redirect, not $(...): BOT_AWAIT_CHAT must survive
-    # "Clean" can be an EARLIER round's verdict on this HEAD. It ends the wait only when nothing
-    # was in flight, and not in the first 3 minutes, when a round just requested may not show yet.
-    if [ "$rc" -eq 0 ] && { [ "$flying" -eq 0 ] || [ "$(date +%s)" -lt "$grace" ]; }; then rc=3; fi
+    # "Clean" can be an EARLIER round's verdict on this HEAD. It ends the wait only when the PR
+    # is idle, and not in the first 3 minutes, when a round just requested may not show yet.
+    if [ "$rc" -eq 0 ] && { [ "$idle" -lt 2 ] || [ "$(date +%s)" -lt "$grace" ]; }; then rc=3; fi
     [ "$rc" -ne 3 ] && break
     # A fresh PR's check takes a moment to appear, so "not requested" only counts after 3 minutes.
-    if [ -z "$BOT_AWAIT_CHAT" ] && [ "$flying" -ne 0 ] && [ "$(date +%s)" -ge "$grace" ] && ! bot_requested "$pr"; then
+    if [ -z "$BOT_AWAIT_CHAT" ] && [ "$idle" -ge 2 ] && [ "$(date +%s)" -ge "$grace" ]; then
       echo "Nothing in flight to wait for -- the round needs a trigger (The Loop's approval gate)" >> "$log"; break
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
