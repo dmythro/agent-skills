@@ -185,11 +185,12 @@ Sampled on the commit status across 25 PRs of one account (62 stamped rounds): 4
 
 ```bash
 # Usage: bot_check <PR>   (read-only; a Per-Bot Setup block must be sourced)
+# Exit: 0 with the verdict, or nothing when HEAD has no check yet | 2 a lookup failed (nothing printed)
 # An unfinished check run reads "Review in progress"; a run without a summary falls back to its title.
 bot_check() {
-  { gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.completed_at // .started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at | fromdateiso8601)|Review in progress\" else \"\((.completed_at // .started_at) | fromdateiso8601)|\(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end"
-    gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select((.context | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at | fromdateiso8601)|\(.description // \"\")\" end"
-  } 2>/dev/null | sort -n | tail -1
+  bc_runs="$(gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/check-runs --paginate --jq "[.check_runs[] | select((.app.slug // \"\" | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.completed_at // .started_at) | if . == null then empty elif .status != \"completed\" then \"\(.started_at | fromdateiso8601)|Review in progress\" else \"\((.completed_at // .started_at) | fromdateiso8601)|\(((.output.summary // \"\") | split(\"\\n\")[0] | sub(\"^Result:[^-]*- *\"; \"\")) as \$v | if \$v == \"\" then (.output.title // \"\") else \$v end)\" end" 2>/dev/null)" || return 2
+  bc_stat="$(gh api repos/{owner}/{repo}/commits/"$(gh pr view "$1" --json headRefOid --jq .headRefOid)"/status --paginate --jq "[.statuses[] | select((.context | ascii_downcase) | startswith(\"$BOT_THREAD_PREFIX\"))] | max_by(.updated_at) | if . == null then empty else \"\(.updated_at | fromdateiso8601)|\(.description // \"\")\" end" 2>/dev/null)" || return 2
+  printf '%s\n%s\n' "$bc_runs" "$bc_stat" | grep . | sort -n | tail -1
 }
 ```
 
@@ -456,10 +457,15 @@ Auto-review (and any earlier request) leaves the bot as a pending requested revi
 # Exit: 0 a review for this bot is in flight | 1 none is | 2 the lookup failed, so it is unknown.
 #       A caller that only asks "in flight?" reads 2 as "no"; bot_wait keeps waiting on it.
 bot_requested() {
-  rq="$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")" || return 2
+  rq="$(gh api repos/{owner}/{repo}/pulls/$1/requested_reviewers --jq "[.users[].login | ascii_downcase] | any(startswith(\"$BOT_THREAD_PREFIX\"))")"; rq_rc=$?
   [ "$rq" = "true" ] && return 0
-  [ -n "$BOT_CHECK_RUNNING_RE" ] || return 1
-  bot_check "$1" | cut -d'|' -f2- | grep -iqE "$BOT_CHECK_RUNNING_RE"
+  if [ -n "$BOT_CHECK_RUNNING_RE" ]; then
+    rq_chk="$(bot_check "$1")" || rq_rc=2
+    printf '%s' "$rq_chk" | cut -d'|' -f2- | grep -iqE "$BOT_CHECK_RUNNING_RE" && return 0
+  fi
+  # Either signal says "in flight" whatever became of the other; "none" needs every lookup to answer.
+  [ "$rq_rc" -eq 0 ] && return 1
+  return 2
 }
 ```
 
@@ -528,8 +534,8 @@ bot_wait() {
   while :; do
     # "In flight" is read BEFORE the verdict: a round that ends between the two reads is then
     # judged by a verdict taken after it, never by an earlier round's. Two "none" reads in a row
-    # count as idle; a lookup that failed (2) says nothing, so idle stays where it was.
-    bot_requested "$pr"; case $? in 0) idle=0 ;; 1) idle=$(( idle + 1 )) ;; esac
+    # count as idle; a round in flight or a lookup that failed (2) starts the count again.
+    bot_requested "$pr"; case $? in 1) idle=$(( idle + 1 )) ;; *) idle=0 ;; esac
     bot_status "$pr" > "$log" 2>&1; rc=$?      # a redirect, not $(...): BOT_AWAIT_CHAT must survive
     # Clean, skipped and confirmed-in-the-threads can be an EARLIER round's verdict on this HEAD.
     # They end the wait only when the PR is idle, and not in the first 3 minutes, when a round
