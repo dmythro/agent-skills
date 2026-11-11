@@ -8,7 +8,7 @@
 
 ## Run It
 
-Source ONE bot's config block (below) together with the four functions (`bot_check`, `bot_status`, `bot_requested`, `bot_tick`), then drive rounds:
+Source ONE bot's config block (below) together with the five functions (`bot_check`, `bot_status`, `bot_requested`, `bot_tick`, `bot_wait`), then drive rounds:
 
 ```bash
 bot_tick <PR>    # re-request if needed + poll once
@@ -48,7 +48,7 @@ With consent, right after opening the PR or triggering a round:
 
 1. **Switch the host's PR monitor on without asking, where the consent names it** (Claude Code desktop app: `set_monitor` with `auto_fix: true`). It reports what comes later: a CI failure, a merge conflict, a late comment. A denied call is not a blocker: name the fix once (an allow rule for that tool in the user's settings) and carry on. Where the consent is silent on the monitor, ask for it once or leave it off: the wait covers the round either way.
 2. **Start `bot_wait {N}` with the harness's background facility** -- never in the foreground -- and close the turn saying the round is being waited on. Its exit re-invokes the session.
-3. **On that wake, read before acting**: one `bot_status` call, then branch as The Loop does. `bot_wait` only reads, so a re-request that falls due (`4`, or `3` after an expired rate-limit window) stays under The Loop's approval gate.
+3. **On that wake, the wait's output is the read**: it ends with `bot_status`'s own verdict and exit code, so branch on it as The Loop does without reading again. On `6` take the deadline from the `BOT_WAIT_UNTIL` it printed: a later read can lose the notice that value was parsed from. `bot_wait` only reads, so a re-request that falls due (`4`, or `3` after an expired rate-limit window) stays under The Loop's approval gate.
 4. **One wait per round.** A wait that ends on its deadline is reported with what is still pending; waiting longer is the user's call.
 
 A line the user can copy into their instructions:
@@ -523,6 +523,9 @@ bot_wait() {
   start="$(date +%s)"; deadline=$(( start + mins * 60 ))
   while :; do
     bot_status "$pr" > "$log" 2>&1; rc=$?      # a redirect, not $(...): BOT_AWAIT_CHAT must survive
+    # A round requested again on a HEAD that an earlier round covered still reads as that round's
+    # clean result, so "clean" only ends the wait once nothing is in flight.
+    [ "$rc" -eq 0 ] && bot_requested "$pr" && rc=3
     [ "$rc" -ne 3 ] && break
     # A fresh PR's check takes a moment to appear, so "not requested" only counts after 3 minutes.
     if [ -z "$BOT_AWAIT_CHAT" ] && [ "$(date +%s)" -ge $(( start + 180 )) ] && ! bot_requested "$pr"; then
